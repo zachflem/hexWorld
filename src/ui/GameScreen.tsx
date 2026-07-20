@@ -1,0 +1,1676 @@
+import { useMemo, useRef, useState } from "react";
+import { axialDistance, axialEquals, axialKey, type Axial } from "../engine/hexCoords";
+import { isBuildableLand, isTransitionTile, terrainAt } from "../engine/terrain";
+import { dockYieldPerSecond } from "../engine/docks";
+import { buildSlotCap, repairCost, scaledCostMap, totalStructureCount } from "../engine/formulas";
+import { nextTier, tierUpgradeCost, tierUpgradeDurationMs } from "../engine/tiers";
+import { storageCapacity, storageUpgradeCost } from "../engine/storage";
+import {
+  findResourceTileConnection,
+  nextPathTier,
+  pathBuildCost,
+  pathUpgradeCost,
+  pathUpgradeDurationMs,
+} from "../engine/paths";
+import {
+  nextTowerLevel,
+  towerBuildCost,
+  towerDamage,
+  towerRange,
+  towerUpgradeCost,
+  towerUpgradeDurationMs,
+} from "../engine/towers";
+import {
+  maxWallDurability,
+  nextWallTier,
+  wallBuildCost,
+  wallRepairCost,
+  wallRepairDurationMs,
+  wallUpgradeCost,
+  wallUpgradeDurationMs,
+} from "../engine/walls";
+import {
+  barracksBuildCost,
+  barracksTrainingCapacity,
+  barracksUpgradeCost,
+  barracksUpgradeDurationMs,
+  crossBowSniperCapacity as crossBowSniperCapacityFor,
+  junkyardKnightCapacity as junkyardKnightCapacityFor,
+  militiaCapacity as militiaCapacityFor,
+  nextBarracksLevel,
+  scoutCapacity as scoutCapacityFor,
+} from "../engine/barracks";
+import {
+  crossBowSniperTrainCost,
+  crossBowSniperTrainDurationMs,
+  junkyardKnightTrainCost,
+  junkyardKnightTrainDurationMs,
+  militiaTrainCost,
+  militiaTrainDurationMs,
+  scoutTrainCost,
+  scoutTrainDurationMs,
+} from "../engine/units";
+import {
+  baseReinforcementHp,
+  baseRelocationCost,
+  baseRelocationDurationMs,
+  baseRepairCost,
+  baseUpgradeCost,
+  baseUpgradeDurationMs,
+  canRelocateBase,
+  maxReinforcementLevel,
+  reinforcementUpgradeCost,
+} from "../engine/base";
+import { remainingMs } from "../engine/timers";
+import { extractionFloorContribution, pathFloorContribution, towerFloorContribution, wallFloorContribution } from "../engine/noiseMeter";
+import { isTileScoutable } from "../engine/territory";
+import {
+  expeditionProvisionsCost,
+  expeditionTravelDurationMs,
+  findBestExpeditionRoute,
+} from "../engine/expeditions";
+import { denDefense, holdDefenseAt, lastStandWaveSize } from "../engine/dens";
+import {
+  maxOutpostReinforcementLevel,
+  outpostReinforcementHp,
+  outpostReinforcementUpgradeCost,
+  outpostRepairCost,
+} from "../engine/outposts";
+import {
+  availableCrossBowSnipers,
+  availableJunkyardKnights,
+  availableMilitia,
+  garrisonAt,
+  garrisonedMilitiaTotal,
+} from "../engine/garrisons";
+import type { Player } from "../data/player";
+import type { ResourceAmounts, ResourceType } from "../data/resources";
+import type { TerritoryRecord } from "../data/territory";
+import type { BaseRecord } from "../data/base";
+import type { ExtractionTier, ExtractionTile } from "../data/extractionTiles";
+import type { PathTier, PathTile } from "../data/pathTiles";
+import type { Tower } from "../data/towers";
+import type { Wall } from "../data/walls";
+import type { Barracks } from "../data/barracks";
+import type { UnitsRecord } from "../data/units";
+import type { GarrisonsRecord } from "../data/garrisons";
+import type { ScoutedTiles } from "../data/scoutedTiles";
+import type { StorageLevels } from "../data/storageLevels";
+import type { NoiseRecord } from "../data/noise";
+import type { DenRecord, DensRecord } from "../data/dens";
+import type { DenAssaultsRecord } from "../data/denAssaults";
+import type { GarrisonRecallsRecord } from "../data/garrisonRecalls";
+import type { OutpostRecord, OutpostsRecord } from "../data/outposts";
+import type { HordesRecord } from "../data/hordes";
+import type { ExpeditionsRecord } from "../data/expeditions";
+import type { DockRecord, DocksRecord } from "../data/docks";
+import type { ScoutSkiffsRecord } from "../data/scoutSkiffs";
+import type { WanderingScoutsRecord } from "../data/wanderingScouts";
+import type { Tweaks } from "../data/tweaksSchema";
+import type { WorldRecord } from "../data/world";
+import type { BuildResult } from "../App";
+import { HexCanvas, type HexCanvasHandle } from "../render/HexCanvas";
+import { NewGameDialog } from "./NewGameDialog";
+import {
+  TilePopup,
+  formatDuration,
+  type BarracksUpgradeOption,
+  type BaseUpgradeOption,
+  type BuildOption,
+  type DenAssaultOption,
+  type DenSiegeStatus,
+  type ExpeditionOption,
+  type PathBuildOption,
+  type PathUpgradeOption,
+  type RelocationOption,
+  type SimpleCostOption,
+  type SkiffBuildOption,
+  type SimpleTrainOption,
+  type StorageUpgradeOption,
+  type TierUpgradeOption,
+  type TowerUpgradeOption,
+  type TrainOption,
+  type TrainQueueStatus,
+  type UpgradeInProgress,
+  type ReinforcementUpgradeOption,
+  type WallActionStatus,
+  type WallRepairOption,
+  type WallUpgradeOption,
+  type WanderingScoutOption,
+} from "./TilePopup";
+
+const RESOURCE_ORDER: ResourceType[] = ["food", "wood", "stone", "steel", "power"];
+
+export function GameScreen({
+  tweaks,
+  player,
+  world,
+  territory,
+  base,
+  resources,
+  extractionTiles,
+  pathTiles,
+  towers,
+  walls,
+  barracksList,
+  units,
+  garrisons,
+  scoutedTiles,
+  storageLevels,
+  noise,
+  dens,
+  denAssaults,
+  outposts,
+  garrisonRecalls,
+  hordes,
+  expeditions,
+  docks,
+  scoutSkiffs,
+  wanderingScouts,
+  now,
+  speedMultiplier,
+  onCycleFastForward,
+  onBuildExtractionTile,
+  onUpgradeExtractionTile,
+  onUpgradeStorage,
+  onCollectTile,
+  onBuildPath,
+  onUpgradePath,
+  onBuildTower,
+  onUpgradeTower,
+  onBuildWall,
+  onUpgradeWall,
+  onRepairWall,
+  onRepairStructure,
+  onDemolish,
+  onBuildBarracks,
+  onUpgradeBarracks,
+  onTrainScouts,
+  onTrainMilitia,
+  onTrainJunkyardKnight,
+  onTrainCrossBowSniper,
+  onRushTrainScouts,
+  onRushTrainMilitia,
+  onScoutTile,
+  onUpgradeBase,
+  onUpgradeReinforcement,
+  onRepairBase,
+  onUpgradeOutpostReinforcement,
+  onRepairOutpost,
+  onRelocateBase,
+  onDispatchExpedition,
+  onAssaultDen,
+  onGarrisonMilitia,
+  onGarrisonJunkyardKnight,
+  onGarrisonCrossBowSniper,
+  onRecallMilitia,
+  onBuildDock,
+  onBuildFishingBoat,
+  onBuildScoutSkiff,
+  onCollectDock,
+  onBuildWanderingScout,
+  onReplayCurrent,
+  onStartNewSeed,
+  onNewPlayer,
+}: {
+  tweaks: Tweaks;
+  player: Player;
+  world: WorldRecord;
+  territory: TerritoryRecord;
+  base: BaseRecord;
+  resources: ResourceAmounts;
+  extractionTiles: ExtractionTile[];
+  pathTiles: PathTile[];
+  towers: Tower[];
+  walls: Wall[];
+  barracksList: Barracks[];
+  units: UnitsRecord;
+  garrisons: GarrisonsRecord;
+  scoutedTiles: ScoutedTiles;
+  storageLevels: StorageLevels;
+  noise: NoiseRecord;
+  dens: DensRecord;
+  denAssaults: DenAssaultsRecord;
+  outposts: OutpostsRecord;
+  garrisonRecalls: GarrisonRecallsRecord;
+  hordes: HordesRecord;
+  expeditions: ExpeditionsRecord;
+  docks: DocksRecord;
+  scoutSkiffs: ScoutSkiffsRecord;
+  wanderingScouts: WanderingScoutsRecord;
+  /** The virtual clock (data/clock.ts:ClockRecord.virtualNow) every build/upgrade/training timer here is checked against, instead of Date.now() — advances at speedMultiplier-scaled rate, see App.tsx. */
+  now: number;
+  /** Playtesting convenience — cycles through rates that scale the tick loop's resource/noise/horde simulation AND every build/upgrade/training timer (via `now` above), see App.tsx. */
+  speedMultiplier: number;
+  onCycleFastForward: () => void;
+  onBuildExtractionTile: (coord: Axial, resource: ResourceType) => Promise<BuildResult>;
+  onUpgradeExtractionTile: (coord: Axial) => Promise<BuildResult>;
+  onUpgradeStorage: (resource: ResourceType) => Promise<BuildResult>;
+  onCollectTile: (coord: Axial) => Promise<BuildResult>;
+  onBuildPath: (coord: Axial) => Promise<BuildResult>;
+  onUpgradePath: (coord: Axial) => Promise<BuildResult>;
+  onBuildTower: (coord: Axial) => Promise<BuildResult>;
+  onUpgradeTower: (coord: Axial) => Promise<BuildResult>;
+  onBuildWall: (coord: Axial) => Promise<BuildResult>;
+  onUpgradeWall: (coord: Axial) => Promise<BuildResult>;
+  onRepairWall: (coord: Axial) => Promise<BuildResult>;
+  onRepairStructure: (coord: Axial) => Promise<BuildResult>;
+  onDemolish: (coord: Axial) => Promise<BuildResult>;
+  onBuildBarracks: (coord: Axial) => Promise<BuildResult>;
+  onUpgradeBarracks: (coord: Axial) => Promise<BuildResult>;
+  onTrainScouts: (quantity: number) => Promise<BuildResult>;
+  onTrainMilitia: (quantity: number) => Promise<BuildResult>;
+  onTrainJunkyardKnight: (quantity: number) => Promise<BuildResult>;
+  onTrainCrossBowSniper: (quantity: number) => Promise<BuildResult>;
+  onRushTrainScouts: (quantity: number) => Promise<BuildResult>;
+  onRushTrainMilitia: (quantity: number) => Promise<BuildResult>;
+  onScoutTile: (coord: Axial) => Promise<BuildResult>;
+  onUpgradeBase: () => Promise<BuildResult>;
+  onUpgradeReinforcement: () => Promise<BuildResult>;
+  onRepairBase: () => Promise<BuildResult>;
+  onUpgradeOutpostReinforcement: (outpostId: string) => Promise<BuildResult>;
+  onRepairOutpost: (outpostId: string) => Promise<BuildResult>;
+  onRelocateBase: (destination: Axial) => Promise<BuildResult>;
+  onDispatchExpedition: (
+    target: Axial,
+    militiaCommitted: number,
+    junkyardKnightCommitted: number,
+    crossBowSniperCommitted: number,
+  ) => Promise<BuildResult>;
+  onAssaultDen: (
+    denId: string,
+    militiaCommitted: number,
+    junkyardKnightCommitted: number,
+    crossBowSniperCommitted: number,
+  ) => Promise<BuildResult>;
+  onGarrisonMilitia: (coord: Axial, count: number) => Promise<BuildResult>;
+  onGarrisonJunkyardKnight: (coord: Axial, count: number) => Promise<BuildResult>;
+  onGarrisonCrossBowSniper: (coord: Axial, count: number) => Promise<BuildResult>;
+  onRecallMilitia: (coord: Axial) => Promise<BuildResult>;
+  onBuildDock: (coord: Axial) => Promise<BuildResult>;
+  onBuildFishingBoat: (coord: Axial) => Promise<BuildResult>;
+  onBuildScoutSkiff: (coord: Axial) => Promise<BuildResult>;
+  onCollectDock: (coord: Axial) => Promise<BuildResult>;
+  onBuildWanderingScout: (coord: Axial) => Promise<BuildResult>;
+  /** New Game dialog (App.tsx) — same player, same map, progress reset. */
+  onReplayCurrent: () => void;
+  /** New Game dialog (App.tsx) — same player, a chosen (or freshly-generated) map. */
+  onStartNewSeed: (seed: number) => void;
+  /** New Game dialog (App.tsx) — drops back to onboarding. */
+  onNewPlayer: () => void;
+}) {
+  const hexCanvasRef = useRef<HexCanvasHandle>(null);
+  const [selected, setSelected] = useState<Axial | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [newGameDialogOpen, setNewGameDialogOpen] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [militiaToSend, setMilitiaToSend] = useState(1);
+  const [junkyardKnightToSend, setJunkyardKnightToSend] = useState(0);
+  const [crossBowSniperToSend, setCrossBowSniperToSend] = useState(0);
+  const [scoutsToTrain, setScoutsToTrain] = useState(1);
+  const [militiaToTrain, setMilitiaToTrain] = useState(1);
+  const [junkyardKnightToTrain, setJunkyardKnightToTrain] = useState(1);
+  const [crossBowSniperToTrain, setCrossBowSniperToTrain] = useState(1);
+  const [militiaToGarrison, setMilitiaToGarrison] = useState(1);
+  const [junkyardKnightToGarrison, setJunkyardKnightToGarrison] = useState(1);
+  const [crossBowSniperToGarrison, setCrossBowSniperToGarrison] = useState(1);
+
+  const ownedKeys = useMemo(() => new Set(territory.owned.map(axialKey)), [territory.owned]);
+  const isOwned = (coord: Axial) => ownedKeys.has(axialKey(coord));
+
+  const scoutedKeys = useMemo(() => new Set(scoutedTiles.map(axialKey)), [scoutedTiles]);
+  const isScouted = (coord: Axial) => scoutedKeys.has(axialKey(coord));
+
+  const tileAt = (coord: Axial): ExtractionTile | null =>
+    extractionTiles.find((tile) => axialKey(tile.coord) === axialKey(coord)) ?? null;
+
+  const pathAt = (coord: Axial): PathTile | null =>
+    pathTiles.find((tile) => axialKey(tile.coord) === axialKey(coord)) ?? null;
+
+  const towerAt = (coord: Axial): Tower | null =>
+    towers.find((t) => axialKey(t.coord) === axialKey(coord)) ?? null;
+
+  const wallAt = (coord: Axial): Wall | null => walls.find((w) => axialKey(w.coord) === axialKey(coord)) ?? null;
+
+  const barracksAt = (coord: Axial): Barracks | null =>
+    barracksList.find((b) => axialKey(b.coord) === axialKey(coord)) ?? null;
+
+  const dockAt = (coord: Axial): DockRecord | null =>
+    docks.find((d) => axialKey(d.coord) === axialKey(coord)) ?? null;
+
+  const outpostAt = (coord: Axial): OutpostRecord | null =>
+    outposts.find((o) => axialKey(o.coord) === axialKey(coord)) ?? null;
+
+  function affordable(cost: Partial<Record<ResourceType, number>>): boolean {
+    return Object.entries(cost).every(([res, amount]) => resources[res as ResourceType] >= (amount ?? 0));
+  }
+
+  /** How many units of a given per-unit cost the current resources can actually pay for — used to clamp "Max" buttons to what's affordable, not just what capacity allows. */
+  function maxAffordableQuantity(perUnitCost: Partial<Record<ResourceType, number>>): number {
+    let max = Infinity;
+    for (const [res, amount] of Object.entries(perUnitCost)) {
+      if (!amount) continue;
+      max = Math.min(max, Math.floor(resources[res as ResourceType] / amount));
+    }
+    return Number.isFinite(max) ? Math.max(0, max) : 0;
+  }
+
+  function buildOptionsFor(): BuildOption[] {
+    return RESOURCE_ORDER.map((resource) => {
+      const existingCount = extractionTiles.filter((tile) => tile.resource === resource).length;
+      const cost = scaledCostMap(tweaks.extraction_tiles[resource].build_cost_base, existingCount + 1);
+      return { resource, cost, affordable: affordable(cost) };
+    });
+  }
+
+  function tierUpgradeFor(tile: ExtractionTile): TierUpgradeOption | null {
+    if (tile.damaged || tile.upgrade) return null;
+    const targetTier = nextTier(tile.tier);
+    if (!targetTier) return null;
+    const cost = tierUpgradeCost(tweaks, tile.resource, targetTier);
+    return {
+      targetTier,
+      cost,
+      affordable: affordable(cost),
+      durationMinutes: tierUpgradeDurationMs(tweaks, targetTier) / 60_000,
+    };
+  }
+
+  function tierUpgradeInProgressFor(tile: ExtractionTile): UpgradeInProgress<ExtractionTier> | null {
+    if (!tile.upgrade) return null;
+    const durationMs = tierUpgradeDurationMs(tweaks, tile.upgrade.targetTier);
+    return { target: tile.upgrade.targetTier, remainingMs: remainingMs(tile.upgrade.startedAt, durationMs, now) };
+  }
+
+  function storageUpgradesFor(): StorageUpgradeOption[] {
+    return RESOURCE_ORDER.map((resource) => {
+      const level = storageLevels[resource];
+      const cost = storageUpgradeCost(tweaks, resource, level);
+      return { resource, level, capacity: storageCapacity(tweaks, level), cost, affordable: affordable(cost) };
+    });
+  }
+
+  function pathBuildOptionFor(): PathBuildOption {
+    const cost = pathBuildCost(tweaks, pathTiles.length + 1);
+    return { cost, affordable: affordable(cost) };
+  }
+
+  function pathUpgradeOptionFor(tile: PathTile): PathUpgradeOption | null {
+    if (tile.damaged || tile.upgrade) return null;
+    const targetTier = nextPathTier(tile.tier);
+    if (!targetTier) return null;
+    const cost = pathUpgradeCost(tweaks, targetTier);
+    return {
+      targetTier,
+      cost,
+      affordable: affordable(cost),
+      durationMinutes: pathUpgradeDurationMs(tweaks, targetTier) / 60_000,
+    };
+  }
+
+  function pathUpgradeInProgressFor(tile: PathTile): UpgradeInProgress<PathTier> | null {
+    if (!tile.upgrade) return null;
+    const durationMs = pathUpgradeDurationMs(tweaks, tile.upgrade.targetTier);
+    return { target: tile.upgrade.targetTier, remainingMs: remainingMs(tile.upgrade.startedAt, durationMs, now) };
+  }
+
+  function towerBuildOptionFor(): SimpleCostOption {
+    const cost = towerBuildCost(tweaks, towers.length + 1);
+    return { cost, affordable: affordable(cost) };
+  }
+
+  function towerUpgradeOptionFor(t: Tower): TowerUpgradeOption | null {
+    if (t.damaged || t.upgrade) return null;
+    const targetLevel = nextTowerLevel(t.level);
+    if (!targetLevel) return null;
+    const cost = towerUpgradeCost(tweaks, targetLevel);
+    return {
+      targetLevel,
+      cost,
+      affordable: affordable(cost),
+      durationMinutes: towerUpgradeDurationMs(tweaks, targetLevel) / 60_000,
+    };
+  }
+
+  function towerUpgradeInProgressFor(t: Tower): UpgradeInProgress<number> | null {
+    if (!t.upgrade) return null;
+    const durationMs = towerUpgradeDurationMs(tweaks, t.upgrade.targetLevel);
+    return { target: t.upgrade.targetLevel, remainingMs: remainingMs(t.upgrade.startedAt, durationMs, now) };
+  }
+
+  function wallBuildOptionFor(): SimpleCostOption {
+    const cost = wallBuildCost(tweaks, walls.length + 1);
+    return { cost, affordable: affordable(cost) };
+  }
+
+  function wallUpgradeOptionFor(w: Wall): WallUpgradeOption | null {
+    if (w.damaged || w.action) return null;
+    const targetTier = nextWallTier(w.tier);
+    if (!targetTier) return null;
+    const cost = wallUpgradeCost(tweaks, targetTier);
+    return {
+      targetTier,
+      cost,
+      affordable: affordable(cost),
+      durationMinutes: wallUpgradeDurationMs(tweaks, targetTier) / 60_000,
+    };
+  }
+
+  function wallRepairOptionFor(w: Wall): WallRepairOption | null {
+    if (w.damaged || w.action) return null;
+    const maxHp = maxWallDurability(tweaks, w.tier);
+    if (w.durability >= maxHp) return null;
+    const cost = wallRepairCost(w, maxHp);
+    return {
+      cost,
+      affordable: affordable(cost),
+      durationMinutes: wallRepairDurationMs(tweaks, w, maxHp) / 60_000,
+    };
+  }
+
+  function wallActionStatusFor(w: Wall): WallActionStatus | null {
+    if (!w.action) return null;
+    if (w.action.kind === "upgrade") {
+      const durationMs = wallUpgradeDurationMs(tweaks, w.action.targetTier);
+      return { kind: "upgrade", targetTier: w.action.targetTier, remainingMs: remainingMs(w.action.startedAt, durationMs, now) };
+    }
+    const maxHp = maxWallDurability(tweaks, w.tier);
+    const durationMs = wallRepairDurationMs(tweaks, w, maxHp);
+    return { kind: "repair", remainingMs: remainingMs(w.action.startedAt, durationMs, now) };
+  }
+
+  function barracksBuildOptionFor(): SimpleCostOption {
+    const cost = barracksBuildCost(tweaks, barracksList.length + 1);
+    return { cost, affordable: affordable(cost) };
+  }
+
+  function dockBuildOptionFor(): SimpleCostOption {
+    const cost = scaledCostMap(tweaks.docks.build_cost_base, docks.length + 1);
+    return { cost, affordable: affordable(cost) };
+  }
+
+  /** Null once already built or under construction — a dock gets at most one fishing boat. */
+  function fishingBoatOptionFor(d: DockRecord): SimpleCostOption | null {
+    if (d.fishingBoat || d.fishingBoatUpgrade) return null;
+    const cost = tweaks.docks.fishing_boat.cost;
+    return { cost, affordable: affordable(cost) };
+  }
+
+  function fishingBoatInProgressFor(d: DockRecord): { remainingMs: number } | null {
+    if (!d.fishingBoatUpgrade) return null;
+    const durationMs = tweaks.docks.fishing_boat.build_time_minutes * 60_000;
+    return { remainingMs: remainingMs(d.fishingBoatUpgrade.startedAt, durationMs, now) };
+  }
+
+  /** Null once this dock already has as many skiffs (built or under construction) as tweaks.docks.scout_skiff.max_per_dock allows. */
+  function scoutSkiffOptionFor(d: DockRecord): SkiffBuildOption | null {
+    const existing = scoutSkiffs.filter((s) => axialKey(s.homeDockCoord) === axialKey(d.coord)).length;
+    if (existing >= tweaks.docks.scout_skiff.max_per_dock) return null;
+    const cost = tweaks.docks.scout_skiff.cost;
+    return { cost, affordable: affordable(cost), durationMinutes: tweaks.docks.scout_skiff.build_time_minutes };
+  }
+
+  /** Non-null while this dock's newest scout skiff is still under construction. */
+  function scoutSkiffInProgressFor(d: DockRecord): { remainingMs: number } | null {
+    const skiff = scoutSkiffs.find((s) => axialKey(s.homeDockCoord) === axialKey(d.coord) && s.buildStartedAt !== null);
+    if (!skiff || skiff.buildStartedAt === null) return null;
+    const durationMs = tweaks.docks.scout_skiff.build_time_minutes * 60_000;
+    return { remainingMs: remainingMs(skiff.buildStartedAt, durationMs, now) };
+  }
+
+  /** Null once this barracks already has as many wandering scouts (built or under construction) as allowed. */
+  function wanderingScoutOptionFor(b: Barracks): WanderingScoutOption | null {
+    const existing = wanderingScouts.filter((s) => axialKey(s.homeBarracksCoord) === axialKey(b.coord)).length;
+    if (existing >= tweaks.units.wandering_scout.max_per_barracks) return null;
+    const scoutCost = tweaks.units.wandering_scout.scout_cost;
+    const cost = tweaks.units.wandering_scout.cost;
+    return {
+      scoutCost,
+      cost,
+      affordable: units.scoutStockpile >= scoutCost && affordable(cost),
+      durationMinutes: tweaks.units.wandering_scout.build_time_minutes,
+    };
+  }
+
+  /** Non-null while this barracks's newest wandering scout is still under construction. */
+  function wanderingScoutInProgressFor(b: Barracks): { remainingMs: number } | null {
+    const scout = wanderingScouts.find(
+      (s) => axialKey(s.homeBarracksCoord) === axialKey(b.coord) && s.buildStartedAt !== null,
+    );
+    if (!scout || scout.buildStartedAt === null) return null;
+    const durationMs = tweaks.units.wandering_scout.build_time_minutes * 60_000;
+    return { remainingMs: remainingMs(scout.buildStartedAt, durationMs, now) };
+  }
+
+  function barracksUpgradeOptionFor(b: Barracks): BarracksUpgradeOption | null {
+    if (b.damaged || b.upgrade) return null;
+    const targetLevel = nextBarracksLevel(b.level);
+    if (!targetLevel) return null;
+    const cost = barracksUpgradeCost(tweaks, targetLevel);
+    return {
+      targetLevel,
+      cost,
+      affordable: affordable(cost),
+      durationMinutes: barracksUpgradeDurationMs(tweaks, targetLevel) / 60_000,
+    };
+  }
+
+  function barracksUpgradeInProgressFor(b: Barracks): UpgradeInProgress<number> | null {
+    if (!b.upgrade) return null;
+    const durationMs = barracksUpgradeDurationMs(tweaks, b.upgrade.targetLevel);
+    return { target: b.upgrade.targetLevel, remainingMs: remainingMs(b.upgrade.startedAt, durationMs, now) };
+  }
+
+  function scoutTrainOptionFor(): TrainOption | null {
+    const capacityGap = scoutCapacityFor(tweaks, barracksList) - units.scoutStockpile;
+    if (capacityGap <= 0) return null;
+    const perUnitCost = scoutTrainCost(tweaks);
+    const maxQuantity = Math.min(capacityGap, maxAffordableQuantity(perUnitCost));
+    const totalCost: Partial<Record<ResourceType, number>> = {};
+    for (const [key, amount] of Object.entries(perUnitCost)) totalCost[key as ResourceType] = amount * scoutsToTrain;
+    const rushNoise = tweaks.noise.one_time_action_noise.rush_train_scout * scoutsToTrain;
+    return { totalCost, affordable: affordable(totalCost), maxQuantity, rushNoise };
+  }
+
+  function militiaTrainOptionFor(): TrainOption | null {
+    const capacityGap = militiaCapacityFor(tweaks, barracksList) - units.militiaCount;
+    if (capacityGap <= 0) return null;
+    const perUnitCost = militiaTrainCost(tweaks);
+    const maxQuantity = Math.min(capacityGap, maxAffordableQuantity(perUnitCost));
+    const totalCost: Partial<Record<ResourceType, number>> = {};
+    for (const [key, amount] of Object.entries(perUnitCost)) totalCost[key as ResourceType] = amount * militiaToTrain;
+    const rushNoise = tweaks.noise.one_time_action_noise.rush_train_militia * militiaToTrain;
+    return { totalCost, affordable: affordable(totalCost), maxQuantity, rushNoise };
+  }
+
+  /** No rush-train variant for this unit (calm queue only) — capacityGap is 0 until a barracks meets units.junkyard_knight.min_barracks_level (engine/barracks.ts:junkyardKnightCapacity). */
+  function junkyardKnightTrainOptionFor(): SimpleTrainOption | null {
+    const capacityGap = junkyardKnightCapacityFor(tweaks, barracksList) - units.junkyardKnightCount;
+    if (capacityGap <= 0) return null;
+    const perUnitCost = junkyardKnightTrainCost(tweaks);
+    const maxQuantity = Math.min(capacityGap, maxAffordableQuantity(perUnitCost));
+    const totalCost: Partial<Record<ResourceType, number>> = {};
+    for (const [key, amount] of Object.entries(perUnitCost)) totalCost[key as ResourceType] = amount * junkyardKnightToTrain;
+    return { totalCost, affordable: affordable(totalCost), maxQuantity };
+  }
+
+  /** No rush-train variant for this unit (calm queue only) — capacityGap is 0 until a barracks meets units.cross_bow_sniper.min_barracks_level (engine/barracks.ts:crossBowSniperCapacity). */
+  function crossBowSniperTrainOptionFor(): SimpleTrainOption | null {
+    const capacityGap = crossBowSniperCapacityFor(tweaks, barracksList) - units.crossBowSniperCount;
+    if (capacityGap <= 0) return null;
+    const perUnitCost = crossBowSniperTrainCost(tweaks);
+    const maxQuantity = Math.min(capacityGap, maxAffordableQuantity(perUnitCost));
+    const totalCost: Partial<Record<ResourceType, number>> = {};
+    for (const [key, amount] of Object.entries(perUnitCost)) totalCost[key as ResourceType] = amount * crossBowSniperToTrain;
+    return { totalCost, affordable: affordable(totalCost), maxQuantity };
+  }
+
+  const trainingCapacity = barracksTrainingCapacity(barracksList);
+
+  const scoutQueueStatus: TrainQueueStatus | null = units.scoutQueue
+    ? {
+        remaining: units.scoutQueue.remaining,
+        msUntilNextMs: remainingMs(
+          units.scoutQueue.currentUnitStartedAt,
+          scoutTrainDurationMs(tweaks, trainingCapacity),
+          now,
+        ),
+      }
+    : null;
+
+  const militiaQueueStatus: TrainQueueStatus | null = units.militiaQueue
+    ? {
+        remaining: units.militiaQueue.remaining,
+        msUntilNextMs: remainingMs(
+          units.militiaQueue.currentUnitStartedAt,
+          militiaTrainDurationMs(tweaks, trainingCapacity),
+          now,
+        ),
+      }
+    : null;
+
+  const junkyardKnightQueueStatus: TrainQueueStatus | null = units.junkyardKnightQueue
+    ? {
+        remaining: units.junkyardKnightQueue.remaining,
+        msUntilNextMs: remainingMs(
+          units.junkyardKnightQueue.currentUnitStartedAt,
+          junkyardKnightTrainDurationMs(tweaks, trainingCapacity),
+          now,
+        ),
+      }
+    : null;
+
+  const crossBowSniperQueueStatus: TrainQueueStatus | null = units.crossBowSniperQueue
+    ? {
+        remaining: units.crossBowSniperQueue.remaining,
+        msUntilNextMs: remainingMs(
+          units.crossBowSniperQueue.currentUnitStartedAt,
+          crossBowSniperTrainDurationMs(tweaks, trainingCapacity),
+          now,
+        ),
+      }
+    : null;
+
+  function baseUpgradeOptionFor(): BaseUpgradeOption | null {
+    if (base.upgrade) return null;
+    const targetLevel = base.level + 1;
+    const cost = baseUpgradeCost(tweaks, targetLevel);
+    return { targetLevel, cost, affordable: affordable(cost), durationMs: baseUpgradeDurationMs(tweaks, targetLevel) };
+  }
+
+  /** Instant on purchase — unlike base-level upgrades, reinforcement has no duration in tweaks.jsonc (engine/base.ts). */
+  function reinforcementUpgradeOptionFor(): ReinforcementUpgradeOption | null {
+    const targetLevel = base.reinforcementLevel + 1;
+    if (targetLevel > maxReinforcementLevel(base.level)) return null;
+    const cost = reinforcementUpgradeCost(tweaks, targetLevel);
+    return { targetLevel, hp: baseReinforcementHp(tweaks, targetLevel), cost, affordable: affordable(cost) };
+  }
+
+  /** Null once base.currentHp is already at max — nothing to repair. */
+  function baseRepairOptionFor(): SimpleCostOption | null {
+    const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
+    if (base.currentHp >= maxHp) return null;
+    const cost = baseRepairCost(tweaks, base.currentHp, maxHp, base.reinforcementLevel);
+    return { cost, affordable: affordable(cost) };
+  }
+
+  /**
+   * Outpost equivalent of reinforcementUpgradeOptionFor — same cap
+   * (maxOutpostReinforcementLevel(base.level)), paid from the shared
+   * `resources` pool same as everywhere else on this screen (an outpost's
+   * connected tiles feed that same pool, engine/tick.ts:accrueResources).
+   */
+  function outpostReinforcementUpgradeOptionFor(outpost: OutpostRecord): ReinforcementUpgradeOption | null {
+    const targetLevel = outpost.reinforcementLevel + 1;
+    if (targetLevel > maxOutpostReinforcementLevel(base.level)) return null;
+    const cost = outpostReinforcementUpgradeCost(tweaks, targetLevel);
+    return { targetLevel, hp: outpostReinforcementHp(tweaks, targetLevel), cost, affordable: affordable(cost) };
+  }
+
+  /** Outpost equivalent of baseRepairOptionFor — null once at max HP, cost checked against the shared resource pool. */
+  function outpostRepairOptionFor(outpost: OutpostRecord): SimpleCostOption | null {
+    const maxHp = outpostReinforcementHp(tweaks, outpost.reinforcementLevel);
+    if (outpost.currentHp >= maxHp) return null;
+    const cost = outpostRepairCost(tweaks, outpost.currentHp, maxHp, outpost.reinforcementLevel);
+    return { cost, affordable: affordable(cost) };
+  }
+
+  const baseUpgradeInProgress = base.upgrade
+    ? {
+        targetLevel: base.upgrade.targetLevel,
+        remainingMs: Math.max(
+          0,
+          baseUpgradeDurationMs(tweaks, base.upgrade.targetLevel) - (now - base.upgrade.startedAt),
+        ),
+      }
+    : null;
+
+  const baseRelocationInProgress = base.relocation
+    ? {
+        destination: base.relocation.destination,
+        remainingMs: Math.max(
+          0,
+          baseRelocationDurationMs(tweaks, axialDistance(territory.base, base.relocation.destination)) -
+            (now - base.relocation.startedAt),
+        ),
+      }
+    : null;
+
+  /**
+   * Null when there's no known route yet (no barracks, or the destination
+   * isn't reachable through owned-or-scouted ground) — same "hide the whole
+   * block" convention the old attackOption used. Recomputed on every render
+   * since it depends on the currently-typed unit counts (provisions cost
+   * scales with party size), same as train/garrison options already do.
+   */
+  function expeditionRouteOptionFor(coord: Axial): ExpeditionOption | null {
+    const route = findBestExpeditionRoute(
+      tweaks,
+      world.seed,
+      barracksList,
+      territory,
+      scoutedTiles,
+      tweaks.game.grid_size,
+      coord,
+    );
+    if (!route) return null;
+    const partySize = militiaToSend + junkyardKnightToSend + crossBowSniperToSend;
+    const provisionsCost: Partial<Record<ResourceType, number>> = {
+      food: expeditionProvisionsCost(tweaks, partySize, route.cost),
+    };
+    return {
+      distanceTiles: route.path.length - 1,
+      pathCost: route.cost,
+      provisionsCost,
+      affordable: affordable(provisionsCost),
+      etaMs: expeditionTravelDurationMs(tweaks, route.cost),
+    };
+  }
+
+  /**
+   * Null when there's no known route to the den yet (no barracks, or the den
+   * hasn't been scouted — findBestExpeditionRoute's allowedTiles gate means
+   * an unscouted den simply can't be reached) — same "hide the whole block"
+   * convention as expeditionRouteOptionFor, which this otherwise mirrors
+   * exactly (same militiaToSend/etc inputs — a den assault and an expedition
+   * draw from the same committed-unit pool, engine/garrisons.ts).
+   */
+  function denAssaultOptionFor(den: DenRecord): DenAssaultOption | null {
+    const route = findBestExpeditionRoute(
+      tweaks,
+      world.seed,
+      barracksList,
+      territory,
+      scoutedTiles,
+      tweaks.game.grid_size,
+      den.coord,
+    );
+    if (!route) return null;
+    const partySize = militiaToSend + junkyardKnightToSend + crossBowSniperToSend;
+    const provisionsCost: Partial<Record<ResourceType, number>> = {
+      food: expeditionProvisionsCost(tweaks, partySize, route.cost),
+    };
+    return {
+      distanceTiles: route.path.length - 1,
+      pathCost: route.cost,
+      provisionsCost,
+      affordable: affordable(provisionsCost),
+      etaMs: expeditionTravelDurationMs(tweaks, route.cost),
+      denDefense: denDefense(tweaks, den.level),
+    };
+  }
+
+  /** Null while a den isn't under siege — see engine/dens.ts:resolveHoldPeriod for the outcomes this display is tracking toward. */
+  function denSiegeStatusFor(den: DenRecord): DenSiegeStatus | null {
+    if (!den.siege) return null;
+    const holdDurationMs = tweaks.dens.siege.hold_duration_minutes * 60_000;
+    const waveIntervalMs = tweaks.dens.siege.wave_interval_minutes * 60_000;
+    return {
+      holdRemainingMs: remainingMs(den.siege.startedAt, holdDurationMs, now),
+      nextWaveInMs: remainingMs(den.siege.lastWaveAt, waveIntervalMs, now),
+      nextWaveSize: lastStandWaveSize(tweaks, den.level, den.siege.waveIndex),
+      currentDefense: holdDefenseAt(tweaks, den.coord, towers, walls, garrisons),
+    };
+  }
+
+  /**
+   * Null unless a DenAssaultRecord is currently in transit toward this den
+   * (dispatched but not yet arrived) — the committed party is already
+   * unavailable (engine/garrisons.ts:availableMilitia etc.) the moment it's
+   * sent, so without this the den's own tile popup would look completely
+   * unchanged and give no sign anything is happening until the assault
+   * resolves. Distinct from denSiegeStatus, which only starts once the
+   * assault has already arrived and won.
+   */
+  function denAssaultInProgressFor(den: DenRecord): { etaMs: number } | null {
+    const assault = denAssaults.find((a) => a.denId === den.id);
+    if (!assault) return null;
+    return { etaMs: remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now) };
+  }
+
+  /** Null unless a garrison recalled from this coord is still marching home — see App.tsx:handleRecallMilitia. */
+  function recallInProgressFor(coord: Axial): {
+    militia: number;
+    junkyardKnight: number;
+    crossBowSniper: number;
+    etaMs: number;
+  } | null {
+    const recall = garrisonRecalls.find((r) => axialEquals(r.coord, coord));
+    if (!recall) return null;
+    return {
+      militia: recall.militiaCommitted,
+      junkyardKnight: recall.junkyardKnightCommitted,
+      crossBowSniper: recall.crossBowSniperCommitted,
+      etaMs: remainingMs(recall.departedAt, recall.arriveAt - recall.departedAt, now),
+    };
+  }
+
+  /**
+   * Null once base level or resource cost isn't met, a relocation is already
+   * in progress, the coord is the current base, unknown ground, water, or
+   * occupied by a structure — same "hide the whole block" convention as
+   * expeditionRouteOptionFor. Any owned-or-scouted, empty, non-water tile is
+   * a valid destination (not just unowned ground, unlike expeditions) — a
+   * relocation doesn't fight through anything, it's a countdown then a
+   * teleport, so an already-owned tile with a great defensive position
+   * (mountain chokepoint, water-backed approach) is just as valid a target.
+   */
+  function relocationOptionFor(coord: Axial): RelocationOption | null {
+    if (!canRelocateBase(tweaks, base.level) || base.relocation) return null;
+    if (axialEquals(coord, territory.base)) return null;
+    if (!isOwned(coord) && !isScouted(coord)) return null;
+    if (terrainAt(world.seed, coord) === "water") return null;
+    if (!selectedEmpty) return null;
+    const distanceTiles = axialDistance(territory.base, coord);
+    const cost = baseRelocationCost(tweaks, distanceTiles);
+    return {
+      distanceTiles,
+      cost,
+      affordable: affordable(cost),
+      durationMs: baseRelocationDurationMs(tweaks, distanceTiles),
+    };
+  }
+
+  async function handleRelocateBase() {
+    if (!selected) return;
+    const result = await onRelocateBase(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  function selectTile(coord: Axial) {
+    setActionError(null);
+    setSelected(coord);
+    setMilitiaToSend(1);
+    setScoutsToTrain(1);
+    setMilitiaToTrain(1);
+    setMilitiaToGarrison(1);
+  }
+
+  async function handleBuild(resource: ResourceType) {
+    if (!selected) return;
+    const result = await onBuildExtractionTile(selected, resource);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleUpgradeTier() {
+    if (!selected) return;
+    const result = await onUpgradeExtractionTile(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleUpgradeStorage(resource: ResourceType) {
+    const result = await onUpgradeStorage(resource);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleCollect() {
+    if (!selected) return;
+    const result = await onCollectTile(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleBuildPath() {
+    if (!selected) return;
+    const result = await onBuildPath(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleUpgradePath() {
+    if (!selected) return;
+    const result = await onUpgradePath(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleBuildTower() {
+    if (!selected) return;
+    const result = await onBuildTower(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleUpgradeTower() {
+    if (!selected) return;
+    const result = await onUpgradeTower(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleBuildWall() {
+    if (!selected) return;
+    const result = await onBuildWall(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleUpgradeWall() {
+    if (!selected) return;
+    const result = await onUpgradeWall(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleRepairWall() {
+    if (!selected) return;
+    const result = await onRepairWall(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleDemolish() {
+    if (!selected) return;
+    if (!window.confirm("Demolish this structure? You'll only recover a fraction of what you spent on it.")) return;
+    const result = await onDemolish(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleBuildBarracks() {
+    if (!selected) return;
+    const result = await onBuildBarracks(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleUpgradeBarracks() {
+    if (!selected) return;
+    const result = await onUpgradeBarracks(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleBuildDock() {
+    if (!selected) return;
+    const result = await onBuildDock(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleBuildFishingBoat() {
+    if (!selected) return;
+    const result = await onBuildFishingBoat(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleBuildScoutSkiff() {
+    if (!selected) return;
+    const result = await onBuildScoutSkiff(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleBuildWanderingScout() {
+    if (!selected) return;
+    const result = await onBuildWanderingScout(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleCollectDock() {
+    if (!selected) return;
+    const result = await onCollectDock(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleTrainScouts() {
+    const result = await onTrainScouts(scoutsToTrain);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleTrainMilitia() {
+    const result = await onTrainMilitia(militiaToTrain);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleTrainJunkyardKnight() {
+    const result = await onTrainJunkyardKnight(junkyardKnightToTrain);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleTrainCrossBowSniper() {
+    const result = await onTrainCrossBowSniper(crossBowSniperToTrain);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  // Skips the "fill the field, then press Train" two-step — Max trains the
+  // max quantity immediately.
+  async function handleMaxScouts() {
+    const option = scoutTrainOptionFor();
+    if (!option) return;
+    if (option.maxQuantity <= 0) {
+      setActionError("Not enough resources to train any scouts");
+      return;
+    }
+    setScoutsToTrain(option.maxQuantity);
+    const result = await onTrainScouts(option.maxQuantity);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleMaxMilitia() {
+    const option = militiaTrainOptionFor();
+    if (!option) return;
+    if (option.maxQuantity <= 0) {
+      setActionError("Not enough resources to train any militia");
+      return;
+    }
+    setMilitiaToTrain(option.maxQuantity);
+    const result = await onTrainMilitia(option.maxQuantity);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleMaxJunkyardKnight() {
+    const option = junkyardKnightTrainOptionFor();
+    if (!option) return;
+    if (option.maxQuantity <= 0) {
+      setActionError("Not enough resources to train any junkyard knights");
+      return;
+    }
+    setJunkyardKnightToTrain(option.maxQuantity);
+    const result = await onTrainJunkyardKnight(option.maxQuantity);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleMaxCrossBowSniper() {
+    const option = crossBowSniperTrainOptionFor();
+    if (!option) return;
+    if (option.maxQuantity <= 0) {
+      setActionError("Not enough resources to train any cross-bow snipers");
+      return;
+    }
+    setCrossBowSniperToTrain(option.maxQuantity);
+    const result = await onTrainCrossBowSniper(option.maxQuantity);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleRushTrainScouts() {
+    const result = await onRushTrainScouts(scoutsToTrain);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleRushTrainMilitia() {
+    const result = await onRushTrainMilitia(militiaToTrain);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleScoutTile() {
+    if (!selected) return;
+    const result = await onScoutTile(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleUpgradeBase() {
+    const result = await onUpgradeBase();
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleUpgradeReinforcement() {
+    const result = await onUpgradeReinforcement();
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleDispatchExpedition() {
+    if (!selected) return;
+    const result = await onDispatchExpedition(selected, militiaToSend, junkyardKnightToSend, crossBowSniperToSend);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleAssaultDen() {
+    if (!selectedDen) return;
+    const result = await onAssaultDen(selectedDen.id, militiaToSend, junkyardKnightToSend, crossBowSniperToSend);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleGarrisonMilitia() {
+    if (!selected) return;
+    const result = await onGarrisonMilitia(selected, militiaToGarrison);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleMaxGarrison() {
+    if (!selected) return;
+    const maxCount = availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls);
+    if (maxCount <= 0) return;
+    setMilitiaToGarrison(maxCount);
+    const result = await onGarrisonMilitia(selected, maxCount);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleGarrisonJunkyardKnight() {
+    if (!selected) return;
+    const result = await onGarrisonJunkyardKnight(selected, junkyardKnightToGarrison);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleMaxGarrisonJunkyardKnight() {
+    if (!selected) return;
+    const maxCount = availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls);
+    if (maxCount <= 0) return;
+    setJunkyardKnightToGarrison(maxCount);
+    const result = await onGarrisonJunkyardKnight(selected, maxCount);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleGarrisonCrossBowSniper() {
+    if (!selected) return;
+    const result = await onGarrisonCrossBowSniper(selected, crossBowSniperToGarrison);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleMaxGarrisonCrossBowSniper() {
+    if (!selected) return;
+    const maxCount = availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls);
+    if (maxCount <= 0) return;
+    setCrossBowSniperToGarrison(maxCount);
+    const result = await onGarrisonCrossBowSniper(selected, maxCount);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleRecallMilitia() {
+    if (!selected) return;
+    const result = await onRecallMilitia(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleRepairStructure() {
+    if (!selected) return;
+    const result = await onRepairStructure(selected);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleRepairBase() {
+    const result = await onRepairBase();
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleUpgradeOutpostReinforcement() {
+    if (!selectedOutpost) return;
+    const result = await onUpgradeOutpostReinforcement(selectedOutpost.id);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  async function handleRepairOutpost() {
+    if (!selectedOutpost) return;
+    const result = await onRepairOutpost(selectedOutpost.id);
+    setActionError(result.ok ? null : result.reason);
+  }
+
+  /**
+   * A structure a horde captured stays in place but goes `damaged` (see
+   * markCapturedStructuresDamaged, engine/hordes.ts) — this surfaces the
+   * fixed-percentage-of-original-build-cost repair option (repairCost,
+   * engine/formulas.ts) once the player has reclaimed the tile. Generic over
+   * whichever of the five structure kinds is actually sitting there, since
+   * only one can occupy a tile at a time.
+   */
+  function repairOptionFor(
+    structure: { damaged: boolean; buildCost: Partial<Record<ResourceType, number>> } | null,
+  ): SimpleCostOption | null {
+    if (!structure || !structure.damaged) return null;
+    const cost = repairCost(tweaks, structure.buildCost);
+    return { cost, affordable: affordable(cost) };
+  }
+
+  const selectedTile = selected ? tileAt(selected) : null;
+  const selectedPath = selected ? pathAt(selected) : null;
+  const selectedTower = selected ? towerAt(selected) : null;
+  const selectedWall = selected ? wallAt(selected) : null;
+  const selectedBarracks = selected ? barracksAt(selected) : null;
+  const selectedDock = selected ? dockAt(selected) : null;
+  const selectedIsBase = selected ? axialEquals(selected, territory.base) : false;
+  const selectedDen: DenRecord | null = selected ? (dens.find((d) => axialEquals(d.coord, selected)) ?? null) : null;
+  const selectedOutpost: OutpostRecord | null = selected ? outpostAt(selected) : null;
+  // A den's or outpost's own core coordinate can end up in territory.owned
+  // (the hold/starting ring, axialSpiral, includes its center) but still
+  // isn't buildable ground — same exclusion as the main base tile.
+  const selectedEmpty =
+    !selectedTile &&
+    !selectedPath &&
+    !selectedTower &&
+    !selectedWall &&
+    !selectedBarracks &&
+    !selectedDock &&
+    !selectedDen &&
+    !selectedOutpost;
+  const selectedConnected =
+    selected && selectedTile
+      ? findResourceTileConnection(extractionTiles, pathTiles, territory.base, selected) !== null
+      : false;
+  // A horde can be sitting on a tile that's back in territory.owned (a
+  // manual militia assault reclaims ownership without necessarily clearing
+  // the horde standing there) — repairing a structure it's still occupying
+  // would just hand it straight back, so the repair option is blocked until
+  // the tile is actually clear (engine-enforced too, see App.tsx:handleRepairStructure).
+  const selectedHordeOccupied = selected
+    ? hordes.some((h) => axialKey(h.path[h.pathIndex]) === axialKey(selected))
+    : false;
+  // Same reasoning as selectedHordeOccupied, but adjacency rather than exact
+  // tile — a horde grinding on the base from next door would just chip
+  // straight back through a repair, same as handleRepairBase enforces.
+  const baseAdjacentHordeOccupied = hordes.some((h) => axialDistance(h.path[h.pathIndex], territory.base) <= 1);
+  const selectedNoiseFloorContribution = selectedTile
+    ? extractionFloorContribution(tweaks, selectedTile)
+    : selectedPath
+      ? pathFloorContribution(tweaks, selectedPath)
+      : selectedTower
+        ? towerFloorContribution(tweaks, selectedTower)
+        : selectedWall
+          ? wallFloorContribution(tweaks, selectedWall)
+          : null;
+  const selectedStructure = selectedTile ?? selectedPath ?? selectedTower ?? selectedWall ?? selectedBarracks;
+  const selectedGarrison = selected ? garrisonAt(garrisons, selected) : null;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column" }}>
+      <header
+        style={{
+          padding: "0.5rem 1rem",
+          flex: "0 0 auto",
+          display: "flex",
+          alignItems: "center",
+          gap: "1.5rem",
+        }}
+      >
+        {/* Placeholder menu — functional, not yet styled; due for a full UI pass. */}
+        <div style={{ position: "relative" }}>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            title="Game menu"
+            aria-label="Game menu"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: "1.1rem",
+              lineHeight: 1,
+              padding: 0,
+            }}
+          >
+            ☰
+          </button>
+          {menuOpen && (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                marginTop: "0.5rem",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.25rem",
+                background: "#1a1a1a",
+                border: "1px solid #444",
+                borderRadius: 4,
+                padding: "0.5rem",
+                zIndex: 10,
+                minWidth: 180,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  hexCanvasRef.current?.recenterOnBase();
+                }}
+              >
+                Recenter on Base
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setNewGameDialogOpen(true);
+                }}
+              >
+                New Game
+              </button>
+              <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem" }}>Seed: {world.seed}</p>
+            </div>
+          )}
+        </div>
+        <strong style={{ color: player.color }}>{player.name}</strong>
+        <div style={{ display: "flex", gap: "1rem" }}>
+          {RESOURCE_ORDER.map((type) => (
+            <span key={type}>
+              {type}: {Math.floor(resources[type])}
+            </span>
+          ))}
+        </div>
+        <span>noise: {Math.floor(noise.value)}db</span>
+        <span>
+          scouts: {units.scoutStockpile}/{scoutCapacityFor(tweaks, barracksList)}
+        </span>
+        <span>
+          militia: {units.militiaCount}/{militiaCapacityFor(tweaks, barracksList)}
+          {garrisonedMilitiaTotal(garrisons) > 0 && ` (${garrisonedMilitiaTotal(garrisons)} garrisoned)`}
+        </span>
+        <span>base L{base.level}</span>
+        <span>
+          slots: {totalStructureCount(tweaks, extractionTiles, pathTiles, towers, walls, barracksList, docks).toFixed(1)}/
+          {buildSlotCap(tweaks, base.level)}
+        </span>
+      </header>
+      <div style={{ flex: "1 1 auto", minHeight: 0 }}>
+        <HexCanvas
+          ref={hexCanvasRef}
+          seed={world.seed}
+          gridSize={tweaks.game.grid_size}
+          tweaks={tweaks}
+          base={territory.base}
+          owned={territory.owned}
+          extractionTiles={extractionTiles}
+          pathTiles={pathTiles}
+          towers={towers}
+          walls={walls}
+          barracksList={barracksList}
+          garrisons={garrisons}
+          scoutedTiles={scoutedTiles}
+          dens={dens}
+          outposts={outposts}
+          hordes={hordes}
+          expeditions={expeditions}
+          denAssaults={denAssaults}
+          now={now}
+          docks={docks}
+          scoutSkiffs={scoutSkiffs}
+          wanderingScouts={wanderingScouts}
+          relocationDestination={base.relocation?.destination ?? null}
+          selected={selected}
+          playerColor={player.color}
+          onTileClick={selectTile}
+        />
+      </div>
+      {selected && (
+        <TilePopup
+          coord={selected}
+          owned={isOwned(selected)}
+          terrain={isOwned(selected) || isScouted(selected) ? terrainAt(world.seed, selected) : null}
+          isScouted={isScouted(selected)}
+          isBase={selectedIsBase}
+          existingTile={selectedTile}
+          noiseFloorContribution={selectedNoiseFloorContribution}
+          stockpileCap={tweaks.storage.capacity_base_per_resource}
+          connected={selectedConnected}
+          buildOptions={
+            isOwned(selected) && selectedEmpty && !selectedIsBase && isBuildableLand(world.seed, selected)
+              ? buildOptionsFor()
+              : null
+          }
+          tierUpgrade={selectedTile && isOwned(selected) ? tierUpgradeFor(selectedTile) : null}
+          tierUpgradeInProgress={selectedTile ? tierUpgradeInProgressFor(selectedTile) : null}
+          storageUpgrades={selectedIsBase ? storageUpgradesFor() : null}
+          pathTile={selectedPath}
+          pathBuildOption={
+            isOwned(selected) && selectedEmpty && !selectedIsBase && isBuildableLand(world.seed, selected)
+              ? pathBuildOptionFor()
+              : null
+          }
+          pathUpgradeOption={selectedPath && isOwned(selected) ? pathUpgradeOptionFor(selectedPath) : null}
+          pathUpgradeInProgress={selectedPath ? pathUpgradeInProgressFor(selectedPath) : null}
+          tower={selectedTower}
+          towerStats={
+            selectedTower
+              ? { range: towerRange(tweaks, selectedTower.level), damage: towerDamage(tweaks, selectedTower.level) }
+              : null
+          }
+          towerBuildOption={
+            isOwned(selected) && selectedEmpty && !selectedIsBase && isBuildableLand(world.seed, selected)
+              ? towerBuildOptionFor()
+              : null
+          }
+          towerUpgradeOption={selectedTower && isOwned(selected) ? towerUpgradeOptionFor(selectedTower) : null}
+          towerUpgradeInProgress={selectedTower ? towerUpgradeInProgressFor(selectedTower) : null}
+          wall={selectedWall}
+          wallMaxDurability={selectedWall ? maxWallDurability(tweaks, selectedWall.tier) : null}
+          wallBuildOption={
+            isOwned(selected) && selectedEmpty && !selectedIsBase && isBuildableLand(world.seed, selected)
+              ? wallBuildOptionFor()
+              : null
+          }
+          wallUpgradeOption={selectedWall && isOwned(selected) ? wallUpgradeOptionFor(selectedWall) : null}
+          wallRepairOption={selectedWall && isOwned(selected) ? wallRepairOptionFor(selectedWall) : null}
+          wallActionStatus={selectedWall ? wallActionStatusFor(selectedWall) : null}
+          barracks={selectedBarracks}
+          barracksBuildOption={
+            isOwned(selected) && selectedEmpty && !selectedIsBase && isBuildableLand(world.seed, selected)
+              ? barracksBuildOptionFor()
+              : null
+          }
+          barracksUpgradeOption={
+            selectedBarracks && isOwned(selected) ? barracksUpgradeOptionFor(selectedBarracks) : null
+          }
+          barracksUpgradeInProgress={selectedBarracks ? barracksUpgradeInProgressFor(selectedBarracks) : null}
+          dock={selectedDock}
+          dockYieldPerSecond={selectedDock ? dockYieldPerSecond(tweaks, selectedDock) : null}
+          dockBuildOption={
+            (isOwned(selected) || isScouted(selected)) &&
+            selectedEmpty &&
+            !selectedIsBase &&
+            terrainAt(world.seed, selected) === "water" &&
+            isTransitionTile(world.seed, selected)
+              ? dockBuildOptionFor()
+              : null
+          }
+          fishingBoatOption={selectedDock ? fishingBoatOptionFor(selectedDock) : null}
+          fishingBoatInProgress={selectedDock ? fishingBoatInProgressFor(selectedDock) : null}
+          scoutSkiffOption={selectedDock ? scoutSkiffOptionFor(selectedDock) : null}
+          scoutSkiffInProgress={selectedDock ? scoutSkiffInProgressFor(selectedDock) : null}
+          scoutSkiffCount={
+            selectedDock
+              ? scoutSkiffs.filter((s) => axialKey(s.homeDockCoord) === axialKey(selectedDock.coord) && s.buildStartedAt === null)
+                  .length
+              : 0
+          }
+          wanderingScoutOption={selectedBarracks ? wanderingScoutOptionFor(selectedBarracks) : null}
+          wanderingScoutInProgress={selectedBarracks ? wanderingScoutInProgressFor(selectedBarracks) : null}
+          wanderingScoutCount={
+            selectedBarracks
+              ? wanderingScouts.filter(
+                  (s) => axialKey(s.homeBarracksCoord) === axialKey(selectedBarracks.coord) && s.buildStartedAt === null,
+                ).length
+              : 0
+          }
+          scoutStockpile={units.scoutStockpile}
+          scoutCapacity={scoutCapacityFor(tweaks, barracksList)}
+          militiaCount={units.militiaCount}
+          militiaCapacity={militiaCapacityFor(tweaks, barracksList)}
+          junkyardKnightCount={units.junkyardKnightCount}
+          junkyardKnightCapacity={junkyardKnightCapacityFor(tweaks, barracksList)}
+          crossBowSniperCount={units.crossBowSniperCount}
+          crossBowSniperCapacity={crossBowSniperCapacityFor(tweaks, barracksList)}
+          scoutTrainOption={
+            selectedBarracks && isOwned(selected) && !selectedBarracks.damaged ? scoutTrainOptionFor() : null
+          }
+          militiaTrainOption={
+            selectedBarracks && isOwned(selected) && !selectedBarracks.damaged ? militiaTrainOptionFor() : null
+          }
+          junkyardKnightTrainOption={
+            selectedBarracks && isOwned(selected) && !selectedBarracks.damaged ? junkyardKnightTrainOptionFor() : null
+          }
+          crossBowSniperTrainOption={
+            selectedBarracks && isOwned(selected) && !selectedBarracks.damaged ? crossBowSniperTrainOptionFor() : null
+          }
+          scoutQueueStatus={selectedBarracks ? scoutQueueStatus : null}
+          militiaQueueStatus={selectedBarracks ? militiaQueueStatus : null}
+          junkyardKnightQueueStatus={selectedBarracks ? junkyardKnightQueueStatus : null}
+          crossBowSniperQueueStatus={selectedBarracks ? crossBowSniperQueueStatus : null}
+          scoutsToTrain={scoutsToTrain}
+          militiaToTrain={militiaToTrain}
+          junkyardKnightToTrain={junkyardKnightToTrain}
+          crossBowSniperToTrain={crossBowSniperToTrain}
+          scoutTileOption={
+            !isOwned(selected) &&
+            !isScouted(selected) &&
+            units.scoutStockpile > 0 &&
+            isTileScoutable(world.seed, selected, territory.owned, scoutedTiles)
+          }
+          // Checked against the actual demolishable structure types
+          // (App.tsx:handleDemolish's own union), not selectedEmpty's
+          // inverse — selectedEmpty is false for a den/outpost tile too
+          // (deliberately, so build options hide there), which used to make
+          // canDemolish true over a den with nothing handleDemolish
+          // recognizes, showing a Demolish button that always failed.
+          canDemolish={isOwned(selected) && !selectedIsBase && (!!selectedStructure || !!selectedDock)}
+          repairOption={repairOptionFor(selectedStructure)}
+          repairBlockedByHorde={selectedHordeOccupied}
+          baseLevel={base.level}
+          baseUpgradeOption={selectedIsBase ? baseUpgradeOptionFor() : null}
+          baseUpgradeInProgress={selectedIsBase ? baseUpgradeInProgress : null}
+          baseCurrentHp={base.currentHp}
+          baseMaxHp={baseReinforcementHp(tweaks, base.reinforcementLevel)}
+          reinforcementUpgradeOption={selectedIsBase ? reinforcementUpgradeOptionFor() : null}
+          baseRepairOption={selectedIsBase ? baseRepairOptionFor() : null}
+          baseRepairBlockedByHorde={baseAdjacentHordeOccupied}
+          relocationOption={!selectedIsBase ? relocationOptionFor(selected) : null}
+          canRelocateBase={canRelocateBase(tweaks, base.level)}
+          baseRelocationInProgress={selectedIsBase ? baseRelocationInProgress : null}
+          expeditionOption={
+            !isOwned(selected) && isScouted(selected) && !selectedDen ? expeditionRouteOptionFor(selected) : null
+          }
+          den={selectedDen}
+          denAssaultOption={selectedDen ? denAssaultOptionFor(selectedDen) : null}
+          denSiegeStatus={selectedDen ? denSiegeStatusFor(selectedDen) : null}
+          denAssaultInProgress={selectedDen ? denAssaultInProgressFor(selectedDen) : null}
+          outpost={selectedOutpost}
+          outpostMaxHp={selectedOutpost ? outpostReinforcementHp(tweaks, selectedOutpost.reinforcementLevel) : null}
+          outpostReinforcementUpgradeOption={
+            selectedOutpost ? outpostReinforcementUpgradeOptionFor(selectedOutpost) : null
+          }
+          outpostRepairOption={selectedOutpost ? outpostRepairOptionFor(selectedOutpost) : null}
+          outpostRepairBlockedByHorde={
+            selectedOutpost
+              ? hordes.some((h) => axialDistance(h.path[h.pathIndex], selectedOutpost.coord) <= 1)
+              : false
+          }
+          militiaToSend={militiaToSend}
+          junkyardKnightToSend={junkyardKnightToSend}
+          crossBowSniperToSend={crossBowSniperToSend}
+          availableMilitiaForExpeditionCount={availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls)}
+          availableJunkyardKnightForExpeditionCount={availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls)}
+          availableCrossBowSniperForExpeditionCount={availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls)}
+          garrisonMilitiaCount={selectedGarrison?.militiaCount ?? 0}
+          recallInProgress={selected ? recallInProgressFor(selected) : null}
+          availableMilitiaCount={availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls)}
+          militiaToGarrison={militiaToGarrison}
+          garrisonJunkyardKnightCount={selectedGarrison?.junkyardKnightCount ?? 0}
+          availableJunkyardKnightCount={availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls)}
+          junkyardKnightToGarrison={junkyardKnightToGarrison}
+          garrisonCrossBowSniperCount={selectedGarrison?.crossBowSniperCount ?? 0}
+          availableCrossBowSniperCount={availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls)}
+          crossBowSniperToGarrison={crossBowSniperToGarrison}
+          garrisonBlockedByHorde={selectedHordeOccupied}
+          buildError={actionError}
+          onBuild={handleBuild}
+          onUpgradeTier={handleUpgradeTier}
+          onUpgradeStorage={handleUpgradeStorage}
+          onCollect={handleCollect}
+          onBuildPath={handleBuildPath}
+          onUpgradePath={handleUpgradePath}
+          onBuildTower={handleBuildTower}
+          onUpgradeTower={handleUpgradeTower}
+          onBuildWall={handleBuildWall}
+          onUpgradeWall={handleUpgradeWall}
+          onRepairWall={handleRepairWall}
+          onRepair={handleRepairStructure}
+          onDemolish={handleDemolish}
+          onBuildBarracks={handleBuildBarracks}
+          onUpgradeBarracks={handleUpgradeBarracks}
+          onBuildDock={handleBuildDock}
+          onBuildFishingBoat={handleBuildFishingBoat}
+          onBuildScoutSkiff={handleBuildScoutSkiff}
+          onCollectDock={handleCollectDock}
+          onBuildWanderingScout={handleBuildWanderingScout}
+          onTrainScouts={handleTrainScouts}
+          onTrainMilitia={handleTrainMilitia}
+          onTrainJunkyardKnight={handleTrainJunkyardKnight}
+          onTrainCrossBowSniper={handleTrainCrossBowSniper}
+          onMaxScouts={handleMaxScouts}
+          onMaxMilitia={handleMaxMilitia}
+          onMaxJunkyardKnight={handleMaxJunkyardKnight}
+          onMaxCrossBowSniper={handleMaxCrossBowSniper}
+          onRushTrainScouts={handleRushTrainScouts}
+          onRushTrainMilitia={handleRushTrainMilitia}
+          onScoutTile={handleScoutTile}
+          onUpgradeBase={handleUpgradeBase}
+          onUpgradeReinforcement={handleUpgradeReinforcement}
+          onRepairBase={handleRepairBase}
+          onUpgradeOutpostReinforcement={handleUpgradeOutpostReinforcement}
+          onRepairOutpost={handleRepairOutpost}
+          onRelocateBase={handleRelocateBase}
+          onDispatchExpedition={handleDispatchExpedition}
+          onAssaultDen={handleAssaultDen}
+          onGarrisonMilitia={handleGarrisonMilitia}
+          onMaxGarrison={handleMaxGarrison}
+          onGarrisonJunkyardKnight={handleGarrisonJunkyardKnight}
+          onMaxGarrisonJunkyardKnight={handleMaxGarrisonJunkyardKnight}
+          onGarrisonCrossBowSniper={handleGarrisonCrossBowSniper}
+          onMaxGarrisonCrossBowSniper={handleMaxGarrisonCrossBowSniper}
+          onRecallMilitia={handleRecallMilitia}
+          onChangeMilitiaToSend={setMilitiaToSend}
+          onChangeJunkyardKnightToSend={setJunkyardKnightToSend}
+          onChangeCrossBowSniperToSend={setCrossBowSniperToSend}
+          onChangeScoutsToTrain={setScoutsToTrain}
+          onChangeMilitiaToTrain={setMilitiaToTrain}
+          onChangeJunkyardKnightToTrain={setJunkyardKnightToTrain}
+          onChangeCrossBowSniperToTrain={setCrossBowSniperToTrain}
+          onChangeMilitiaToGarrison={setMilitiaToGarrison}
+          onChangeJunkyardKnightToGarrison={setJunkyardKnightToGarrison}
+          onChangeCrossBowSniperToGarrison={setCrossBowSniperToGarrison}
+          onClose={() => setSelected(null)}
+        />
+      )}
+      <button
+        type="button"
+        onClick={onCycleFastForward}
+        title="Playtesting only — cycles speed, scaling resource/noise/horde simulation AND every build/upgrade/training timer"
+        style={{
+          position: "fixed",
+          right: "1rem",
+          bottom: "1rem",
+          padding: "0.5rem 0.75rem",
+          borderRadius: 8,
+          border: "none",
+          background: speedMultiplier > 1 ? "#2e7d32" : "rgba(20, 20, 22, 0.92)",
+          color: "white",
+          cursor: "pointer",
+        }}
+      >
+        {speedMultiplier > 1 ? `⏩ ${speedMultiplier}x` : "▶ 1x"}
+      </button>
+      {(expeditions.length > 0 || denAssaults.length > 0 || garrisonRecalls.length > 0) && (
+        <div
+          style={{
+            position: "fixed",
+            left: "1rem",
+            top: "3.5rem",
+            background: "rgba(20, 20, 22, 0.92)",
+            borderRadius: 8,
+            padding: "0.5rem 0.75rem",
+            color: "white",
+            fontSize: "0.85rem",
+          }}
+        >
+          {expeditions.length > 0 && (
+            <>
+              <strong>Expeditions en route</strong>
+              {expeditions.map((expedition) => (
+                <div key={expedition.id}>
+                  ({expedition.target.q}, {expedition.target.r}) —{" "}
+                  {formatDuration(remainingMs(expedition.departedAt, expedition.arriveAt - expedition.departedAt, now))}
+                </div>
+              ))}
+            </>
+          )}
+          {denAssaults.length > 0 && (
+            <>
+              <strong>Den assaults en route</strong>
+              {denAssaults.map((assault) => (
+                <div key={assault.id}>
+                  ({assault.target.q}, {assault.target.r}) —{" "}
+                  {formatDuration(remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now))}
+                </div>
+              ))}
+            </>
+          )}
+          {garrisonRecalls.length > 0 && (
+            <>
+              <strong>Garrisons recalling</strong>
+              {garrisonRecalls.map((recall) => (
+                <div key={recall.id}>
+                  ({recall.coord.q}, {recall.coord.r}) —{" "}
+                  {formatDuration(remainingMs(recall.departedAt, recall.arriveAt - recall.departedAt, now))}
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+      {newGameDialogOpen && (
+        <NewGameDialog
+          currentSeed={world.seed}
+          onReplayCurrent={() => {
+            setNewGameDialogOpen(false);
+            onReplayCurrent();
+          }}
+          onStartNewSeed={(seed) => {
+            setNewGameDialogOpen(false);
+            onStartNewSeed(seed);
+          }}
+          onNewPlayer={() => {
+            setNewGameDialogOpen(false);
+            onNewPlayer();
+          }}
+          onCancel={() => setNewGameDialogOpen(false)}
+        />
+      )}
+    </div>
+  );
+}

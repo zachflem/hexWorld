@@ -1,0 +1,138 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import stripJsonComments from "strip-json-comments";
+import { describe, expect, it } from "vitest";
+import { tweaksSchema } from "../data/tweaksSchema";
+import { axialDistance, axialKey, axialSpiral, isWithinMapBounds, mapCenter, type Axial } from "./hexCoords";
+import { terrainAt } from "./terrain";
+import { findExpeditionPath, findHordePath, terrainCost } from "./pathfinding";
+
+function loadRealTweaks() {
+  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
+}
+
+/** First in-bounds, non-water tile at or beyond `minRadius` from `near`, for deterministic reachable-destination tests. */
+function findLandTile(seed: number, gridSize: number, near: Axial, minRadius: number, maxRadius = 60): Axial {
+  for (const coord of axialSpiral(near, maxRadius)) {
+    if (axialDistance(near, coord) < minRadius) continue;
+    if (!isWithinMapBounds(coord, gridSize)) continue;
+    if (terrainAt(seed, coord) !== "water") return coord;
+  }
+  throw new Error(`no land tile found within radius ${maxRadius} of (${near.q},${near.r}) for seed ${seed}`);
+}
+
+describe("terrainCost", () => {
+  it("matches the configured per-terrain costs, water impassable", () => {
+    const tweaks = loadRealTweaks();
+    expect(terrainCost(tweaks, "grassland")).toBe(tweaks.horde.pathfinding.terrain_cost.grassland);
+    expect(terrainCost(tweaks, "forest")).toBe(tweaks.horde.pathfinding.terrain_cost.forest);
+    expect(terrainCost(tweaks, "shore")).toBe(tweaks.horde.pathfinding.terrain_cost.shore);
+    expect(terrainCost(tweaks, "mountain")).toBe(tweaks.horde.pathfinding.terrain_cost.mountain);
+    expect(terrainCost(tweaks, "water")).toBeNull();
+  });
+});
+
+describe("findHordePath", () => {
+  const seed = 3;
+  const gridSize = 128;
+  const from: Axial = findLandTile(seed, gridSize, mapCenter(gridSize), 0);
+  const to: Axial = findLandTile(seed, gridSize, from, 10);
+
+  it("never routes through a water tile", () => {
+    const tweaks = loadRealTweaks();
+    const path = findHordePath(tweaks, seed, from, to, gridSize);
+    expect(path).not.toBeNull();
+    for (const coord of path ?? []) {
+      expect(terrainAt(seed, coord)).not.toBe("water");
+    }
+  });
+
+  it("starts at the origin and ends at the destination", () => {
+    const tweaks = loadRealTweaks();
+    const path = findHordePath(tweaks, seed, from, to, gridSize);
+    expect(path).not.toBeNull();
+    expect(path![0]).toEqual(from);
+    expect(path![path!.length - 1]).toEqual(to);
+  });
+
+  it("is a contiguous chain of hex neighbors", () => {
+    const tweaks = loadRealTweaks();
+    const path = findHordePath(tweaks, seed, from, to, gridSize);
+    expect(path).not.toBeNull();
+    for (let i = 1; i < (path?.length ?? 0); i++) {
+      expect(axialDistance(path![i - 1], path![i])).toBe(1);
+    }
+  });
+
+  it("returns null when the destination is outside the map bounds", () => {
+    const tweaks = loadRealTweaks();
+    const path = findHordePath(tweaks, seed, { q: 0, r: 0 }, { q: 1000, r: 1000 }, 5);
+    expect(path).toBeNull();
+  });
+
+  it("returns a single-tile path when origin equals destination", () => {
+    const tweaks = loadRealTweaks();
+    const path = findHordePath(tweaks, seed, from, from, gridSize);
+    expect(path).toEqual([from]);
+  });
+});
+
+describe("findExpeditionPath", () => {
+  const seed = 3;
+  const gridSize = 128;
+  const from: Axial = findLandTile(seed, gridSize, mapCenter(gridSize), 0);
+  const to: Axial = findLandTile(seed, gridSize, from, 10);
+
+  it("never routes through a tile outside the allowed set, even when findHordePath would", () => {
+    const tweaks = loadRealTweaks();
+    const unrestricted = findHordePath(tweaks, seed, from, to, gridSize);
+    expect(unrestricted).not.toBeNull();
+
+    // Disallow every tile the unrestricted route actually used except the
+    // endpoints, forcing the expedition search to either fail or detour.
+    const allowedTiles = new Set<string>([...(unrestricted ?? [])].map((c) => axialKey(c)));
+    allowedTiles.delete(axialKey(unrestricted![1]));
+
+    const result = findExpeditionPath(tweaks, seed, from, to, gridSize, allowedTiles);
+    if (result) {
+      for (const coord of result.path) {
+        expect(allowedTiles.has(axialKey(coord))).toBe(true);
+      }
+    } else {
+      expect(result).toBeNull();
+    }
+  });
+
+  it("returns null when the destination isn't in the allowed set", () => {
+    const tweaks = loadRealTweaks();
+    const allowedTiles = new Set<string>([axialKey(from)]);
+    const result = findExpeditionPath(tweaks, seed, from, to, gridSize, allowedTiles);
+    expect(result).toBeNull();
+  });
+
+  it("starts at the origin, ends at the destination, and reports the accumulated cost", () => {
+    const tweaks = loadRealTweaks();
+    const unrestricted = findHordePath(tweaks, seed, from, to, gridSize);
+    expect(unrestricted).not.toBeNull();
+    const allowedTiles = new Set<string>((unrestricted ?? []).map((c) => axialKey(c)));
+
+    const result = findExpeditionPath(tweaks, seed, from, to, gridSize, allowedTiles);
+    expect(result).not.toBeNull();
+    expect(result!.path[0]).toEqual(from);
+    expect(result!.path[result!.path.length - 1]).toEqual(to);
+
+    let expectedCost = 0;
+    for (let i = 1; i < result!.path.length; i++) {
+      expectedCost += terrainCost(tweaks, terrainAt(seed, result!.path[i]))!;
+    }
+    expect(result!.cost).toBeCloseTo(expectedCost);
+  });
+
+  it("returns a single-tile path with zero cost when origin equals destination", () => {
+    const tweaks = loadRealTweaks();
+    const allowedTiles = new Set<string>([axialKey(from)]);
+    const result = findExpeditionPath(tweaks, seed, from, from, gridSize, allowedTiles);
+    expect(result).toEqual({ path: [from], cost: 0 });
+  });
+});

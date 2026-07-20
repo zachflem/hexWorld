@@ -1,0 +1,8 @@
+# Cloudflare Pages config for hexWorld — a static Vite build, no server-side
+# logic, so Pages (not a Worker) is the natural fit. Deployed as its own
+# project at hexworld.seezed.net (a dedicated subdomain, so no `base:` path
+# prefix is needed in vite.config.ts — the app assumes it's served from the
+# domain root, which a subdomain satisfies same as the bare root would).
+name = "hexworld"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-07-17"
