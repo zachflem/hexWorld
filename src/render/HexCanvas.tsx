@@ -123,6 +123,8 @@ const SIEGE_RING_COLOR = "#ff6b35";
 const HORDE_COLOR = "#b71c1c";
 const GARRISON_COLOR = "#2e7d32";
 const GARRISON_RANGE_TINT_SELECTED = "rgba(46, 125, 50, 0.55)";
+/** Build-mode toggle (hammer slot, global hex cluster) — a distinct teal not used for any other hex fill (red = tower/combat range, green = garrison range, orange/blue = expedition/relocation target badges), so "buildable right now" reads as its own thing. */
+const BUILD_MODE_TINT = "rgba(38, 198, 218, 0.35)";
 const EXPEDITION_TARGET_COLOR = "#e08e0b";
 const RELOCATION_TARGET_COLOR = "#2e86de";
 /** Reuses the existing expedition-target orange for a different purpose: a level badge (drawLevelBadge) colored this way means that structure's next upgrade is unlocked and affordable right now. Deliberately the same constant, not just the same value, so the two meanings stay visibly linked if this color is ever revisited. */
@@ -191,6 +193,8 @@ export const HexCanvas = forwardRef<
      * below, same as base/tower/barracks already do.
      */
     upgradeAvailableKeys: Set<string>;
+    /** Coord keys (axialKey) of owned, empty, buildable-land tiles where at least one structure type is currently affordable — tinted teal while build-mode (the hammer slot in the global hex cluster) is active. Empty set when build-mode is off. */
+    buildModeEligibleKeys: Set<string>;
     selected: Axial | null;
     playerColor: string;
     onTileClick?: (coord: Axial) => void;
@@ -224,6 +228,7 @@ export const HexCanvas = forwardRef<
     relocationDestination,
     baseLevel,
     upgradeAvailableKeys,
+    buildModeEligibleKeys,
     selected,
     playerColor,
     onTileClick,
@@ -640,6 +645,10 @@ export const HexCanvas = forwardRef<
           }
           if (selectedGarrisonRangeKeys?.has(coordKey)) {
             ctx.fillStyle = GARRISON_RANGE_TINT_SELECTED;
+            ctx.fill();
+          }
+          if (buildModeEligibleKeys.has(coordKey)) {
+            ctx.fillStyle = BUILD_MODE_TINT;
             ctx.fill();
           }
 
@@ -1080,6 +1089,7 @@ export const HexCanvas = forwardRef<
     relocationDestination,
     baseLevel,
     upgradeAvailableKeys,
+    buildModeEligibleKeys,
     fogByKey,
     selected,
     playerColor,

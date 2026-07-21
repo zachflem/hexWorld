@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { axialDistance, axialEquals, axialKey, type Axial } from "../engine/hexCoords";
 import { isBuildableLand, isTransitionTile, terrainAt } from "../engine/terrain";
@@ -161,7 +161,12 @@ import { ResearchPanel } from "./ResearchPanel";
 import { NotificationTray } from "./hud/NotificationTray";
 import { ToastStack, type ToastRecord } from "./hud/Toast";
 import { StatRow } from "./primitives/StatRow";
-import { Volume2 } from "lucide-react";
+import { GlobalHexCluster } from "./menu/GlobalHexCluster";
+import { GarrisonsPanel } from "./panels/GarrisonsPanel";
+import { ScoutingPanel } from "./panels/ScoutingPanel";
+import { MilitaryPanel } from "./panels/MilitaryPanel";
+import { SettingsPanel } from "./panels/SettingsPanel";
+import { BarChart3, Binoculars, Flag, Hammer, Settings, Swords, Volume2 } from "lucide-react";
 
 const RESOURCE_ORDER: ResourceType[] = ["food", "wood", "stone", "steel", "power"];
 
@@ -379,9 +384,23 @@ export function GameScreen({
 }) {
   const hexCanvasRef = useRef<HexCanvasHandle>(null);
   const [selected, setSelected] = useState<Axial | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [newGameDialogOpen, setNewGameDialogOpen] = useState(false);
-  const [showResearchPanel, setShowResearchPanel] = useState(false);
+  /** Which of the global hex cluster's five panel slots (flag/binoculars/gear/chart — hammer is a toggle, not a panel) is open, if any. Only one at a time. */
+  const [openPanel, setOpenPanel] = useState<"garrisons" | "scouting" | "military" | "settings" | "research" | null>(null);
+  /** Hammer slot — highlights owned/empty/buildable tiles with an affordable build option, see buildModeEligibleKeysFor below. */
+  const [buildModeActive, setBuildModeActive] = useState(false);
+  /** Wraps the hex cluster + whichever panel is open — a pointerdown outside both closes the panel (GlobalHexCluster already closes its own bloom the same way, independently); a pointerdown on the cluster itself (e.g. a different slot, or the same slot to toggle closed) is excluded here so it doesn't fight with the slot's own onClick. */
+  const clusterAndPanelsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!openPanel) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (clusterAndPanelsRef.current && !clusterAndPanelsRef.current.contains(event.target as Node)) {
+        setOpenPanel(null);
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [openPanel]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [militiaToSend, setMilitiaToSend] = useState(1);
   const [junkyardKnightToSend, setJunkyardKnightToSend] = useState(0);
@@ -1501,6 +1520,63 @@ export function GameScreen({
   }
   const upgradeAvailableKeys = upgradeAvailableKeysFor();
 
+  /**
+   * Owned, empty, buildable-land tiles where at least one structure type is
+   * currently affordable — teal-highlighted on the map while build-mode
+   * (the hammer slot) is active. Deliberately a single highlight color for
+   * every eligible tile rather than color-coded per structure type: an
+   * empty tile is simultaneously eligible for extraction/path/tower/wall/
+   * barracks all at once (they're not mutually exclusive choices at the
+   * "can something go here" level), so there's no single type to color a
+   * given tile by — actually building still happens per-tile via the normal
+   * popup once selected.
+   *
+   * Uses `useMemo` (unlike upgradeAvailableKeysFor above) since this is a
+   * real per-owned-tile loop, not a handful of structures — worth skipping
+   * entirely while build-mode is off. Written against imported pure
+   * functions directly (scaledCostMap/pathBuildCost/etc.), not the
+   * component's local *OptionFor closures, so the dependency array stays
+   * exhaustively correct without oxlint's closure-tracking limitations
+   * (see resourceRates above for the same reasoning).
+   */
+  const buildModeEligibleKeys = useMemo(() => {
+    if (!buildModeActive) return new Set<string>();
+
+    const canAfford = (cost: Partial<Record<ResourceType, number>>) =>
+      Object.entries(cost).every(([res, amount]) => resources[res as ResourceType] >= (amount ?? 0));
+
+    const anyExtractionAffordable = RESOURCE_ORDER.some((resource) => {
+      const existingCount = extractionTiles.filter((t) => t.resource === resource).length;
+      return canAfford(scaledCostMap(tweaks.extraction_tiles[resource].build_cost_base, existingCount + 1));
+    });
+    const anyBuildAffordable =
+      anyExtractionAffordable ||
+      canAfford(pathBuildCost(tweaks)) ||
+      canAfford(towerBuildCost(tweaks, towers.length + 1)) ||
+      canAfford(wallBuildCost(tweaks, walls.length + 1)) ||
+      canAfford(barracksBuildCost(tweaks, barracksList.length + 1));
+
+    if (!anyBuildAffordable) return new Set<string>();
+
+    const occupiedKeys = new Set<string>();
+    for (const t of extractionTiles) occupiedKeys.add(axialKey(t.coord));
+    for (const p of pathTiles) occupiedKeys.add(axialKey(p.coord));
+    for (const t of towers) occupiedKeys.add(axialKey(t.coord));
+    for (const w of walls) occupiedKeys.add(axialKey(w.coord));
+    for (const b of barracksList) occupiedKeys.add(axialKey(b.coord));
+    for (const d of docks) occupiedKeys.add(axialKey(d.coord));
+
+    const eligible = new Set<string>();
+    for (const coord of territory.owned) {
+      if (axialEquals(coord, territory.base)) continue;
+      const key = axialKey(coord);
+      if (occupiedKeys.has(key)) continue;
+      if (!isBuildableLand(world.seed, coord)) continue;
+      eligible.add(key);
+    }
+    return eligible;
+  }, [buildModeActive, resources, extractionTiles, pathTiles, towers, walls, barracksList, docks, territory.owned, territory.base, world.seed, tweaks]);
+
   return (
     <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column" }}>
       <header
@@ -1514,65 +1590,6 @@ export function GameScreen({
           columnGap: "1.25rem",
         }}
       >
-        {/* Placeholder menu — functional, not yet styled; due for a full UI pass. */}
-        <div style={{ position: "relative" }}>
-          <button
-            type="button"
-            onClick={() => setMenuOpen((open) => !open)}
-            title="Game menu"
-            aria-label="Game menu"
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontSize: "1.1rem",
-              lineHeight: 1,
-              padding: 0,
-            }}
-          >
-            ☰
-          </button>
-          {menuOpen && (
-            <div
-              style={{
-                position: "absolute",
-                top: "100%",
-                left: 0,
-                marginTop: "0.5rem",
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.25rem",
-                background: "#1a1a1a",
-                border: "1px solid #444",
-                borderRadius: 4,
-                padding: "0.5rem",
-                zIndex: 10,
-                minWidth: 180,
-              }}
-            >
-              <strong style={{ color: player.color, padding: "0 0 0.25rem", borderBottom: "1px solid #444" }}>{player.name}</strong>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  hexCanvasRef.current?.recenterOnBase();
-                }}
-              >
-                Recenter on Base
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setNewGameDialogOpen(true);
-                }}
-              >
-                New Game
-              </button>
-              <p style={{ margin: "0.25rem 0 0", fontSize: "0.85rem" }}>Seed: {world.seed}</p>
-            </div>
-          )}
-        </div>
         <div style={{ display: "flex", flexWrap: "wrap", rowGap: "0.4rem", columnGap: "0.85rem" }}>
           {RESOURCE_ORDER.map((type) => (
             <StatChip
@@ -1604,6 +1621,7 @@ export function GameScreen({
           base={territory.base}
           baseLevel={base.level}
           upgradeAvailableKeys={upgradeAvailableKeys}
+          buildModeEligibleKeys={buildModeEligibleKeys}
           owned={territory.owned}
           extractionTiles={extractionTiles}
           pathTiles={pathTiles}
@@ -1899,51 +1917,99 @@ export function GameScreen({
           onClose={() => setSelected(null)}
         />
       )}
-      <button
-        type="button"
-        onClick={onCycleFastForward}
-        title="Playtesting only — cycles speed, scaling resource/noise/horde simulation AND every build/upgrade/training timer"
-        style={{
-          position: "fixed",
-          right: "1rem",
-          bottom: "1rem",
-          padding: "0.5rem 0.75rem",
-          borderRadius: 8,
-          border: "none",
-          background: speedMultiplier > 1 ? "#2e7d32" : "rgba(20, 20, 22, 0.92)",
-          color: "white",
-          cursor: "pointer",
+      <div ref={clusterAndPanelsRef}>
+      <GlobalHexCluster
+        pinnedSlot={{
+          key: "fast-forward",
+          icon: <span style={{ fontSize: "0.8rem", fontWeight: 700 }}>{speedMultiplier > 1 ? `${speedMultiplier}x` : "▶"}</span>,
+          title: "Playtesting only — cycles speed, scaling resource/noise/horde simulation AND every build/upgrade/training timer",
+          active: speedMultiplier > 1,
+          onClick: onCycleFastForward,
         }}
-      >
-        {speedMultiplier > 1 ? `⏩ ${speedMultiplier}x` : "▶ 1x"}
-      </button>
-      <button
-        type="button"
-        onClick={() => setShowResearchPanel((open) => !open)}
-        style={{
-          position: "fixed",
-          right: "5.5rem",
-          bottom: "1rem",
-          padding: "0.5rem 0.75rem",
-          borderRadius: 8,
-          border: "none",
-          background: research.pending ? "#2e7d32" : "rgba(20, 20, 22, 0.92)",
-          color: "white",
-          cursor: "pointer",
-        }}
-      >
-        🔬 Research
-      </button>
-      {showResearchPanel && (
+        slots={[
+          {
+            key: "garrisons",
+            icon: <Flag size={20} />,
+            title: "Garrisons",
+            active: openPanel === "garrisons",
+            onClick: () => setOpenPanel((p) => (p === "garrisons" ? null : "garrisons")),
+          },
+          {
+            key: "scouting",
+            icon: <Binoculars size={20} />,
+            title: "Scouting",
+            active: openPanel === "scouting",
+            onClick: () => setOpenPanel((p) => (p === "scouting" ? null : "scouting")),
+          },
+          {
+            key: "military",
+            icon: <Swords size={20} />,
+            title: "Military",
+            active: openPanel === "military",
+            onClick: () => setOpenPanel((p) => (p === "military" ? null : "military")),
+          },
+          {
+            key: "research",
+            icon: <BarChart3 size={20} />,
+            title: "Research",
+            // Also lit up while a research is in progress, not just while the panel is open — mirrors the old floating button's "something's happening" cue.
+            active: openPanel === "research" || Boolean(research.pending),
+            onClick: () => setOpenPanel((p) => (p === "research" ? null : "research")),
+          },
+          {
+            key: "build-mode",
+            icon: <Hammer size={20} />,
+            title: buildModeActive ? "Exit build mode" : "Build mode",
+            active: buildModeActive,
+            onClick: () => setBuildModeActive((v) => !v),
+          },
+          {
+            key: "settings",
+            icon: <Settings size={20} />,
+            title: "Settings",
+            active: openPanel === "settings",
+            onClick: () => setOpenPanel((p) => (p === "settings" ? null : "settings")),
+          },
+        ]}
+      />
+      {openPanel === "garrisons" && (
+        <GarrisonsPanel garrisons={garrisons} garrisonRecalls={garrisonRecalls} now={now} onClose={() => setOpenPanel(null)} />
+      )}
+      {openPanel === "scouting" && (
+        <ScoutingPanel
+          tweaks={tweaks}
+          units={units}
+          barracksList={barracksList}
+          scoutSkiffs={scoutSkiffs}
+          wanderingScouts={wanderingScouts}
+          lab={lab}
+          base={territory.base}
+          onClose={() => setOpenPanel(null)}
+        />
+      )}
+      {openPanel === "military" && (
+        <MilitaryPanel tweaks={tweaks} units={units} garrisons={garrisons} barracksList={barracksList} onClose={() => setOpenPanel(null)} />
+      )}
+      {openPanel === "settings" && (
+        <SettingsPanel
+          player={player}
+          seed={world.seed}
+          onRecenterOnBase={() => hexCanvasRef.current?.recenterOnBase()}
+          onNewGame={() => setNewGameDialogOpen(true)}
+          onClose={() => setOpenPanel(null)}
+        />
+      )}
+      {openPanel === "research" && (
         <ResearchPanel
           tweaks={tweaks}
           research={research}
           resources={resources}
           now={now}
           onStartResearch={onStartResearch}
-          onClose={() => setShowResearchPanel(false)}
+          onClose={() => setOpenPanel(null)}
         />
       )}
+      </div>
       <div
         style={{
           position: "fixed",

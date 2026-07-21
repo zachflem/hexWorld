@@ -6,6 +6,7 @@ import { isResearchAvailable, researchCost, researchDurationMs } from "../engine
 import { remainingMs } from "../engine/timers";
 import type { BuildResult } from "../App";
 import { formatDuration } from "./TilePopup";
+import { Panel } from "./primitives/Panel";
 
 function formatCost(cost: Partial<Record<ResourceType, number>>): string {
   return Object.entries(cost)
@@ -95,19 +96,7 @@ export function ResearchPanel({
   onClose: () => void;
 }) {
   return (
-    <div
-      style={{
-        position: "fixed",
-        right: "1rem",
-        bottom: "4.5rem",
-        width: 320,
-        background: "rgba(20, 20, 22, 0.95)",
-        borderRadius: 8,
-        padding: "0.75rem 1rem",
-        color: "white",
-        fontSize: "0.85rem",
-      }}
-    >
+    <Panel style={{ position: "fixed", right: "1rem", bottom: "4.5rem", width: 320, fontSize: "0.85rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <strong style={{ fontSize: "1rem" }}>Research</strong>
         <button type="button" onClick={onClose}>
@@ -126,6 +115,6 @@ export function ResearchPanel({
         <ResearchTierRow id="game_speed_2" tweaks={tweaks} research={research} resources={resources} now={now} onStartResearch={onStartResearch} />
         <ResearchTierRow id="game_speed_3" tweaks={tweaks} research={research} resources={resources} now={now} onStartResearch={onStartResearch} />
       </div>
-    </div>
+    </Panel>
   );
 }
