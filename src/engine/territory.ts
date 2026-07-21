@@ -1,6 +1,7 @@
 import type { TerritoryRecord } from "../data/territory";
 import type { Tower } from "../data/towers";
 import type { Tweaks } from "../data/tweaksSchema";
+import { isStructureActive } from "./formulas";
 import { axialKey, axialNeighbors, axialSpiral, isWithinMapBounds, type Axial } from "./hexCoords";
 import { terrainAt } from "./terrain";
 import { towerRange } from "./towers";
@@ -52,7 +53,8 @@ export function tileDefense(tweaks: Tweaks, distanceFromBase: number): number {
  * (if any) stays `damaged` until the player pays to repair it; this only
  * ever touches `territory.owned`.
  *
- * A damaged tower contributes no claim, same as it contributes no combat
+ * A damaged or still-under-construction tower contributes no claim
+ * (engine/formulas.ts:isStructureActive), same as it contributes no combat
  * value (hordeTileDefense, engine/hordes.ts) — non-functional is
  * non-functional across the board.
  */
@@ -70,7 +72,7 @@ export function autoClaimTowerRange(
   const newlyClaimed: Axial[] = [];
 
   for (const tower of towers) {
-    if (tower.damaged) continue;
+    if (!isStructureActive(tower)) continue;
     for (const coord of axialSpiral(tower.coord, towerRange(tweaks, tower.level))) {
       if (!isWithinMapBounds(coord, gridSize)) continue;
       const key = axialKey(coord);

@@ -23,6 +23,7 @@ function makeOutpost(overrides: Partial<OutpostRecord> = {}): OutpostRecord {
     coord: { q: 5, r: 5 },
     reinforcementLevel: 0,
     currentHp: 65,
+    reinforcementAction: null,
     convertedAt: 0,
     originalDenLevel: 1,
     ...overrides,

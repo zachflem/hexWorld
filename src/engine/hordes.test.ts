@@ -7,6 +7,7 @@ import type { DenRecord, DensRecord } from "../data/dens";
 import type { ExtractionTile } from "../data/extractionTiles";
 import type { Garrison, GarrisonsRecord } from "../data/garrisons";
 import type { HordeRecord } from "../data/hordes";
+import type { OutpostRecord } from "../data/outposts";
 import type { PathTile } from "../data/pathTiles";
 import type { TerritoryRecord } from "../data/territory";
 import type { Tower } from "../data/towers";
@@ -58,7 +59,7 @@ describe("checkHordeSpawns", () => {
     const den: DenRecord = { id: "den-1", coord: base, level: tweaks.dens.max_level, siege: null };
     const territory: TerritoryRecord = { base, owned: [base] };
 
-    const result = checkHordeSpawns(tweaks, [den], [], 0, 1, seed, territory, gridSize, Date.now(), 3600);
+    const result = checkHordeSpawns(tweaks, [den], [], 0, 1, seed, territory, [], gridSize, Date.now(), 3600);
     expect(result).toHaveLength(0);
   });
 
@@ -77,6 +78,7 @@ describe("checkHordeSpawns", () => {
       fullLevel,
       seed,
       territory,
+      [],
       gridSize,
       Date.now(),
       1e9,
@@ -92,7 +94,7 @@ describe("checkHordeSpawns", () => {
     const fullLevel = fullScaleLevel(tweaks);
     const cap = noiseCap(tweaks, fullLevel);
 
-    const result = checkHordeSpawns(tweaks, [den], [], cap, fullLevel, seed, territory, gridSize, Date.now(), 10);
+    const result = checkHordeSpawns(tweaks, [den], [], cap, fullLevel, seed, territory, [], gridSize, Date.now(), 10);
     expect(result).toHaveLength(1);
     expect(result[0].originDenId).toBe("den-1");
     expect(result[0].pathIndex).toBe(0);
@@ -107,7 +109,7 @@ describe("checkHordeSpawns", () => {
     const fullLevel = fullScaleLevel(tweaks);
     const cap = noiseCap(tweaks, fullLevel);
 
-    const [horde] = checkHordeSpawns(tweaks, [den], [], cap, fullLevel, seed, territory, gridSize, Date.now(), 10);
+    const [horde] = checkHordeSpawns(tweaks, [den], [], cap, fullLevel, seed, territory, [], gridSize, Date.now(), 10);
     const { den_level_base_weight, den_level_influence } = tweaks.horde;
     const expectedSize = tweaks.dens.horde_size_base + 100 ** 1.5 * (den_level_base_weight + den_level_influence * 1);
     expect(horde.size).toBeCloseTo(expectedSize);
@@ -121,7 +123,7 @@ describe("checkHordeSpawns", () => {
     const fullLevel = fullScaleLevel(tweaks);
     const cap = noiseCap(tweaks, fullLevel); // noisePct = 100 -> spawnProbability exactly 1, deterministic regardless of the roll
 
-    const [horde] = checkHordeSpawns(tweaks, [den], [], cap, fullLevel, seed, territory, gridSize, Date.now(), 10);
+    const [horde] = checkHordeSpawns(tweaks, [den], [], cap, fullLevel, seed, territory, [], gridSize, Date.now(), 10);
     expect(horde.speedFactor).toBeCloseTo(tweaks.horde.speed_factor_at_max_noise);
     expect(horde.decayPct).toBeCloseTo(tweaks.horde.size_decay_pct_per_tile_at_max_noise);
   });
@@ -141,7 +143,7 @@ describe("checkHordeSpawns", () => {
     // spawnProbability below 1 here.
     const hugeElapsed = 1e9;
 
-    const [horde] = checkHordeSpawns(tweaks, [den], [], halfNoise, fullLevel, seed, territory, gridSize, Date.now(), hugeElapsed);
+    const [horde] = checkHordeSpawns(tweaks, [den], [], halfNoise, fullLevel, seed, territory, [], gridSize, Date.now(), hugeElapsed);
     const { speed_factor_at_zero_noise, speed_factor_at_max_noise, size_decay_pct_per_tile_at_zero_noise, size_decay_pct_per_tile_at_max_noise } =
       tweaks.horde;
     expect(horde.speedFactor).toBeCloseTo((speed_factor_at_zero_noise + speed_factor_at_max_noise) / 2);
@@ -161,8 +163,8 @@ describe("checkHordeSpawns", () => {
     const rollIndex = den.coord.q * 92_821 + den.coord.r * 68_917 + Math.floor(now / 1000);
     const roll = seededRandom(seed, rollIndex);
 
-    const atLevel1 = checkHordeSpawns(tweaks, [den], [], noise, 1, seed, territory, gridSize, now, hugeElapsed);
-    const atFullLevel = checkHordeSpawns(tweaks, [den], [], noise, fullScaleLevel(tweaks), seed, territory, gridSize, now, hugeElapsed);
+    const atLevel1 = checkHordeSpawns(tweaks, [den], [], noise, 1, seed, territory, [], gridSize, now, hugeElapsed);
+    const atFullLevel = checkHordeSpawns(tweaks, [den], [], noise, fullScaleLevel(tweaks), seed, territory, [], gridSize, now, hugeElapsed);
 
     expect(atLevel1.length > 0).toBe(roll < tweaks.horde.level_scaling_base);
     expect(atFullLevel).toHaveLength(1); // multiplier capped at 1.0 -> always spawns
@@ -190,7 +192,7 @@ describe("checkHordeSpawns", () => {
       decayPct: 0,
     };
 
-    const result = checkHordeSpawns(tweaks, [denOnCooldown, denReady], [recentHorde], cap, fullLevel, seed, territory, gridSize, now, 10);
+    const result = checkHordeSpawns(tweaks, [denOnCooldown, denReady], [recentHorde], cap, fullLevel, seed, territory, [], gridSize, now, 10);
     const newlySpawned = result.filter((h) => h.id !== "existing");
     expect(newlySpawned).toHaveLength(1);
     expect(newlySpawned[0].originDenId).toBe("den-ready");
@@ -201,10 +203,40 @@ describe("checkHordeSpawns", () => {
     const tweaks = loadRealTweaks();
     const territory: TerritoryRecord = { base: { q: 0, r: 0 }, owned: [] };
     const emptyDens: DensRecord = [];
-    expect(checkHordeSpawns(tweaks, emptyDens, [], 999, 1, seed, territory, gridSize, Date.now(), 10)).toEqual([]);
+    expect(checkHordeSpawns(tweaks, emptyDens, [], 999, 1, seed, territory, [], gridSize, Date.now(), 10)).toEqual([]);
 
     const den: DenRecord = { id: "den-1", coord: territory.base, level: 1, siege: null };
-    expect(checkHordeSpawns(tweaks, [den], [], 999, 1, seed, territory, gridSize, Date.now(), 0)).toEqual([]);
+    expect(checkHordeSpawns(tweaks, [den], [], 999, 1, seed, territory, [], gridSize, Date.now(), 0)).toEqual([]);
+  });
+
+  it("paths a spawning horde to the nearest hub (an outpost) instead of always the base", () => {
+    const tweaks = loadRealTweaks();
+    const base = { q: 0, r: 0 };
+    // Den sits one tile from the outpost but far (50 tiles) from base — even
+    // at the worst-case terrain-cost ratio (mountain 4x vs grassland 1x,
+    // tweaks.jsonc horde.pathfinding.terrain_cost), one hop to the outpost
+    // can never cost more than a 50-tile trek to base, so the outpost is
+    // unambiguously nearest regardless of the seeded terrain layout.
+    const denCoord = { q: 1, r: 0 };
+    const outpost: OutpostRecord = {
+      id: "outpost-1",
+      coord: { q: 2, r: 0 },
+      reinforcementLevel: 1,
+      currentHp: 100,
+      reinforcementAction: null,
+      convertedAt: 0,
+      originalDenLevel: 1,
+    };
+    const den: DenRecord = { id: "den-1", coord: denCoord, level: tweaks.dens.max_level, siege: null };
+    const territory: TerritoryRecord = { base, owned: [base] };
+    const fullLevel = fullScaleLevel(tweaks);
+    const cap = noiseCap(tweaks, fullLevel);
+    const hugeElapsed = 1e9; // underflows spawnProbability to 1, deterministic regardless of the seeded roll — same trick as the other spawn tests above
+
+    const [horde] = checkHordeSpawns(tweaks, [den], [], cap, fullLevel, seed, territory, [outpost], gridSize, Date.now(), hugeElapsed);
+    expect(horde).toBeDefined();
+    const lastTile = horde.path[horde.path.length - 1];
+    expect(axialKey(lastTile)).toBe(axialKey(outpost.coord));
   });
 });
 

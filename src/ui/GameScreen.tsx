@@ -1,20 +1,22 @@
 import { useMemo, useRef, useState } from "react";
 import { axialDistance, axialEquals, axialKey, type Axial } from "../engine/hexCoords";
 import { isBuildableLand, isTransitionTile, terrainAt } from "../engine/terrain";
-import { dockYieldPerSecond } from "../engine/docks";
-import { buildSlotCap, repairCost, scaledCostMap, totalStructureCount } from "../engine/formulas";
-import { nextTier, tierUpgradeCost, tierUpgradeDurationMs } from "../engine/tiers";
-import { storageCapacity, storageUpgradeCost } from "../engine/storage";
+import { dockBuildCost, dockBuildDurationMs, dockYieldPerSecond } from "../engine/docks";
+import { buildSlotCap, repairCost, scaledCostMap, structureRepairDurationMs, totalStructureCount } from "../engine/formulas";
+import { extractionTileBuildDurationMs, nextTier, tierUpgradeCost, tierUpgradeDurationMs } from "../engine/tiers";
+import { storageCapacity, storageUpgradeCost, storageUpgradeDurationMs } from "../engine/storage";
 import {
   findResourceTileConnection,
   nextPathTier,
   pathBuildCost,
+  pathBuildDurationMs,
   pathUpgradeCost,
   pathUpgradeDurationMs,
 } from "../engine/paths";
 import {
   nextTowerLevel,
   towerBuildCost,
+  towerBuildDurationMs,
   towerDamage,
   towerRange,
   towerUpgradeCost,
@@ -24,6 +26,7 @@ import {
   maxWallDurability,
   nextWallTier,
   wallBuildCost,
+  wallBuildDurationMs,
   wallRepairCost,
   wallRepairDurationMs,
   wallUpgradeCost,
@@ -31,6 +34,7 @@ import {
 } from "../engine/walls";
 import {
   barracksBuildCost,
+  barracksBuildDurationMs,
   barracksTrainingCapacity,
   barracksUpgradeCost,
   barracksUpgradeDurationMs,
@@ -52,6 +56,8 @@ import {
 } from "../engine/units";
 import {
   baseReinforcementHp,
+  baseReinforcementRepairDurationMs,
+  baseReinforcementUpgradeDurationMs,
   baseRelocationCost,
   baseRelocationDurationMs,
   baseRepairCost,
@@ -69,11 +75,16 @@ import {
   expeditionTravelDurationMs,
   findBestExpeditionRoute,
 } from "../engine/expeditions";
+import { troopSpeedMultiplier } from "../engine/research";
+import type { ResearchId, ResearchRecord } from "../data/research";
 import { denDefense, holdDefenseAt, lastStandWaveSize } from "../engine/dens";
+import { labClueText } from "../engine/lab";
 import {
   maxOutpostReinforcementLevel,
   outpostReinforcementHp,
+  outpostReinforcementRepairDurationMs,
   outpostReinforcementUpgradeCost,
+  outpostReinforcementUpgradeDurationMs,
   outpostRepairCost,
 } from "../engine/outposts";
 import {
@@ -96,9 +107,13 @@ import type { UnitsRecord } from "../data/units";
 import type { GarrisonsRecord } from "../data/garrisons";
 import type { ScoutedTiles } from "../data/scoutedTiles";
 import type { StorageLevels } from "../data/storageLevels";
+import type { StorageUpgradesRecord } from "../data/storageUpgrades";
 import type { NoiseRecord } from "../data/noise";
 import type { DenRecord, DensRecord } from "../data/dens";
 import type { DenAssaultsRecord } from "../data/denAssaults";
+import type { TombstoneRecord, TombstonesRecord } from "../data/tombstones";
+import type { LabRecord } from "../data/lab";
+import type { LabAssaultsRecord } from "../data/labAssaults";
 import type { GarrisonRecallsRecord } from "../data/garrisonRecalls";
 import type { OutpostRecord, OutpostsRecord } from "../data/outposts";
 import type { HordesRecord } from "../data/hordes";
@@ -120,9 +135,12 @@ import {
   type DenAssaultOption,
   type DenSiegeStatus,
   type ExpeditionOption,
+  type LabAssaultInProgress,
+  type LabAssaultOption,
   type PathBuildOption,
   type PathUpgradeOption,
   type RelocationOption,
+  type RepairOption,
   type SimpleCostOption,
   type SkiffBuildOption,
   type SimpleTrainOption,
@@ -132,12 +150,14 @@ import {
   type TrainOption,
   type TrainQueueStatus,
   type UpgradeInProgress,
+  type ReinforcementActionStatus,
   type ReinforcementUpgradeOption,
   type WallActionStatus,
   type WallRepairOption,
   type WallUpgradeOption,
   type WanderingScoutOption,
 } from "./TilePopup";
+import { ResearchPanel } from "./ResearchPanel";
 
 const RESOURCE_ORDER: ResourceType[] = ["food", "wood", "stone", "steel", "power"];
 
@@ -157,19 +177,25 @@ export function GameScreen({
   garrisons,
   scoutedTiles,
   storageLevels,
+  storageUpgrades,
   noise,
   dens,
   denAssaults,
   outposts,
   garrisonRecalls,
+  lab,
+  labAssaults,
   hordes,
   expeditions,
+  tombstones,
   docks,
   scoutSkiffs,
   wanderingScouts,
+  research,
   now,
   speedMultiplier,
   onCycleFastForward,
+  onStartResearch,
   onBuildExtractionTile,
   onUpgradeExtractionTile,
   onUpgradeStorage,
@@ -200,6 +226,7 @@ export function GameScreen({
   onRelocateBase,
   onDispatchExpedition,
   onAssaultDen,
+  onSecureLab,
   onGarrisonMilitia,
   onGarrisonJunkyardKnight,
   onGarrisonCrossBowSniper,
@@ -228,21 +255,27 @@ export function GameScreen({
   garrisons: GarrisonsRecord;
   scoutedTiles: ScoutedTiles;
   storageLevels: StorageLevels;
+  storageUpgrades: StorageUpgradesRecord;
   noise: NoiseRecord;
   dens: DensRecord;
   denAssaults: DenAssaultsRecord;
   outposts: OutpostsRecord;
   garrisonRecalls: GarrisonRecallsRecord;
+  lab: LabRecord;
+  labAssaults: LabAssaultsRecord;
   hordes: HordesRecord;
   expeditions: ExpeditionsRecord;
+  tombstones: TombstonesRecord;
   docks: DocksRecord;
   scoutSkiffs: ScoutSkiffsRecord;
   wanderingScouts: WanderingScoutsRecord;
+  research: ResearchRecord;
   /** The virtual clock (data/clock.ts:ClockRecord.virtualNow) every build/upgrade/training timer here is checked against, instead of Date.now() — advances at speedMultiplier-scaled rate, see App.tsx. */
   now: number;
   /** Playtesting convenience — cycles through rates that scale the tick loop's resource/noise/horde simulation AND every build/upgrade/training timer (via `now` above), see App.tsx. */
   speedMultiplier: number;
   onCycleFastForward: () => void;
+  onStartResearch: (id: ResearchId) => Promise<BuildResult>;
   onBuildExtractionTile: (coord: Axial, resource: ResourceType) => Promise<BuildResult>;
   onUpgradeExtractionTile: (coord: Axial) => Promise<BuildResult>;
   onUpgradeStorage: (resource: ResourceType) => Promise<BuildResult>;
@@ -283,6 +316,11 @@ export function GameScreen({
     junkyardKnightCommitted: number,
     crossBowSniperCommitted: number,
   ) => Promise<BuildResult>;
+  onSecureLab: (
+    militiaCommitted: number,
+    junkyardKnightCommitted: number,
+    crossBowSniperCommitted: number,
+  ) => Promise<BuildResult>;
   onGarrisonMilitia: (coord: Axial, count: number) => Promise<BuildResult>;
   onGarrisonJunkyardKnight: (coord: Axial, count: number) => Promise<BuildResult>;
   onGarrisonCrossBowSniper: (coord: Axial, count: number) => Promise<BuildResult>;
@@ -303,6 +341,7 @@ export function GameScreen({
   const [selected, setSelected] = useState<Axial | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [newGameDialogOpen, setNewGameDialogOpen] = useState(false);
+  const [showResearchPanel, setShowResearchPanel] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [militiaToSend, setMilitiaToSend] = useState(1);
   const [junkyardKnightToSend, setJunkyardKnightToSend] = useState(0);
@@ -359,7 +398,12 @@ export function GameScreen({
     return RESOURCE_ORDER.map((resource) => {
       const existingCount = extractionTiles.filter((tile) => tile.resource === resource).length;
       const cost = scaledCostMap(tweaks.extraction_tiles[resource].build_cost_base, existingCount + 1);
-      return { resource, cost, affordable: affordable(cost) };
+      return {
+        resource,
+        cost,
+        affordable: affordable(cost),
+        durationMinutes: extractionTileBuildDurationMs(tweaks) / 60_000,
+      };
     });
   }
 
@@ -386,13 +430,20 @@ export function GameScreen({
     return RESOURCE_ORDER.map((resource) => {
       const level = storageLevels[resource];
       const cost = storageUpgradeCost(tweaks, resource, level);
-      return { resource, level, capacity: storageCapacity(tweaks, level), cost, affordable: affordable(cost) };
+      const pending = storageUpgrades[resource];
+      const inProgress = pending
+        ? {
+            targetLevel: pending.targetLevel,
+            remainingMs: remainingMs(pending.startedAt, storageUpgradeDurationMs(tweaks, pending.targetLevel), now),
+          }
+        : null;
+      return { resource, level, capacity: storageCapacity(tweaks, level), cost, affordable: affordable(cost), inProgress };
     });
   }
 
   function pathBuildOptionFor(): PathBuildOption {
-    const cost = pathBuildCost(tweaks, pathTiles.length + 1);
-    return { cost, affordable: affordable(cost) };
+    const cost = pathBuildCost(tweaks);
+    return { cost, affordable: affordable(cost), durationMinutes: pathBuildDurationMs(tweaks) / 60_000 };
   }
 
   function pathUpgradeOptionFor(tile: PathTile): PathUpgradeOption | null {
@@ -414,9 +465,9 @@ export function GameScreen({
     return { target: tile.upgrade.targetTier, remainingMs: remainingMs(tile.upgrade.startedAt, durationMs, now) };
   }
 
-  function towerBuildOptionFor(): SimpleCostOption {
+  function towerBuildOptionFor(): RepairOption {
     const cost = towerBuildCost(tweaks, towers.length + 1);
-    return { cost, affordable: affordable(cost) };
+    return { cost, affordable: affordable(cost), durationMinutes: towerBuildDurationMs(tweaks) / 60_000 };
   }
 
   function towerUpgradeOptionFor(t: Tower): TowerUpgradeOption | null {
@@ -438,9 +489,9 @@ export function GameScreen({
     return { target: t.upgrade.targetLevel, remainingMs: remainingMs(t.upgrade.startedAt, durationMs, now) };
   }
 
-  function wallBuildOptionFor(): SimpleCostOption {
+  function wallBuildOptionFor(): RepairOption {
     const cost = wallBuildCost(tweaks, walls.length + 1);
-    return { cost, affordable: affordable(cost) };
+    return { cost, affordable: affordable(cost), durationMinutes: wallBuildDurationMs(tweaks) / 60_000 };
   }
 
   function wallUpgradeOptionFor(w: Wall): WallUpgradeOption | null {
@@ -479,13 +530,13 @@ export function GameScreen({
     return { kind: "repair", remainingMs: remainingMs(w.action.startedAt, durationMs, now) };
   }
 
-  function barracksBuildOptionFor(): SimpleCostOption {
+  function barracksBuildOptionFor(): RepairOption {
     const cost = barracksBuildCost(tweaks, barracksList.length + 1);
-    return { cost, affordable: affordable(cost) };
+    return { cost, affordable: affordable(cost), durationMinutes: barracksBuildDurationMs(tweaks) / 60_000 };
   }
 
   function dockBuildOptionFor(): SimpleCostOption {
-    const cost = scaledCostMap(tweaks.docks.build_cost_base, docks.length + 1);
+    const cost = dockBuildCost(tweaks, docks.length + 1);
     return { cost, affordable: affordable(cost) };
   }
 
@@ -583,8 +634,18 @@ export function GameScreen({
     return { totalCost, affordable: affordable(totalCost), maxQuantity, rushNoise };
   }
 
-  /** No rush-train variant for this unit (calm queue only) — capacityGap is 0 until a barracks meets units.junkyard_knight.min_barracks_level (engine/barracks.ts:junkyardKnightCapacity). */
-  function junkyardKnightTrainOptionFor(): SimpleTrainOption | null {
+  /**
+   * No rush-train variant for this unit (calm queue only) — capacityGap is 0
+   * until SOME barracks meets units.junkyard_knight.min_barracks_level
+   * (engine/barracks.ts:junkyardKnightCapacity), but that capacity pools
+   * across every barracks the player owns. Without the fromBarracksLevel
+   * check below, opening a low-level barracks would still show/allow this
+   * option as long as a *different*, higher-level barracks elsewhere
+   * contributed the capacity — training should only be offered at a
+   * barracks that itself meets the tier requirement.
+   */
+  function junkyardKnightTrainOptionFor(fromBarracksLevel: number): SimpleTrainOption | null {
+    if (fromBarracksLevel < tweaks.units.junkyard_knight.min_barracks_level) return null;
     const capacityGap = junkyardKnightCapacityFor(tweaks, barracksList) - units.junkyardKnightCount;
     if (capacityGap <= 0) return null;
     const perUnitCost = junkyardKnightTrainCost(tweaks);
@@ -594,8 +655,12 @@ export function GameScreen({
     return { totalCost, affordable: affordable(totalCost), maxQuantity };
   }
 
-  /** No rush-train variant for this unit (calm queue only) — capacityGap is 0 until a barracks meets units.cross_bow_sniper.min_barracks_level (engine/barracks.ts:crossBowSniperCapacity). */
-  function crossBowSniperTrainOptionFor(): SimpleTrainOption | null {
+  /**
+   * Same per-tile tier gate as junkyardKnightTrainOptionFor, above, at
+   * units.cross_bow_sniper.min_barracks_level.
+   */
+  function crossBowSniperTrainOptionFor(fromBarracksLevel: number): SimpleTrainOption | null {
+    if (fromBarracksLevel < tweaks.units.cross_bow_sniper.min_barracks_level) return null;
     const capacityGap = crossBowSniperCapacityFor(tweaks, barracksList) - units.crossBowSniperCount;
     if (capacityGap <= 0) return null;
     const perUnitCost = crossBowSniperTrainCost(tweaks);
@@ -658,20 +723,42 @@ export function GameScreen({
     return { targetLevel, cost, affordable: affordable(cost), durationMs: baseUpgradeDurationMs(tweaks, targetLevel) };
   }
 
-  /** Instant on purchase — unlike base-level upgrades, reinforcement has no duration in tweaks.jsonc (engine/base.ts). */
+  /** Timed like every other upgrade (engine/base.ts:baseReinforcementUpgradeDurationMs). Null while base.reinforcementAction is set — see reinforcementActionStatus below. */
   function reinforcementUpgradeOptionFor(): ReinforcementUpgradeOption | null {
+    if (base.reinforcementAction) return null;
     const targetLevel = base.reinforcementLevel + 1;
     if (targetLevel > maxReinforcementLevel(base.level)) return null;
     const cost = reinforcementUpgradeCost(tweaks, targetLevel);
-    return { targetLevel, hp: baseReinforcementHp(tweaks, targetLevel), cost, affordable: affordable(cost) };
+    return {
+      targetLevel,
+      hp: baseReinforcementHp(tweaks, targetLevel),
+      cost,
+      affordable: affordable(cost),
+      durationMs: baseReinforcementUpgradeDurationMs(tweaks, targetLevel),
+    };
   }
 
-  /** Null once base.currentHp is already at max — nothing to repair. */
-  function baseRepairOptionFor(): SimpleCostOption | null {
+  /** Null once base.currentHp is already at max — nothing to repair — or while base.reinforcementAction is set. */
+  function baseRepairOptionFor(): RepairOption | null {
+    if (base.reinforcementAction) return null;
     const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
     if (base.currentHp >= maxHp) return null;
     const cost = baseRepairCost(tweaks, base.currentHp, maxHp, base.reinforcementLevel);
-    return { cost, affordable: affordable(cost) };
+    const durationMinutes = baseReinforcementRepairDurationMs(tweaks, base.currentHp, maxHp) / 60_000;
+    return { cost, affordable: affordable(cost), durationMinutes };
+  }
+
+  /** Non-null while a reinforcement upgrade or repair is running on the base — mirrors wallActionStatusFor. */
+  function reinforcementActionStatusFor(): ReinforcementActionStatus | null {
+    const action = base.reinforcementAction;
+    if (!action) return null;
+    if (action.kind === "upgrade") {
+      const durationMs = baseReinforcementUpgradeDurationMs(tweaks, action.targetLevel);
+      return { kind: "upgrade", targetLevel: action.targetLevel, remainingMs: remainingMs(action.startedAt, durationMs, now) };
+    }
+    const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
+    const durationMs = baseReinforcementRepairDurationMs(tweaks, base.currentHp, maxHp);
+    return { kind: "repair", remainingMs: remainingMs(action.startedAt, durationMs, now) };
   }
 
   /**
@@ -681,18 +768,40 @@ export function GameScreen({
    * connected tiles feed that same pool, engine/tick.ts:accrueResources).
    */
   function outpostReinforcementUpgradeOptionFor(outpost: OutpostRecord): ReinforcementUpgradeOption | null {
+    if (outpost.reinforcementAction) return null;
     const targetLevel = outpost.reinforcementLevel + 1;
     if (targetLevel > maxOutpostReinforcementLevel(base.level)) return null;
     const cost = outpostReinforcementUpgradeCost(tweaks, targetLevel);
-    return { targetLevel, hp: outpostReinforcementHp(tweaks, targetLevel), cost, affordable: affordable(cost) };
+    return {
+      targetLevel,
+      hp: outpostReinforcementHp(tweaks, targetLevel),
+      cost,
+      affordable: affordable(cost),
+      durationMs: outpostReinforcementUpgradeDurationMs(tweaks, targetLevel),
+    };
   }
 
-  /** Outpost equivalent of baseRepairOptionFor — null once at max HP, cost checked against the shared resource pool. */
-  function outpostRepairOptionFor(outpost: OutpostRecord): SimpleCostOption | null {
+  /** Outpost equivalent of baseRepairOptionFor — null once at max HP or while busy, cost checked against the shared resource pool. */
+  function outpostRepairOptionFor(outpost: OutpostRecord): RepairOption | null {
+    if (outpost.reinforcementAction) return null;
     const maxHp = outpostReinforcementHp(tweaks, outpost.reinforcementLevel);
     if (outpost.currentHp >= maxHp) return null;
     const cost = outpostRepairCost(tweaks, outpost.currentHp, maxHp, outpost.reinforcementLevel);
-    return { cost, affordable: affordable(cost) };
+    const durationMinutes = outpostReinforcementRepairDurationMs(tweaks, outpost.currentHp, maxHp) / 60_000;
+    return { cost, affordable: affordable(cost), durationMinutes };
+  }
+
+  /** Outpost equivalent of reinforcementActionStatusFor. */
+  function outpostReinforcementActionStatusFor(outpost: OutpostRecord): ReinforcementActionStatus | null {
+    const action = outpost.reinforcementAction;
+    if (!action) return null;
+    if (action.kind === "upgrade") {
+      const durationMs = outpostReinforcementUpgradeDurationMs(tweaks, action.targetLevel);
+      return { kind: "upgrade", targetLevel: action.targetLevel, remainingMs: remainingMs(action.startedAt, durationMs, now) };
+    }
+    const maxHp = outpostReinforcementHp(tweaks, outpost.reinforcementLevel);
+    const durationMs = outpostReinforcementRepairDurationMs(tweaks, outpost.currentHp, maxHp);
+    return { kind: "repair", remainingMs: remainingMs(action.startedAt, durationMs, now) };
   }
 
   const baseUpgradeInProgress = base.upgrade
@@ -728,6 +837,8 @@ export function GameScreen({
       tweaks,
       world.seed,
       barracksList,
+      towers,
+      outposts,
       territory,
       scoutedTiles,
       tweaks.game.grid_size,
@@ -743,7 +854,7 @@ export function GameScreen({
       pathCost: route.cost,
       provisionsCost,
       affordable: affordable(provisionsCost),
-      etaMs: expeditionTravelDurationMs(tweaks, route.cost),
+      etaMs: expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, research)),
     };
   }
 
@@ -760,6 +871,8 @@ export function GameScreen({
       tweaks,
       world.seed,
       barracksList,
+      towers,
+      outposts,
       territory,
       scoutedTiles,
       tweaks.game.grid_size,
@@ -775,7 +888,7 @@ export function GameScreen({
       pathCost: route.cost,
       provisionsCost,
       affordable: affordable(provisionsCost),
-      etaMs: expeditionTravelDurationMs(tweaks, route.cost),
+      etaMs: expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, research)),
       denDefense: denDefense(tweaks, den.level),
     };
   }
@@ -804,6 +917,45 @@ export function GameScreen({
    */
   function denAssaultInProgressFor(den: DenRecord): { etaMs: number } | null {
     const assault = denAssaults.find((a) => a.denId === den.id);
+    if (!assault) return null;
+    return { etaMs: remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now) };
+  }
+
+  /**
+   * Mirrors denAssaultOptionFor exactly, for the lab's single static
+   * guardian instead of a den's level-scaled defense — same "no route until
+   * scouted" gate, same militia/knight/sniper-to-send inputs.
+   */
+  function labAssaultOptionFor(): LabAssaultOption | null {
+    const route = findBestExpeditionRoute(
+      tweaks,
+      world.seed,
+      barracksList,
+      towers,
+      outposts,
+      territory,
+      scoutedTiles,
+      tweaks.game.grid_size,
+      lab.coord,
+    );
+    if (!route) return null;
+    const partySize = militiaToSend + junkyardKnightToSend + crossBowSniperToSend;
+    const provisionsCost: Partial<Record<ResourceType, number>> = {
+      food: expeditionProvisionsCost(tweaks, partySize, route.cost),
+    };
+    return {
+      distanceTiles: route.path.length - 1,
+      pathCost: route.cost,
+      provisionsCost,
+      affordable: affordable(provisionsCost),
+      etaMs: expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, research)),
+      guardianDefense: tweaks.lab.guardian_defense,
+    };
+  }
+
+  /** Mirrors denAssaultInProgressFor — null unless a LabAssaultRecord is currently in transit (there's only ever one at a time, handleSecureLab rejects a second dispatch). */
+  function labAssaultInProgress(): LabAssaultInProgress | null {
+    const assault = labAssaults[0];
     if (!assault) return null;
     return { etaMs: remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now) };
   }
@@ -1027,7 +1179,8 @@ export function GameScreen({
   }
 
   async function handleMaxJunkyardKnight() {
-    const option = junkyardKnightTrainOptionFor();
+    if (!selectedBarracks) return;
+    const option = junkyardKnightTrainOptionFor(selectedBarracks.level);
     if (!option) return;
     if (option.maxQuantity <= 0) {
       setActionError("Not enough resources to train any junkyard knights");
@@ -1039,7 +1192,8 @@ export function GameScreen({
   }
 
   async function handleMaxCrossBowSniper() {
-    const option = crossBowSniperTrainOptionFor();
+    if (!selectedBarracks) return;
+    const option = crossBowSniperTrainOptionFor(selectedBarracks.level);
     if (!option) return;
     if (option.maxQuantity <= 0) {
       setActionError("Not enough resources to train any cross-bow snipers");
@@ -1088,6 +1242,11 @@ export function GameScreen({
     setActionError(result.ok ? null : result.reason);
   }
 
+  async function handleSecureLab() {
+    const result = await onSecureLab(militiaToSend, junkyardKnightToSend, crossBowSniperToSend);
+    setActionError(result.ok ? null : result.reason);
+  }
+
   async function handleGarrisonMilitia() {
     if (!selected) return;
     const result = await onGarrisonMilitia(selected, militiaToGarrison);
@@ -1096,7 +1255,7 @@ export function GameScreen({
 
   async function handleMaxGarrison() {
     if (!selected) return;
-    const maxCount = availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls);
+    const maxCount = availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
     if (maxCount <= 0) return;
     setMilitiaToGarrison(maxCount);
     const result = await onGarrisonMilitia(selected, maxCount);
@@ -1111,7 +1270,7 @@ export function GameScreen({
 
   async function handleMaxGarrisonJunkyardKnight() {
     if (!selected) return;
-    const maxCount = availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls);
+    const maxCount = availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
     if (maxCount <= 0) return;
     setJunkyardKnightToGarrison(maxCount);
     const result = await onGarrisonJunkyardKnight(selected, maxCount);
@@ -1126,7 +1285,7 @@ export function GameScreen({
 
   async function handleMaxGarrisonCrossBowSniper() {
     if (!selected) return;
-    const maxCount = availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls);
+    const maxCount = availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
     if (maxCount <= 0) return;
     setCrossBowSniperToGarrison(maxCount);
     const result = await onGarrisonCrossBowSniper(selected, maxCount);
@@ -1166,16 +1325,43 @@ export function GameScreen({
    * A structure a horde captured stays in place but goes `damaged` (see
    * markCapturedStructuresDamaged, engine/hordes.ts) — this surfaces the
    * fixed-percentage-of-original-build-cost repair option (repairCost,
-   * engine/formulas.ts) once the player has reclaimed the tile. Generic over
-   * whichever of the five structure kinds is actually sitting there, since
-   * only one can occupy a tile at a time.
+   * engine/formulas.ts), timed (structureRepairDurationMs), once the player
+   * has reclaimed the tile. Generic over whichever of the five structure
+   * kinds is actually sitting there, since only one can occupy a tile at a
+   * time. Null while repairInProgressFor is non-null for the same structure.
    */
   function repairOptionFor(
-    structure: { damaged: boolean; buildCost: Partial<Record<ResourceType, number>> } | null,
-  ): SimpleCostOption | null {
-    if (!structure || !structure.damaged) return null;
+    structure: {
+      damaged: boolean;
+      damageRepair?: { startedAt: number } | null;
+      buildCost: Partial<Record<ResourceType, number>>;
+    } | null,
+  ): RepairOption | null {
+    if (!structure || !structure.damaged || structure.damageRepair) return null;
     const cost = repairCost(tweaks, structure.buildCost);
-    return { cost, affordable: affordable(cost) };
+    return { cost, affordable: affordable(cost), durationMinutes: structureRepairDurationMs(tweaks) / 60_000 };
+  }
+
+  /** Non-null while the selected structure's damage repair timer is running — see repairOptionFor's doc comment. */
+  function repairInProgressFor(
+    structure: { damaged: boolean; damageRepair?: { startedAt: number } | null } | null,
+  ): { remainingMs: number } | null {
+    if (!structure || !structure.damageRepair) return null;
+    return { remainingMs: remainingMs(structure.damageRepair.startedAt, structureRepairDurationMs(tweaks), now) };
+  }
+
+  /**
+   * Non-null while a freshly-built structure hasn't finished its
+   * construction timer yet — `durationMs` is caller-supplied since each of
+   * the 5 structure kinds pays its own flat build_time_minutes (unlike
+   * repairInProgressFor's duration, which is the same flat value for all 5).
+   */
+  function constructionInProgressFor(
+    buildStartedAt: number | null | undefined,
+    durationMs: number,
+  ): { remainingMs: number } | null {
+    if (!buildStartedAt) return null;
+    return { remainingMs: remainingMs(buildStartedAt, durationMs, now) };
   }
 
   const selectedTile = selected ? tileAt(selected) : null;
@@ -1187,6 +1373,14 @@ export function GameScreen({
   const selectedIsBase = selected ? axialEquals(selected, territory.base) : false;
   const selectedDen: DenRecord | null = selected ? (dens.find((d) => axialEquals(d.coord, selected)) ?? null) : null;
   const selectedOutpost: OutpostRecord | null = selected ? outpostAt(selected) : null;
+  const selectedTombstone: TombstoneRecord | null = selected
+    ? (tombstones.find((t) => axialEquals(t.coord, selected)) ?? null)
+    : null;
+  // The lab stays indistinguishable from ordinary unscouted ground until the
+  // player actually scouts its exact tile (DESIGN.md §13 — "hidden from
+  // normal scouting") — isScouted gates this the same way it gates every
+  // other "reveal what's here" branch below.
+  const selectedIsLab = selected !== null && isScouted(selected) && axialEquals(lab.coord, selected);
   // A den's or outpost's own core coordinate can end up in territory.owned
   // (the hold/starting ring, axialSpiral, includes its center) but still
   // isn't buildable ground — same exclusion as the main base tile.
@@ -1198,7 +1392,8 @@ export function GameScreen({
     !selectedBarracks &&
     !selectedDock &&
     !selectedDen &&
-    !selectedOutpost;
+    !selectedOutpost &&
+    !selectedIsLab;
   const selectedConnected =
     selected && selectedTile
       ? findResourceTileConnection(extractionTiles, pathTiles, territory.base, selected) !== null
@@ -1305,6 +1500,14 @@ export function GameScreen({
           ))}
         </div>
         <span>noise: {Math.floor(noise.value)}db</span>
+        {lab.secured ? (
+          <span>lab: secured</span>
+        ) : (
+          <span>
+            clues: {lab.cluesCollected}/{tweaks.lab_clues.total_clues}
+            {lab.cluesCollected > 0 && ` — ${labClueText(lab.cluesCollected, territory.base, lab.coord)}`}
+          </span>
+        )}
         <span>
           scouts: {units.scoutStockpile}/{scoutCapacityFor(tweaks, barracksList)}
         </span>
@@ -1338,6 +1541,7 @@ export function GameScreen({
           hordes={hordes}
           expeditions={expeditions}
           denAssaults={denAssaults}
+          tombstones={tombstones}
           now={now}
           docks={docks}
           scoutSkiffs={scoutSkiffs}
@@ -1453,10 +1657,14 @@ export function GameScreen({
             selectedBarracks && isOwned(selected) && !selectedBarracks.damaged ? militiaTrainOptionFor() : null
           }
           junkyardKnightTrainOption={
-            selectedBarracks && isOwned(selected) && !selectedBarracks.damaged ? junkyardKnightTrainOptionFor() : null
+            selectedBarracks && isOwned(selected) && !selectedBarracks.damaged
+              ? junkyardKnightTrainOptionFor(selectedBarracks.level)
+              : null
           }
           crossBowSniperTrainOption={
-            selectedBarracks && isOwned(selected) && !selectedBarracks.damaged ? crossBowSniperTrainOptionFor() : null
+            selectedBarracks && isOwned(selected) && !selectedBarracks.damaged
+              ? crossBowSniperTrainOptionFor(selectedBarracks.level)
+              : null
           }
           scoutQueueStatus={selectedBarracks ? scoutQueueStatus : null}
           militiaQueueStatus={selectedBarracks ? militiaQueueStatus : null}
@@ -1481,6 +1689,22 @@ export function GameScreen({
           canDemolish={isOwned(selected) && !selectedIsBase && (!!selectedStructure || !!selectedDock)}
           repairOption={repairOptionFor(selectedStructure)}
           repairBlockedByHorde={selectedHordeOccupied}
+          repairInProgress={repairInProgressFor(selectedStructure)}
+          constructionInProgress={
+            selectedTile
+              ? constructionInProgressFor(selectedTile.buildStartedAt, extractionTileBuildDurationMs(tweaks))
+              : selectedPath
+                ? constructionInProgressFor(selectedPath.buildStartedAt, pathBuildDurationMs(tweaks))
+                : selectedTower
+                  ? constructionInProgressFor(selectedTower.buildStartedAt, towerBuildDurationMs(tweaks))
+                  : selectedWall
+                    ? constructionInProgressFor(selectedWall.buildStartedAt, wallBuildDurationMs(tweaks))
+                    : selectedBarracks
+                      ? constructionInProgressFor(selectedBarracks.buildStartedAt, barracksBuildDurationMs(tweaks))
+                      : selectedDock
+                        ? constructionInProgressFor(selectedDock.buildStartedAt, dockBuildDurationMs(tweaks))
+                        : null
+          }
           baseLevel={base.level}
           baseUpgradeOption={selectedIsBase ? baseUpgradeOptionFor() : null}
           baseUpgradeInProgress={selectedIsBase ? baseUpgradeInProgress : null}
@@ -1489,42 +1713,53 @@ export function GameScreen({
           reinforcementUpgradeOption={selectedIsBase ? reinforcementUpgradeOptionFor() : null}
           baseRepairOption={selectedIsBase ? baseRepairOptionFor() : null}
           baseRepairBlockedByHorde={baseAdjacentHordeOccupied}
+          reinforcementActionStatus={selectedIsBase ? reinforcementActionStatusFor() : null}
           relocationOption={!selectedIsBase ? relocationOptionFor(selected) : null}
           canRelocateBase={canRelocateBase(tweaks, base.level)}
           baseRelocationInProgress={selectedIsBase ? baseRelocationInProgress : null}
           expeditionOption={
-            !isOwned(selected) && isScouted(selected) && !selectedDen ? expeditionRouteOptionFor(selected) : null
+            !isOwned(selected) && isScouted(selected) && !selectedDen && !selectedIsLab
+              ? expeditionRouteOptionFor(selected)
+              : null
           }
           den={selectedDen}
           denAssaultOption={selectedDen ? denAssaultOptionFor(selectedDen) : null}
           denSiegeStatus={selectedDen ? denSiegeStatusFor(selectedDen) : null}
           denAssaultInProgress={selectedDen ? denAssaultInProgressFor(selectedDen) : null}
+          lab={selectedIsLab ? lab : null}
+          labAssaultOption={selectedIsLab ? labAssaultOptionFor() : null}
+          labAssaultInProgress={selectedIsLab ? labAssaultInProgress() : null}
           outpost={selectedOutpost}
           outpostMaxHp={selectedOutpost ? outpostReinforcementHp(tweaks, selectedOutpost.reinforcementLevel) : null}
           outpostReinforcementUpgradeOption={
             selectedOutpost ? outpostReinforcementUpgradeOptionFor(selectedOutpost) : null
           }
           outpostRepairOption={selectedOutpost ? outpostRepairOptionFor(selectedOutpost) : null}
+          outpostReinforcementActionStatus={
+            selectedOutpost ? outpostReinforcementActionStatusFor(selectedOutpost) : null
+          }
           outpostRepairBlockedByHorde={
             selectedOutpost
               ? hordes.some((h) => axialDistance(h.path[h.pathIndex], selectedOutpost.coord) <= 1)
               : false
           }
+          tombstone={selectedTombstone}
+          tombstoneExpiresInMs={selectedTombstone ? Math.max(0, selectedTombstone.expiresAt - now) : null}
           militiaToSend={militiaToSend}
           junkyardKnightToSend={junkyardKnightToSend}
           crossBowSniperToSend={crossBowSniperToSend}
-          availableMilitiaForExpeditionCount={availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls)}
-          availableJunkyardKnightForExpeditionCount={availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls)}
-          availableCrossBowSniperForExpeditionCount={availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls)}
+          availableMilitiaForExpeditionCount={availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)}
+          availableJunkyardKnightForExpeditionCount={availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)}
+          availableCrossBowSniperForExpeditionCount={availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)}
           garrisonMilitiaCount={selectedGarrison?.militiaCount ?? 0}
           recallInProgress={selected ? recallInProgressFor(selected) : null}
-          availableMilitiaCount={availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls)}
+          availableMilitiaCount={availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)}
           militiaToGarrison={militiaToGarrison}
           garrisonJunkyardKnightCount={selectedGarrison?.junkyardKnightCount ?? 0}
-          availableJunkyardKnightCount={availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls)}
+          availableJunkyardKnightCount={availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)}
           junkyardKnightToGarrison={junkyardKnightToGarrison}
           garrisonCrossBowSniperCount={selectedGarrison?.crossBowSniperCount ?? 0}
-          availableCrossBowSniperCount={availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls)}
+          availableCrossBowSniperCount={availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)}
           crossBowSniperToGarrison={crossBowSniperToGarrison}
           garrisonBlockedByHorde={selectedHordeOccupied}
           buildError={actionError}
@@ -1567,6 +1802,7 @@ export function GameScreen({
           onRelocateBase={handleRelocateBase}
           onDispatchExpedition={handleDispatchExpedition}
           onAssaultDen={handleAssaultDen}
+          onSecureLab={handleSecureLab}
           onGarrisonMilitia={handleGarrisonMilitia}
           onMaxGarrison={handleMaxGarrison}
           onGarrisonJunkyardKnight={handleGarrisonJunkyardKnight}
@@ -1605,6 +1841,33 @@ export function GameScreen({
       >
         {speedMultiplier > 1 ? `⏩ ${speedMultiplier}x` : "▶ 1x"}
       </button>
+      <button
+        type="button"
+        onClick={() => setShowResearchPanel((open) => !open)}
+        style={{
+          position: "fixed",
+          right: "5.5rem",
+          bottom: "1rem",
+          padding: "0.5rem 0.75rem",
+          borderRadius: 8,
+          border: "none",
+          background: research.pending ? "#2e7d32" : "rgba(20, 20, 22, 0.92)",
+          color: "white",
+          cursor: "pointer",
+        }}
+      >
+        🔬 Research
+      </button>
+      {showResearchPanel && (
+        <ResearchPanel
+          tweaks={tweaks}
+          research={research}
+          resources={resources}
+          now={now}
+          onStartResearch={onStartResearch}
+          onClose={() => setShowResearchPanel(false)}
+        />
+      )}
       {(expeditions.length > 0 || denAssaults.length > 0 || garrisonRecalls.length > 0) && (
         <div
           style={{

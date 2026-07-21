@@ -14,6 +14,11 @@ import {
   initialStorageLevels,
   type StorageLevels,
 } from "./data/storageLevels";
+import {
+  STORAGE_UPGRADES_DB_KEY,
+  initialStorageUpgrades,
+  type StorageUpgradesRecord,
+} from "./data/storageUpgrades";
 import { NOISE_DB_KEY, initialNoise, type NoiseRecord } from "./data/noise";
 import { TOWERS_DB_KEY, type Tower } from "./data/towers";
 import { WALLS_DB_KEY, type Wall } from "./data/walls";
@@ -23,21 +28,35 @@ import { GARRISONS_DB_KEY, type GarrisonsRecord } from "./data/garrisons";
 import { SCOUTED_TILES_DB_KEY, type ScoutedTiles } from "./data/scoutedTiles";
 import { DENS_DB_KEY, createDens, resolveDen, type DenRecord, type DensRecord } from "./data/dens";
 import { DEN_ASSAULTS_DB_KEY, type DenAssaultRecord, type DenAssaultsRecord } from "./data/denAssaults";
+import { LAB_DB_KEY, createLab, type LabRecord } from "./data/lab";
+import { LAB_ASSAULTS_DB_KEY, type LabAssaultRecord, type LabAssaultsRecord } from "./data/labAssaults";
 import { GARRISON_RECALLS_DB_KEY, type GarrisonRecallRecord, type GarrisonRecallsRecord } from "./data/garrisonRecalls";
-import { OUTPOSTS_DB_KEY, createOutpostFromDen, type OutpostsRecord } from "./data/outposts";
+import { OUTPOSTS_DB_KEY, createOutpostFromDen, type OutpostRecord, type OutpostsRecord } from "./data/outposts";
 import { HORDES_DB_KEY, type HordesRecord } from "./data/hordes";
 import { DOCKS_DB_KEY, type DocksRecord } from "./data/docks";
 import { SCOUT_SKIFFS_DB_KEY, type ScoutSkiffsRecord } from "./data/scoutSkiffs";
 import { WANDERING_SCOUTS_DB_KEY, type WanderingScoutsRecord } from "./data/wanderingScouts";
 import { EXPEDITIONS_DB_KEY, type Expedition, type ExpeditionsRecord } from "./data/expeditions";
+import { TOMBSTONES_DB_KEY, type TombstoneRecord, type TombstonesRecord } from "./data/tombstones";
 import { GAME_STATUS_DB_KEY, initialGameStatus, type GameStatusRecord } from "./data/gameStatus";
+import { RESEARCH_DB_KEY, initialResearch, type ResearchId, type ResearchRecord } from "./data/research";
 import type { ResourceType } from "./data/resources";
 import { get, set } from "./persistence/db";
 import { axialDistance, axialKey, axialSpiral, isWithinMapBounds, type Axial } from "./engine/hexCoords";
 import { accrueResources, collectTile } from "./engine/tick";
-import { addToInvestment, buildSlotCap, demolishRefund, repairCost, scaledCostMap, totalStructureCount } from "./engine/formulas";
+import {
+  addToInvestment,
+  buildSlotCap,
+  demolishRefund,
+  repairCost,
+  scaledCostMap,
+  structureRepairDurationMs,
+  totalStructureCount,
+} from "./engine/formulas";
 import {
   baseReinforcementHp,
+  baseReinforcementRepairDurationMs,
+  baseReinforcementUpgradeDurationMs,
   baseRelocationCost,
   baseRepairCost,
   baseUpgradeCost,
@@ -49,16 +68,19 @@ import {
 } from "./engine/base";
 import { autoClaimTowerRange, isTileScoutable } from "./engine/territory";
 import {
+  expeditionPathIndexAt,
   expeditionProvisionsCost,
   expeditionTravelDurationMs,
   findBestExpeditionRoute,
   partyAttackPower,
   recallDurationMs,
-  resolveExpeditionWalk,
+  stepCorridorWalk,
+  type TombstoneCause,
 } from "./engine/expeditions";
-import { nextTier, tierUpgradeCost, tierUpgradeDurationMs } from "./engine/tiers";
-import { storageCapacity, storageUpgradeCost } from "./engine/storage";
-import { nextPathTier, pathBuildCost, pathUpgradeCost, pathUpgradeDurationMs } from "./engine/paths";
+import { extractionTileBuildDurationMs, nextTier, tierUpgradeCost, tierUpgradeDurationMs } from "./engine/tiers";
+import { storageCapacity, storageUpgradeCost, storageUpgradeDurationMs } from "./engine/storage";
+import { isResearchAvailable, researchCost, researchDurationMs, troopSpeedMultiplier, unlockedSpeedRates } from "./engine/research";
+import { nextPathTier, pathBuildCost, pathBuildDurationMs, pathUpgradeCost, pathUpgradeDurationMs } from "./engine/paths";
 import { isBuildableLand, isTransitionTile, terrainAt } from "./engine/terrain";
 import { accrueNoise, addActionNoise } from "./engine/noiseMeter";
 import {
@@ -78,21 +100,25 @@ import {
 } from "./engine/garrisons";
 import { isTimerComplete } from "./engine/timers";
 import { denAssaultSurvivors, denDefense, holdDefenseAt, resolveDenAssault, resolveHoldPeriod } from "./engine/dens";
+import { resolveLabAssault, rollScoutClue } from "./engine/lab";
 import {
   maxOutpostReinforcementLevel,
   outpostReinforcementHp,
+  outpostReinforcementRepairDurationMs,
   outpostReinforcementUpgradeCost,
+  outpostReinforcementUpgradeDurationMs,
   outpostRepairCost,
   revertOutpostToDen,
 } from "./engine/outposts";
-import { accrueDockResources, collectDock } from "./engine/docks";
+import { accrueDockResources, collectDock, dockBuildCost, dockBuildDurationMs } from "./engine/docks";
 import { advanceScoutSkiffs } from "./engine/scoutSkiffs";
 import { advanceWanderingScouts } from "./engine/wanderingScouts";
-import { nextTowerLevel, towerBuildCost, towerUpgradeCost, towerUpgradeDurationMs } from "./engine/towers";
+import { nextTowerLevel, towerBuildCost, towerBuildDurationMs, towerUpgradeCost, towerUpgradeDurationMs } from "./engine/towers";
 import {
   maxWallDurability,
   nextWallTier,
   wallBuildCost,
+  wallBuildDurationMs,
   wallRepairCost,
   wallRepairDurationMs,
   wallUpgradeCost,
@@ -100,6 +126,7 @@ import {
 } from "./engine/walls";
 import {
   barracksBuildCost,
+  barracksBuildDurationMs,
   barracksTrainingCapacity,
   barracksUpgradeCost,
   barracksUpgradeDurationMs,
@@ -123,6 +150,7 @@ import {
 } from "./engine/units";
 import { GameScreen } from "./ui/GameScreen";
 import { GameOverScreen } from "./ui/GameOverScreen";
+import { WinScreen } from "./ui/WinScreen";
 import { OnboardingScreen } from "./ui/OnboardingScreen";
 import "./App.css";
 
@@ -142,6 +170,7 @@ interface GameState {
   garrisons: GarrisonsRecord;
   scoutedTiles: ScoutedTiles;
   storageLevels: StorageLevels;
+  storageUpgrades: StorageUpgradesRecord;
   noise: NoiseRecord;
   dens: DensRecord;
   hordes: HordesRecord;
@@ -153,6 +182,10 @@ interface GameState {
   denAssaults: DenAssaultsRecord;
   outposts: OutpostsRecord;
   garrisonRecalls: GarrisonRecallsRecord;
+  lab: LabRecord;
+  labAssaults: LabAssaultsRecord;
+  research: ResearchRecord;
+  tombstones: TombstonesRecord;
 }
 
 /**
@@ -169,6 +202,88 @@ function resolveBase(tweaks: Tweaks, base: BaseRecord | undefined): BaseRecord {
     resolved.currentHp = baseReinforcementHp(tweaks, resolved.reinforcementLevel);
   }
   return resolved;
+}
+
+/**
+ * Applies a completed reinforcement upgrade or repair — same virtual-clock-
+ * threshold pattern as the wall action block in runTick, but for the base's
+ * single reinforcementAction slot. An upgrade both raises reinforcementLevel
+ * and fully restores HP to the new max (an upgrade doubles as a full
+ * repair, so damage never has to be dealt with twice); a repair just
+ * restores HP to the (unchanged) current max.
+ */
+function resolveBaseReinforcementAction(tweaks: Tweaks, base: BaseRecord, virtualNow: number): BaseRecord {
+  const action = base.reinforcementAction;
+  if (!action) return base;
+  if (action.kind === "upgrade") {
+    const durationMs = baseReinforcementUpgradeDurationMs(tweaks, action.targetLevel);
+    if (!isTimerComplete(action.startedAt, durationMs, virtualNow)) return base;
+    return {
+      ...base,
+      reinforcementLevel: action.targetLevel,
+      currentHp: baseReinforcementHp(tweaks, action.targetLevel),
+      reinforcementAction: null,
+    };
+  }
+  const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
+  const durationMs = baseReinforcementRepairDurationMs(tweaks, base.currentHp, maxHp);
+  if (!isTimerComplete(action.startedAt, durationMs, virtualNow)) return base;
+  return { ...base, currentHp: maxHp, reinforcementAction: null };
+}
+
+/** Outpost equivalent of resolveBaseReinforcementAction. */
+function resolveOutpostReinforcementAction(tweaks: Tweaks, outpost: OutpostRecord, virtualNow: number): OutpostRecord {
+  const action = outpost.reinforcementAction;
+  if (!action) return outpost;
+  if (action.kind === "upgrade") {
+    const durationMs = outpostReinforcementUpgradeDurationMs(tweaks, action.targetLevel);
+    if (!isTimerComplete(action.startedAt, durationMs, virtualNow)) return outpost;
+    return {
+      ...outpost,
+      reinforcementLevel: action.targetLevel,
+      currentHp: outpostReinforcementHp(tweaks, action.targetLevel),
+      reinforcementAction: null,
+    };
+  }
+  const maxHp = outpostReinforcementHp(tweaks, outpost.reinforcementLevel);
+  const durationMs = outpostReinforcementRepairDurationMs(tweaks, outpost.currentHp, maxHp);
+  if (!isTimerComplete(action.startedAt, durationMs, virtualNow)) return outpost;
+  return { ...outpost, currentHp: maxHp, reinforcementAction: null };
+}
+
+/**
+ * Clears `damaged` once a structure's damage-repair timer completes —
+ * shared by all 5 structure kinds (extraction tile, path, tower, wall,
+ * barracks), which each have their own damaged/damageRepair pair
+ * (engine/formulas.ts:structureRepairDurationMs).
+ */
+function resolveDamageRepair<T extends { damaged: boolean; damageRepair?: { startedAt: number } | null }>(
+  structure: T,
+  tweaks: Tweaks,
+  virtualNow: number,
+): T {
+  if (!structure.damageRepair) return structure;
+  if (!isTimerComplete(structure.damageRepair.startedAt, structureRepairDurationMs(tweaks), virtualNow)) return structure;
+  return { ...structure, damaged: false, damageRepair: null };
+}
+
+/**
+ * Clears `buildStartedAt` once a structure's construction timer completes —
+ * shared by all 5 structure kinds (extraction tile, path, tower, wall,
+ * barracks), each of which pays its own flat build_time_minutes duration
+ * (engine/tiers.ts, engine/paths.ts, engine/towers.ts, engine/walls.ts,
+ * engine/barracks.ts) — passed in already-resolved since it's a flat
+ * per-kind value, not derived from the structure itself the way
+ * resolveDamageRepair's duration is.
+ */
+function resolveConstruction<T extends { buildStartedAt?: number | null }>(
+  structure: T,
+  durationMs: number,
+  virtualNow: number,
+): T {
+  if (!structure.buildStartedAt) return structure;
+  if (!isTimerComplete(structure.buildStartedAt, durationMs, virtualNow)) return structure;
+  return { ...structure, buildStartedAt: null };
 }
 
 /** Every owned tile can hold at most one structure of any kind (extraction, path, tower, wall, barracks, or dock). */
@@ -197,10 +312,15 @@ export type BuildResult = { ok: true } | { ok: false; reason: string };
  * clock.virtualNow (runTick below), every build/upgrade/training timer too,
  * since those are now anchored to the virtual clock instead of raw
  * Date.now(). The fast-forward button cycles through these rates rather than
- * a plain on/off toggle. The 10x "testing" tier only exists in dev builds
- * (import.meta.env.DEV) — absent from the cycle entirely in production.
+ * a plain on/off toggle. 1x is always free; 3x/5x are unlocked by the
+ * game_speed research line (engine/research.ts:unlockedSpeedRates) rather
+ * than being fixed. The 10x "testing" tier only exists in dev builds
+ * (import.meta.env.DEV) — absent from the cycle entirely in production, and
+ * unaffected by research either way.
  */
-const SPEED_MULTIPLIER_RATES = import.meta.env.DEV ? [1, 2, 5, 10] : [1, 2, 5];
+function speedMultiplierRates(tweaks: Tweaks, research: ResearchRecord): number[] {
+  return [...unlockedSpeedRates(tweaks, research), ...(import.meta.env.DEV ? [10] : [])];
+}
 
 export default function App() {
   const [boot, setBoot] = useState<BootState>({ status: "loading" });
@@ -235,6 +355,7 @@ export default function App() {
           garrisons,
           scoutedTiles,
           storageLevels,
+          storageUpgrades,
           noise,
           dens,
           hordes,
@@ -246,6 +367,10 @@ export default function App() {
           denAssaults,
           outposts,
           garrisonRecalls,
+          lab,
+          labAssaults,
+          research,
+          tombstones,
         ] = await Promise.all([
           loadTweaks(),
           get<Player>(PLAYER_DB_KEY),
@@ -263,6 +388,7 @@ export default function App() {
           get<GarrisonsRecord>(GARRISONS_DB_KEY),
           get<ScoutedTiles>(SCOUTED_TILES_DB_KEY),
           get<StorageLevels>(STORAGE_LEVELS_DB_KEY),
+          get<StorageUpgradesRecord>(STORAGE_UPGRADES_DB_KEY),
           get<NoiseRecord>(NOISE_DB_KEY),
           get<DensRecord>(DENS_DB_KEY),
           get<HordesRecord>(HORDES_DB_KEY),
@@ -274,7 +400,12 @@ export default function App() {
           get<DenAssaultsRecord>(DEN_ASSAULTS_DB_KEY),
           get<OutpostsRecord>(OUTPOSTS_DB_KEY),
           get<GarrisonRecallsRecord>(GARRISON_RECALLS_DB_KEY),
+          get<LabRecord>(LAB_DB_KEY),
+          get<LabAssaultsRecord>(LAB_ASSAULTS_DB_KEY),
+          get<ResearchRecord>(RESEARCH_DB_KEY),
+          get<TombstonesRecord>(TOMBSTONES_DB_KEY),
         ]);
+        const resolvedDens = (dens ?? []).map(resolveDen);
         const game =
           player && world && territory && resources && clock && storageLevels
             ? {
@@ -298,18 +429,32 @@ export default function App() {
                 garrisons: garrisons ?? [],
                 scoutedTiles: scoutedTiles ?? [],
                 storageLevels,
+                storageUpgrades: storageUpgrades ?? initialStorageUpgrades(),
                 noise: noise ?? initialNoise(tweaks),
                 // resolveDen spreads siege:null over any pre-M14 den missing it.
-                dens: (dens ?? []).map(resolveDen),
+                dens: resolvedDens,
                 hordes: hordes ?? [],
-                expeditions: expeditions ?? [],
-                gameStatus: gameStatus ?? initialGameStatus(),
+                // Pre-2026-07-21 saves predate resolvedIndex (real-time
+                // incremental corridor resolution) — default it to 0 so an
+                // in-flight party from an old save just re-walks its corridor
+                // from the start next tick, same as a freshly-dispatched one.
+                expeditions: (expeditions ?? []).map((e) => ({ ...e, resolvedIndex: e.resolvedIndex ?? 0 })),
+                // Spreads over initialGameStatus() defaults, not just `?? initialGameStatus()`
+                // — a pre-M15 save has `lost`/`lostAt` but no `won`/`wonAt`.
+                gameStatus: { ...initialGameStatus(), ...gameStatus },
                 docks: docks ?? [],
                 scoutSkiffs: scoutSkiffs ?? [],
                 wanderingScouts: wanderingScouts ?? [],
-                denAssaults: denAssaults ?? [],
+                denAssaults: (denAssaults ?? []).map((a) => ({ ...a, resolvedIndex: a.resolvedIndex ?? 0 })),
                 outposts: outposts ?? [],
                 garrisonRecalls: garrisonRecalls ?? [],
+                // Pre-M15 saves have no lab yet — create one deterministically
+                // from the same world seed, same convention as dens/outposts
+                // gaining defaults when their systems first shipped.
+                lab: lab ?? createLab(world.seed, tweaks.game.grid_size, territory.base, resolvedDens, tweaks),
+                labAssaults: (labAssaults ?? []).map((a) => ({ ...a, resolvedIndex: a.resolvedIndex ?? 0 })),
+                research: research ?? initialResearch(),
+                tombstones: tombstones ?? [],
               }
             : undefined;
         setBoot({ status: "ready", tweaks, game });
@@ -329,7 +474,7 @@ export default function App() {
     function runTick() {
       const current = bootRef.current;
       if (current.status !== "ready" || !current.game) return;
-      if (current.game.gameStatus.lost) return; // frozen — DESIGN.md §13 loss condition already hit
+      if (current.game.gameStatus.lost || current.game.gameStatus.won) return; // frozen — DESIGN.md §13 loss/win condition already hit
       const now = Date.now();
       const elapsedSeconds = ((now - current.game.clock.lastTickAt) / 1000) * speedMultiplierRef.current;
       if (elapsedSeconds <= 0) return;
@@ -358,8 +503,11 @@ export default function App() {
       );
       // Later stages (hold-period damage, horde overrun/reversion, fresh
       // conversions) build on top of this array, not current.game.outposts
-      // directly.
-      const outpostsAfterYield: OutpostsRecord = current.game.outposts;
+      // directly. Reinforcement upgrade/repair timers are resolved here too,
+      // before hordeHubs below reads currentHp for this tick's combat.
+      const outpostsAfterYield: OutpostsRecord = current.game.outposts.map((o) =>
+        resolveOutpostReinforcementAction(current.tweaks, o, virtualNow),
+      );
       const { resources: producedResourcesWithDocks, docks: docksAfterYield } = accrueDockResources(
         current.tweaks,
         current.game.docks,
@@ -399,6 +547,11 @@ export default function App() {
           ? { ...current.game.base, level: currentUpgrade.targetLevel, upgrade: null }
           : current.game.base;
 
+      // Reinforcement (HP) upgrade/repair timer — same virtual-clock-
+      // threshold pattern, resolved before hordeHubs below reads currentHp
+      // for this tick's combat.
+      const baseAfterReinforcement = resolveBaseReinforcementAction(current.tweaks, baseAfterUpgrade, virtualNow);
+
       // Base relocation timer — same virtual-clock-threshold pattern as the
       // upgrade check above. This is the one place territory.base is ever
       // reassigned; resolved here (before hordeSpawns/advanceHordes/
@@ -407,7 +560,7 @@ export default function App() {
       // barracks, garrisons, dens) stays exactly where it was — only the
       // base coordinate moves, and the destination tile joins territory.owned
       // if it wasn't already (a base always sits on owned ground).
-      const relocation = baseAfterUpgrade.relocation;
+      const relocation = baseAfterReinforcement.relocation;
       const relocationDistance = relocation ? axialDistance(current.game.territory.base, relocation.destination) : 0;
       const territoryAfterRelocation: TerritoryRecord =
         relocation && isBaseRelocationComplete(current.tweaks, relocation, relocationDistance, virtualNow)
@@ -420,56 +573,77 @@ export default function App() {
           : current.game.territory;
       const base: BaseRecord =
         territoryAfterRelocation !== current.game.territory
-          ? { ...baseAfterUpgrade, relocation: null }
-          : baseAfterUpgrade;
+          ? { ...baseAfterReinforcement, relocation: null }
+          : baseAfterReinforcement;
 
       // Structure upgrade/repair timers — same virtual-clock-threshold
       // pattern as the base-level check above, resolved per structure array.
       // Must map over extractionTilesAfterYield (not
       // current.game.extractionTiles), or this tick's just-accrued stockpile
-      // deltas would be silently discarded.
-      const extractionTiles = extractionTilesAfterYield.map((t) =>
-        t.upgrade && isTimerComplete(t.upgrade.startedAt, tierUpgradeDurationMs(current.tweaks, t.upgrade.targetTier), virtualNow)
-          ? { ...t, tier: t.upgrade.targetTier, upgrade: null }
-          : t,
-      );
-      const pathTiles = current.game.pathTiles.map((t) =>
-        t.upgrade && isTimerComplete(t.upgrade.startedAt, pathUpgradeDurationMs(current.tweaks, t.upgrade.targetTier), virtualNow)
-          ? { ...t, tier: t.upgrade.targetTier, upgrade: null }
-          : t,
-      );
-      const towers = current.game.towers.map((t) =>
-        t.upgrade && isTimerComplete(t.upgrade.startedAt, towerUpgradeDurationMs(current.tweaks, t.upgrade.targetLevel), virtualNow)
-          ? { ...t, level: t.upgrade.targetLevel, upgrade: null }
-          : t,
-      );
-      const barracksList = current.game.barracksList.map((b) =>
-        b.upgrade &&
-        isTimerComplete(b.upgrade.startedAt, barracksUpgradeDurationMs(current.tweaks, b.upgrade.targetLevel), virtualNow)
-          ? { ...b, level: b.upgrade.targetLevel, upgrade: null }
-          : b,
-      );
-      const walls = current.game.walls.map((w) => {
-        if (!w.action) return w;
-        if (w.action.kind === "upgrade") {
-          const durationMs = wallUpgradeDurationMs(current.tweaks, w.action.targetTier);
+      // deltas would be silently discarded. Each array gets a second .map
+      // resolving damageRepair (structureRepairDurationMs) on top — an
+      // independent timer from tier/level upgrades, so a structure can have
+      // either (or, for walls, either plus its own separate durability
+      // action) in flight without conflict.
+      const extractionTiles = extractionTilesAfterYield
+        .map((t) =>
+          t.upgrade && isTimerComplete(t.upgrade.startedAt, tierUpgradeDurationMs(current.tweaks, t.upgrade.targetTier), virtualNow)
+            ? { ...t, tier: t.upgrade.targetTier, upgrade: null }
+            : t,
+        )
+        .map((t) => resolveDamageRepair(t, current.tweaks, virtualNow))
+        .map((t) => resolveConstruction(t, extractionTileBuildDurationMs(current.tweaks), virtualNow));
+      const pathTiles = current.game.pathTiles
+        .map((t) =>
+          t.upgrade && isTimerComplete(t.upgrade.startedAt, pathUpgradeDurationMs(current.tweaks, t.upgrade.targetTier), virtualNow)
+            ? { ...t, tier: t.upgrade.targetTier, upgrade: null }
+            : t,
+        )
+        .map((t) => resolveDamageRepair(t, current.tweaks, virtualNow))
+        .map((t) => resolveConstruction(t, pathBuildDurationMs(current.tweaks), virtualNow));
+      const towers = current.game.towers
+        .map((t) =>
+          t.upgrade && isTimerComplete(t.upgrade.startedAt, towerUpgradeDurationMs(current.tweaks, t.upgrade.targetLevel), virtualNow)
+            ? { ...t, level: t.upgrade.targetLevel, upgrade: null }
+            : t,
+        )
+        .map((t) => resolveDamageRepair(t, current.tweaks, virtualNow))
+        .map((t) => resolveConstruction(t, towerBuildDurationMs(current.tweaks), virtualNow));
+      const barracksList = current.game.barracksList
+        .map((b) =>
+          b.upgrade &&
+          isTimerComplete(b.upgrade.startedAt, barracksUpgradeDurationMs(current.tweaks, b.upgrade.targetLevel), virtualNow)
+            ? { ...b, level: b.upgrade.targetLevel, upgrade: null }
+            : b,
+        )
+        .map((b) => resolveDamageRepair(b, current.tweaks, virtualNow))
+        .map((b) => resolveConstruction(b, barracksBuildDurationMs(current.tweaks), virtualNow));
+      const walls = current.game.walls
+        .map((w) => {
+          if (!w.action) return w;
+          if (w.action.kind === "upgrade") {
+            const durationMs = wallUpgradeDurationMs(current.tweaks, w.action.targetTier);
+            if (!isTimerComplete(w.action.startedAt, durationMs, virtualNow)) return w;
+            return { ...w, tier: w.action.targetTier, durability: maxWallDurability(current.tweaks, w.action.targetTier), action: null };
+          }
+          const maxHp = maxWallDurability(current.tweaks, w.tier);
+          const durationMs = wallRepairDurationMs(current.tweaks, w, maxHp);
           if (!isTimerComplete(w.action.startedAt, durationMs, virtualNow)) return w;
-          return { ...w, tier: w.action.targetTier, durability: maxWallDurability(current.tweaks, w.action.targetTier), action: null };
-        }
-        const maxHp = maxWallDurability(current.tweaks, w.tier);
-        const durationMs = wallRepairDurationMs(current.tweaks, w, maxHp);
-        if (!isTimerComplete(w.action.startedAt, durationMs, virtualNow)) return w;
-        return { ...w, durability: maxHp, action: null };
-      });
+          return { ...w, durability: maxHp, action: null };
+        })
+        .map((w) => resolveDamageRepair(w, current.tweaks, virtualNow))
+        .map((w) => resolveConstruction(w, wallBuildDurationMs(current.tweaks), virtualNow));
       // Must map over docksAfterYield (not current.game.docks), or this
       // tick's just-accrued stockpile deltas would be silently discarded —
       // same reasoning as extractionTiles above.
-      const docks = docksAfterYield.map((d) =>
-        d.fishingBoatUpgrade &&
-        isTimerComplete(d.fishingBoatUpgrade.startedAt, current.tweaks.docks.fishing_boat.build_time_minutes * 60_000, virtualNow)
-          ? { ...d, fishingBoat: true, fishingBoatUpgrade: null }
-          : d,
-      );
+      const docks = docksAfterYield
+        .map((d) =>
+          d.fishingBoatUpgrade &&
+          isTimerComplete(d.fishingBoatUpgrade.startedAt, current.tweaks.docks.fishing_boat.build_time_minutes * 60_000, virtualNow)
+            ? { ...d, fishingBoat: true, fishingBoatUpgrade: null }
+            : d,
+        )
+        .map((d) => resolveConstruction(d, dockBuildDurationMs(current.tweaks), virtualNow));
       const scoutSkiffsAfterBuild = current.game.scoutSkiffs.map((s) =>
         s.buildStartedAt !== null &&
         isTimerComplete(s.buildStartedAt, current.tweaks.docks.scout_skiff.build_time_minutes * 60_000, virtualNow)
@@ -498,6 +672,33 @@ export default function App() {
         current.tweaks.game.grid_size,
         elapsedSeconds,
       );
+
+      // Storage-level upgrade timers — same virtual-clock-threshold pattern,
+      // but keyed by resource (data/storageUpgrades.ts) rather than a single
+      // per-record slot, since every resource can be upgrading at once.
+      let storageLevels = current.game.storageLevels;
+      let storageUpgrades = current.game.storageUpgrades;
+      for (const [resource, pending] of Object.entries(current.game.storageUpgrades) as [
+        ResourceType,
+        { targetLevel: number; startedAt: number } | undefined,
+      ][]) {
+        if (!pending || !isTimerComplete(pending.startedAt, storageUpgradeDurationMs(current.tweaks, pending.targetLevel), virtualNow)) {
+          continue;
+        }
+        storageLevels = { ...storageLevels, [resource]: pending.targetLevel };
+        const { [resource]: _completed, ...remainingUpgrades } = storageUpgrades;
+        storageUpgrades = remainingUpgrades;
+      }
+
+      // Research timer — single global pending slot (data/research.ts),
+      // same virtual-clock-threshold pattern as storage above.
+      let research = current.game.research;
+      if (
+        research.pending &&
+        isTimerComplete(research.pending.startedAt, researchDurationMs(current.tweaks, research.pending.id), virtualNow)
+      ) {
+        research = { completed: [...research.completed, research.pending.id], pending: null };
+      }
 
       // Unit training queues — closed-form trickle delivery (engine/units.ts).
       // More/higher-level (non-damaged) barracks means faster training, not
@@ -543,15 +744,17 @@ export default function App() {
         base.level,
         current.game.world.seed,
         territoryAfterRelocation,
+        outpostsAfterYield,
         current.tweaks.game.grid_size,
         now,
         elapsedSeconds,
       );
       const baseGarrisonDefense = garrisonDefense(current.tweaks, current.game.garrisons, territoryAfterRelocation.base);
       // Every live Outpost is a defended point exactly like the main base —
-      // see engine/hordes.ts:HordeHub's doc comment. Regular hordes still
-      // only ever path toward territoryAfterRelocation.base; an outpost only
-      // takes damage here if it happens to sit on that route.
+      // see engine/hordes.ts:HordeHub's doc comment. A horde's route is
+      // fixed toward whichever hub was nearest its den at spawn time
+      // (checkHordeSpawns/findNearestHordeTarget above); a hub that isn't
+      // the target still takes damage here if it happens to sit on the route.
       const gameGarrisons = current.game.garrisons;
       const hordeHubs: HordeHub[] = [
         { coord: territoryAfterRelocation.base, hp: base.currentHp, garrisonDefense: baseGarrisonDefense, kind: "base", id: "base" },
@@ -578,7 +781,9 @@ export default function App() {
       );
       const baseOverrun = overrunHubKeys.includes(axialKey(territoryAfterRelocation.base));
       const baseDamageTaken = hubDamage[axialKey(territoryAfterRelocation.base)] ?? 0;
-      const gameStatus: GameStatusRecord = baseOverrun ? { lost: true, lostAt: now } : current.game.gameStatus;
+      const gameStatusAfterHordes: GameStatusRecord = baseOverrun
+        ? { ...current.game.gameStatus, lost: true, lostAt: now }
+        : current.game.gameStatus;
       // A successful defense still costs HP — repeated assaults demand
       // repair even if none of them individually break through.
       const baseAfterHordes: BaseRecord =
@@ -643,6 +848,9 @@ export default function App() {
       // hordes currently occupy so a capture can't be instantly undone by a
       // tower that happens to cover the same ground.
       const hordeOccupiedKeys = new Set(hordesAfterAutoAttack.map((h) => axialKey(h.path[h.pathIndex])));
+      const hordeSizeByKey = new Map<string, number>(
+        hordesAfterAutoAttack.map((h) => [axialKey(h.path[h.pathIndex]), h.size]),
+      );
       const territoryAfterClaim = autoClaimTowerRange(
         current.tweaks,
         towersAfterCapture,
@@ -651,90 +859,124 @@ export default function App() {
         hordeOccupiedKeys,
       );
 
-      // Expeditions resolve after everything above (hordes, garrison
-      // captures/auto-attacks, tower auto-claim) so a party sees the same
-      // post-horde-advance territory a repair/garrison action would this
-      // same tick — e.g. a tile a horde just recaptured is re-fought as
-      // unowned, not treated as stale free passage from dispatch time.
-      // Resolved sequentially (not Promise.all/in parallel), oldest arrival
-      // first, so two expeditions sharing a corridor in the same tick see
-      // each other's just-claimed tiles as free passage, same as the
-      // sequential garrison-by-garrison pattern resolveGarrisonAutoAttacks
-      // already uses above.
-      const dueExpeditions = current.game.expeditions
-        .filter((e) => virtualNow >= e.arriveAt)
-        .sort((a, b) => a.arriveAt - b.arriveAt);
-      const pendingExpeditions = current.game.expeditions.filter((e) => virtualNow < e.arriveAt);
+      // Expeditions/den-assaults/lab-assaults all resolve their corridor
+      // incrementally, EVERY tick, for EVERY in-flight party of that kind —
+      // not just the ones whose arriveAt has passed. Each party's real-time
+      // progress along its path (engine/expeditions.ts:expeditionPathIndexAt
+      // — the same formula HexCanvas uses to place the visual marker) is
+      // walked tile-by-tile via stepCorridorWalk: an owned tile is free
+      // passage, an unowned one is fought immediately and claimed into
+      // territory the instant it's won, and a loss (out-fought, or a horde
+      // occupying the tile) stops the party right there, leaving a tombstone
+      // (data/tombstones.ts) at the death tile — whatever was claimed before
+      // that point stays owned. Parties are processed sorted by departedAt
+      // (earliest-committed first), so two parties sharing a corridor still
+      // see each other's just-claimed tiles as free passage this same tick —
+      // the same intent the old oldest-arrival-first ordering served, now
+      // generalized from "only today's arrivals" to "every in-flight party."
+      const debitParty = (
+        u: UnitsRecord,
+        party: { militiaCommitted: number; junkyardKnightCommitted: number; crossBowSniperCommitted: number },
+      ): UnitsRecord => ({
+        ...u,
+        militiaCount: Math.max(0, u.militiaCount - party.militiaCommitted),
+        junkyardKnightCount: Math.max(0, u.junkyardKnightCount - party.junkyardKnightCommitted),
+        crossBowSniperCount: Math.max(0, u.crossBowSniperCount - party.crossBowSniperCommitted),
+      });
+
+      const tombstonesFromThisTick: TombstoneRecord[] = [];
+      let tombstoneSeq = 0;
+      const makeTombstone = (
+        partyKind: TombstoneRecord["partyKind"],
+        target: Axial,
+        tile: Axial,
+        cause: TombstoneCause,
+        party: { militiaCommitted: number; junkyardKnightCommitted: number; crossBowSniperCommitted: number },
+        attackPower: number,
+      ): TombstoneRecord => ({
+        id: `tombstone-${axialKey(tile)}-${virtualNow}-${tombstoneSeq++}`,
+        coord: tile,
+        partyKind,
+        target,
+        militiaLost: party.militiaCommitted,
+        junkyardKnightLost: party.junkyardKnightCommitted,
+        crossBowSniperLost: party.crossBowSniperCommitted,
+        attackPower,
+        cause,
+        createdAt: virtualNow,
+        expiresAt: virtualNow + current.tweaks.expeditions.tombstone_lifetime_minutes * 60_000,
+      });
 
       let territoryAfterExpeditions = territoryAfterClaim;
       let unitsAfterExpeditions = unitsAfterAutoAttack;
-      for (const expedition of dueExpeditions) {
-        const debitParty = (u: UnitsRecord): UnitsRecord => ({
-          ...u,
-          militiaCount: Math.max(0, u.militiaCount - expedition.militiaCommitted),
-          junkyardKnightCount: Math.max(0, u.junkyardKnightCount - expedition.junkyardKnightCommitted),
-          crossBowSniperCount: Math.max(0, u.crossBowSniperCount - expedition.crossBowSniperCommitted),
-        });
+      const nextExpeditions: Expedition[] = [];
 
-        // A horde may have moved onto the route since dispatch (or was
-        // already there and never re-checked) — "the road was overrun," a
-        // deliberate first-pass rule (tweaks.jsonc expeditions._note):
-        // the party is lost outright without even attempting the walk.
-        const routeBlocked = expedition.path.some((tile) => hordeOccupiedKeys.has(axialKey(tile)));
-        if (routeBlocked) {
-          unitsAfterExpeditions = debitParty(unitsAfterExpeditions);
-          continue;
-        }
-
+      for (const expedition of [...current.game.expeditions].sort((a, b) => a.departedAt - b.departedAt)) {
         const attackPower = partyAttackPower(
           current.tweaks,
           expedition.militiaCommitted,
           expedition.junkyardKnightCommitted,
           expedition.crossBowSniperCommitted,
         );
-        const { claimedTiles, survived } = resolveExpeditionWalk(
+        const targetIndex = expeditionPathIndexAt(expedition.departedAt, expedition.arriveAt, virtualNow, expedition.path.length);
+        const step = stepCorridorWalk(
           current.tweaks,
           expedition.path,
+          expedition.resolvedIndex,
+          targetIndex,
           territoryAfterExpeditions.owned,
           territoryAfterExpeditions.base,
           attackPower,
+          hordeSizeByKey,
         );
-        if (claimedTiles.length > 0) {
+
+        if (step.claimedTiles.length > 0) {
           territoryAfterExpeditions = {
             ...territoryAfterExpeditions,
-            owned: [...territoryAfterExpeditions.owned, ...claimedTiles],
+            owned: [...territoryAfterExpeditions.owned, ...step.claimedTiles],
           };
         }
-        if (!survived) {
-          unitsAfterExpeditions = debitParty(unitsAfterExpeditions);
+
+        if (step.death) {
+          unitsAfterExpeditions = debitParty(unitsAfterExpeditions, expedition);
+          tombstonesFromThisTick.push(
+            makeTombstone("expedition", expedition.target, step.death.tile, step.death.cause, expedition, attackPower),
+          );
+          continue;
         }
+
+        if (step.resolvedIndex >= expedition.path.length - 1) continue; // arrived home safely, no count change
+
+        nextExpeditions.push({ ...expedition, resolvedIndex: step.resolvedIndex });
       }
 
-      // Den assaults resolve the same way expeditions do (sequential,
-      // oldest-arrival-first, route-blocked-by-horde first) — see
-      // App.tsx:handleAssaultDen's doc comment. The corridor leading up to
-      // the den is walked/claimed exactly like an expedition's route. What
-      // happens at the destination then depends on the den's state *at
-      // arrival*, not at dispatch time — the same DenAssaultRecord/denAssaults
-      // array is used for both an initial assault AND reinforcing an
-      // already-besieged den (or a den that has since converted to an
-      // outpost): if the den is still hostile (never sieged, or a past siege
-      // failed before this party arrived), it's a real fight against
-      // denDefense (engine/dens.ts:resolveDenAssault) with proportional
-      // attrition on a win (engine/dens.ts:denAssaultSurvivors) — unlike
-      // every other fight in this game, which is all-or-nothing. If the den
-      // is already under siege, or has already converted to an outpost,
-      // there's nothing to fight — the whole party that survived the
-      // corridor just joins the garrison there directly, no attrition (they're
-      // marching into already-friendly ground, not storming anything).
-      const dueDenAssaults = current.game.denAssaults
-        .filter((a) => virtualNow >= a.arriveAt)
-        .sort((a, b) => a.arriveAt - b.arriveAt);
-      const pendingDenAssaults = current.game.denAssaults.filter((a) => virtualNow < a.arriveAt);
-
+      // Den assaults resolve the same corridor-walk mechanism as expeditions
+      // (sorted by departedAt) — see App.tsx:handleAssaultDen's doc comment.
+      // The corridor leading up to the den (path[0..length-2]) is walked/
+      // claimed exactly like an expedition's route, in real time. Once a
+      // party's resolvedIndex reaches the corridor's end (alive), the
+      // destination fight triggers immediately (not gated on arriveAt
+      // directly, though the two normally coincide) and depends on the den's
+      // state *right now*, not at dispatch time — the same
+      // DenAssaultRecord/denAssaults array is used for both an initial
+      // assault AND reinforcing an already-besieged den (or a den that has
+      // since converted to an outpost): if the den is still hostile (never
+      // sieged, or a past siege failed before this party arrived), it's a
+      // real fight against denDefense (engine/dens.ts:resolveDenAssault) with
+      // proportional attrition on a win (engine/dens.ts:denAssaultSurvivors)
+      // — unlike every other fight in this game, which is all-or-nothing. If
+      // the den is already under siege, or has already converted to an
+      // outpost, there's nothing to fight — the whole party that survived
+      // the corridor just joins the garrison there directly, no attrition
+      // (they're marching into already-friendly ground, not storming
+      // anything).
       let densAfterAssaults = [...current.game.dens, ...revertedDens];
       let garrisonsAfterSieges = garrisonsAfterAutoAttack;
       let outpostsAfterSieges = outpostsAfterHordes;
+      // Guaranteed clue on every den->outpost conversion (DESIGN.md §13),
+      // capped at the fixed total — bumped inside the "converted" branch
+      // below alongside the den's own resolution.
+      let labAfterClues: LabRecord = current.game.lab;
 
       const mergeIntoGarrison = (
         garrisons: GarrisonsRecord,
@@ -758,23 +1000,12 @@ export default function App() {
           : [...garrisons, { coord, militiaCount: militia, junkyardKnightCount: junkyardKnight, crossBowSniperCount: crossBowSniper }];
       };
 
-      for (const assault of dueDenAssaults) {
-        const debitParty = (u: UnitsRecord): UnitsRecord => ({
-          ...u,
-          militiaCount: Math.max(0, u.militiaCount - assault.militiaCommitted),
-          junkyardKnightCount: Math.max(0, u.junkyardKnightCount - assault.junkyardKnightCommitted),
-          crossBowSniperCount: Math.max(0, u.crossBowSniperCount - assault.crossBowSniperCommitted),
-        });
+      const nextDenAssaults: DenAssaultRecord[] = [];
 
+      for (const assault of [...current.game.denAssaults].sort((a, b) => a.departedAt - b.departedAt)) {
         const den = densAfterAssaults.find((d) => d.id === assault.denId);
         const outpost = !den ? outpostsAfterSieges.find((o) => o.id === `outpost-${assault.denId}`) : null;
         if (!den && !outpost) continue; // gone with no outpost either — shouldn't happen, but a harmless no-op if it does
-
-        const routeBlocked = assault.path.some((tile) => hordeOccupiedKeys.has(axialKey(tile)));
-        if (routeBlocked) {
-          unitsAfterExpeditions = debitParty(unitsAfterExpeditions);
-          continue;
-        }
 
         const attackPower = partyAttackPower(
           current.tweaks,
@@ -783,25 +1014,43 @@ export default function App() {
           assault.crossBowSniperCommitted,
         );
 
-        // The den itself (when there's one to fight) is fought separately
-        // from the corridor leading to it (last path element = the den's own
-        // coord) — resolveExpeditionWalk only claims ordinary map tiles.
-        const corridor = assault.path.slice(0, -1);
-        const { claimedTiles, survived: corridorSurvived } = resolveExpeditionWalk(
+        // The den itself is fought separately from the corridor leading to
+        // it (last path element = the den's own coord) — stepCorridorWalk
+        // only ever claims ordinary map tiles, so its targetIndex is capped
+        // one tile short of the destination.
+        const corridorEndIndex = assault.path.length - 2;
+        const targetIndex = Math.min(
+          expeditionPathIndexAt(assault.departedAt, assault.arriveAt, virtualNow, assault.path.length),
+          corridorEndIndex,
+        );
+        const step = stepCorridorWalk(
           current.tweaks,
-          corridor,
+          assault.path,
+          assault.resolvedIndex,
+          targetIndex,
           territoryAfterExpeditions.owned,
           territoryAfterExpeditions.base,
           attackPower,
+          hordeSizeByKey,
         );
-        if (claimedTiles.length > 0) {
+
+        if (step.claimedTiles.length > 0) {
           territoryAfterExpeditions = {
             ...territoryAfterExpeditions,
-            owned: [...territoryAfterExpeditions.owned, ...claimedTiles],
+            owned: [...territoryAfterExpeditions.owned, ...step.claimedTiles],
           };
         }
-        if (!corridorSurvived) {
-          unitsAfterExpeditions = debitParty(unitsAfterExpeditions);
+
+        if (step.death) {
+          unitsAfterExpeditions = debitParty(unitsAfterExpeditions, assault);
+          tombstonesFromThisTick.push(
+            makeTombstone("denAssault", assault.target, step.death.tile, step.death.cause, assault, attackPower),
+          );
+          continue;
+        }
+
+        if (step.resolvedIndex < corridorEndIndex) {
+          nextDenAssaults.push({ ...assault, resolvedIndex: step.resolvedIndex });
           continue;
         }
 
@@ -826,7 +1075,10 @@ export default function App() {
         const defense = denDefense(current.tweaks, den2.level);
         const { den: denAfterAssault, won } = resolveDenAssault(current.tweaks, den2, attackPower, virtualNow);
         if (!won) {
-          unitsAfterExpeditions = debitParty(unitsAfterExpeditions);
+          unitsAfterExpeditions = debitParty(unitsAfterExpeditions, assault);
+          tombstonesFromThisTick.push(
+            makeTombstone("denAssault", assault.target, den2.coord, { kind: "tile_defense", attackPower, defense }, assault, attackPower),
+          );
           continue;
         }
 
@@ -926,12 +1178,90 @@ export default function App() {
                 owned: [...territoryAfterExpeditions.owned, ...newlyOwned],
               };
             }
+            if (labAfterClues.cluesCollected < current.tweaks.lab_clues.total_clues) {
+              labAfterClues = { ...labAfterClues, cluesCollected: labAfterClues.cluesCollected + 1 };
+            }
             return null; // the den no longer exists — it's an outpost now
           }
 
           return denAfterHold;
         })
         .filter((d): d is DenRecord => d !== null);
+
+      // Lab assaults resolve the same corridor-walk mechanism as den assaults
+      // above, then a final fight against the guardian (engine/lab.ts:
+      // resolveLabAssault) once the corridor is fully walked. Unlike a den
+      // assault, this is all-or-nothing (no siege/hold period, no
+      // proportional attrition): a win keeps the whole party and secures the
+      // lab for good; a loss wipes the whole committed party (and leaves a
+      // tombstone at the lab), guardian untouched, retryable any time. If the
+      // lab's already secured by the time a party finishes its corridor (an
+      // earlier assault this same tick, or an earlier tick entirely), they
+      // simply return home safely — nothing left to fight.
+      const nextLabAssaults: LabAssaultRecord[] = [];
+
+      for (const assault of [...current.game.labAssaults].sort((a, b) => a.departedAt - b.departedAt)) {
+        const attackPower = partyAttackPower(
+          current.tweaks,
+          assault.militiaCommitted,
+          assault.junkyardKnightCommitted,
+          assault.crossBowSniperCommitted,
+        );
+
+        const corridorEndIndex = assault.path.length - 2;
+        const targetIndex = Math.min(
+          expeditionPathIndexAt(assault.departedAt, assault.arriveAt, virtualNow, assault.path.length),
+          corridorEndIndex,
+        );
+        const step = stepCorridorWalk(
+          current.tweaks,
+          assault.path,
+          assault.resolvedIndex,
+          targetIndex,
+          territoryAfterExpeditions.owned,
+          territoryAfterExpeditions.base,
+          attackPower,
+          hordeSizeByKey,
+        );
+
+        if (step.claimedTiles.length > 0) {
+          territoryAfterExpeditions = {
+            ...territoryAfterExpeditions,
+            owned: [...territoryAfterExpeditions.owned, ...step.claimedTiles],
+          };
+        }
+
+        if (step.death) {
+          unitsAfterExpeditions = debitParty(unitsAfterExpeditions, assault);
+          tombstonesFromThisTick.push(
+            makeTombstone("labAssault", assault.target, step.death.tile, step.death.cause, assault, attackPower),
+          );
+          continue;
+        }
+
+        if (step.resolvedIndex < corridorEndIndex) {
+          nextLabAssaults.push({ ...assault, resolvedIndex: step.resolvedIndex });
+          continue;
+        }
+
+        if (labAfterClues.secured) continue;
+
+        const { lab: labAfterAssault, won } = resolveLabAssault(current.tweaks, labAfterClues, attackPower);
+        labAfterClues = labAfterAssault;
+        if (!won) {
+          unitsAfterExpeditions = debitParty(unitsAfterExpeditions, assault);
+          tombstonesFromThisTick.push(
+            makeTombstone(
+              "labAssault",
+              assault.target,
+              assault.target,
+              { kind: "tile_defense", attackPower, defense: current.tweaks.lab.guardian_defense },
+              assault,
+              attackPower,
+            ),
+          );
+        }
+      }
 
       // A recalled garrison is a pure timer, not a fight — the troops were
       // already pulled off their tile the moment the recall was dispatched
@@ -940,6 +1270,22 @@ export default function App() {
       // assaults use), so once a recall's record is dropped here it's
       // automatically back in the available pool — nothing else to resolve.
       const pendingGarrisonRecalls = current.game.garrisonRecalls.filter((r) => virtualNow < r.arriveAt);
+
+      // Tombstones expire on the virtual clock, same idiom as every other
+      // timed record above — a party's death is informational, not
+      // persistent state, so it just needs to fade after
+      // tombstone_lifetime_minutes.
+      const tombstonesAfterExpiry = [...current.game.tombstones, ...tombstonesFromThisTick].filter(
+        (t) => virtualNow < t.expiresAt,
+      );
+
+      // Win condition (DESIGN.md §13): securing the lab ALONE — clearing
+      // dens is never required, den-clearing is just one route to the army
+      // strong enough to beat the guardian (and a guaranteed clue source).
+      const gameStatus: GameStatusRecord =
+        labAfterClues.secured && !gameStatusAfterHordes.won
+          ? { ...gameStatusAfterHordes, won: true, wonAt: now }
+          : gameStatusAfterHordes;
 
       void Promise.all([
         set(RESOURCES_DB_KEY, resources),
@@ -955,16 +1301,22 @@ export default function App() {
         set(BASE_DB_KEY, baseAfterHordes),
         set(HORDES_DB_KEY, hordesAfterAutoAttack),
         set(TERRITORY_DB_KEY, territoryAfterExpeditions),
-        set(EXPEDITIONS_DB_KEY, pendingExpeditions),
+        set(EXPEDITIONS_DB_KEY, nextExpeditions),
         set(GAME_STATUS_DB_KEY, gameStatus),
         set(DOCKS_DB_KEY, docks),
         set(SCOUT_SKIFFS_DB_KEY, scoutSkiffs),
         set(WANDERING_SCOUTS_DB_KEY, wanderingScouts),
         set(SCOUTED_TILES_DB_KEY, scoutedTiles),
         set(DENS_DB_KEY, densAfterAssaults),
-        set(DEN_ASSAULTS_DB_KEY, pendingDenAssaults),
+        set(DEN_ASSAULTS_DB_KEY, nextDenAssaults),
         set(OUTPOSTS_DB_KEY, outpostsAfterSieges),
         set(GARRISON_RECALLS_DB_KEY, pendingGarrisonRecalls),
+        set(LAB_DB_KEY, labAfterClues),
+        set(LAB_ASSAULTS_DB_KEY, nextLabAssaults),
+        set(STORAGE_LEVELS_DB_KEY, storageLevels),
+        set(STORAGE_UPGRADES_DB_KEY, storageUpgrades),
+        set(RESEARCH_DB_KEY, research),
+        set(TOMBSTONES_DB_KEY, tombstonesAfterExpiry),
       ]);
       setBoot((prev) =>
         prev.status === "ready" && prev.game
@@ -985,16 +1337,22 @@ export default function App() {
                 base: baseAfterHordes,
                 hordes: hordesAfterAutoAttack,
                 territory: territoryAfterExpeditions,
-                expeditions: pendingExpeditions,
+                expeditions: nextExpeditions,
                 gameStatus,
                 docks,
                 scoutSkiffs,
                 wanderingScouts,
                 scoutedTiles,
                 dens: densAfterAssaults,
-                denAssaults: pendingDenAssaults,
+                denAssaults: nextDenAssaults,
                 outposts: outpostsAfterSieges,
                 garrisonRecalls: pendingGarrisonRecalls,
+                lab: labAfterClues,
+                labAssaults: nextLabAssaults,
+                storageLevels,
+                storageUpgrades,
+                research,
+                tombstones: tombstonesAfterExpiry,
               },
             }
           : prev,
@@ -1007,10 +1365,12 @@ export default function App() {
   }, [hasGame]);
 
   function cycleFastForward() {
+    if (boot.status !== "ready" || !boot.game) return;
+    const rates = speedMultiplierRates(boot.tweaks, boot.game.research);
     setSpeedMultiplier((m) => {
-      const currentIndex = SPEED_MULTIPLIER_RATES.indexOf(m);
-      const nextIndex = (currentIndex + 1) % SPEED_MULTIPLIER_RATES.length;
-      return SPEED_MULTIPLIER_RATES[nextIndex];
+      const currentIndex = rates.indexOf(m);
+      const nextIndex = (currentIndex + 1) % rates.length;
+      return rates[nextIndex];
     });
   }
 
@@ -1036,6 +1396,7 @@ export default function App() {
     const garrisons: GarrisonsRecord = [];
     const scoutedTiles: ScoutedTiles = [];
     const storageLevels = initialStorageLevels();
+    const storageUpgrades = initialStorageUpgrades();
     const noise = initialNoise(boot.tweaks);
     const dens = createDens(world.seed, boot.tweaks.game.grid_size, territory.base, boot.tweaks);
     const hordes: HordesRecord = [];
@@ -1047,6 +1408,9 @@ export default function App() {
     const denAssaults: DenAssaultsRecord = [];
     const outposts: OutpostsRecord = [];
     const garrisonRecalls: GarrisonRecallsRecord = [];
+    const lab = createLab(world.seed, boot.tweaks.game.grid_size, territory.base, dens, boot.tweaks);
+    const labAssaults: LabAssaultsRecord = [];
+    const research = initialResearch();
 
     await Promise.all([
       set(PLAYER_DB_KEY, player),
@@ -1064,6 +1428,7 @@ export default function App() {
       set(GARRISONS_DB_KEY, garrisons),
       set(SCOUTED_TILES_DB_KEY, scoutedTiles),
       set(STORAGE_LEVELS_DB_KEY, storageLevels),
+      set(STORAGE_UPGRADES_DB_KEY, storageUpgrades),
       set(NOISE_DB_KEY, noise),
       set(DENS_DB_KEY, dens),
       set(HORDES_DB_KEY, hordes),
@@ -1075,6 +1440,9 @@ export default function App() {
       set(DEN_ASSAULTS_DB_KEY, denAssaults),
       set(OUTPOSTS_DB_KEY, outposts),
       set(GARRISON_RECALLS_DB_KEY, garrisonRecalls),
+      set(LAB_DB_KEY, lab),
+      set(LAB_ASSAULTS_DB_KEY, labAssaults),
+      set(RESEARCH_DB_KEY, research),
     ]);
 
     setBoot((prev) =>
@@ -1097,6 +1465,7 @@ export default function App() {
               garrisons,
               scoutedTiles,
               storageLevels,
+              storageUpgrades,
               noise,
               dens,
               hordes,
@@ -1108,6 +1477,9 @@ export default function App() {
               denAssaults,
               outposts,
               garrisonRecalls,
+              lab,
+              labAssaults,
+              research,
             },
           }
         : prev,
@@ -1186,7 +1558,18 @@ export default function App() {
     }
     const extractionTiles = [
       ...game.extractionTiles,
-      { coord, resource, tier: "small" as const, stockpile: 0, totalInvested: cost, upgrade: null, buildCost: cost, damaged: false },
+      {
+        coord,
+        resource,
+        tier: "small" as const,
+        stockpile: 0,
+        totalInvested: cost,
+        upgrade: null,
+        buildCost: cost,
+        damaged: false,
+        damageRepair: null,
+        buildStartedAt: game.clock.virtualNow,
+      },
     ];
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "build_extraction_tile", game.base.level) };
 
@@ -1254,6 +1637,8 @@ export default function App() {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
 
+    if (game.storageUpgrades[resource as ResourceType]) return { ok: false, reason: "Upgrade already in progress" };
+
     const currentLevel = game.storageLevels[resource];
     const cost = storageUpgradeCost(tweaks, resource, currentLevel);
 
@@ -1267,13 +1652,44 @@ export default function App() {
     for (const [key, amount] of Object.entries(cost)) {
       resources[key as keyof ResourceAmounts] -= amount ?? 0;
     }
-    const storageLevels = { ...game.storageLevels, [resource]: currentLevel + 1 };
+    const storageUpgrades: StorageUpgradesRecord = {
+      ...game.storageUpgrades,
+      [resource]: { targetLevel: currentLevel + 1, startedAt: game.clock.virtualNow },
+    };
 
-    await Promise.all([set(RESOURCES_DB_KEY, resources), set(STORAGE_LEVELS_DB_KEY, storageLevels)]);
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(STORAGE_UPGRADES_DB_KEY, storageUpgrades)]);
     setBoot((prev) =>
       prev.status === "ready" && prev.game
-        ? { ...prev, game: { ...prev.game, resources, storageLevels } }
+        ? { ...prev, game: { ...prev.game, resources, storageUpgrades } }
         : prev,
+    );
+    return { ok: true };
+  }
+
+  /** Starts research on `id` — single global pending slot, mirrors handleUpgradeStorage above. Sequential-tier gating (tier 3 needs tier 2 completed) is enforced by isResearchAvailable (engine/research.ts). */
+  async function handleStartResearch(id: ResearchId): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+
+    if (game.research.pending) return { ok: false, reason: "Research already in progress" };
+    if (!isResearchAvailable(game.research, id)) return { ok: false, reason: "Prerequisite not researched yet" };
+
+    const cost = researchCost(tweaks, id);
+    for (const [key, amount] of Object.entries(cost)) {
+      if (game.resources[key as keyof ResourceAmounts] < (amount ?? 0)) {
+        return { ok: false, reason: `Not enough ${key}` };
+      }
+    }
+
+    const resources = { ...game.resources };
+    for (const [key, amount] of Object.entries(cost)) {
+      resources[key as keyof ResourceAmounts] -= amount ?? 0;
+    }
+    const research: ResearchRecord = { ...game.research, pending: { id, startedAt: game.clock.virtualNow } };
+
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(RESEARCH_DB_KEY, research)]);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, research } } : prev,
     );
     return { ok: true };
   }
@@ -1336,7 +1752,7 @@ export default function App() {
       return { ok: false, reason: "Build slot cap reached" };
     }
 
-    const cost = scaledCostMap(tweaks.docks.build_cost_base, game.docks.length + 1);
+    const cost = dockBuildCost(tweaks, game.docks.length + 1);
     for (const [key, amount] of Object.entries(cost)) {
       if (game.resources[key as keyof ResourceAmounts] < amount) {
         return { ok: false, reason: `Not enough ${key}` };
@@ -1349,7 +1765,15 @@ export default function App() {
     }
     const docks: DocksRecord = [
       ...game.docks,
-      { coord, stockpile: 0, fishingBoat: false, fishingBoatUpgrade: null, totalInvested: cost, buildCost: cost },
+      {
+        coord,
+        buildStartedAt: game.clock.virtualNow,
+        stockpile: 0,
+        fishingBoat: false,
+        fishingBoatUpgrade: null,
+        totalInvested: cost,
+        buildCost: cost,
+      },
     ];
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "build_dock", game.base.level) };
 
@@ -1545,7 +1969,7 @@ export default function App() {
       return { ok: false, reason: "Build slot cap reached" };
     }
 
-    const cost = pathBuildCost(tweaks, game.pathTiles.length + 1);
+    const cost = pathBuildCost(tweaks);
     for (const [key, amount] of Object.entries(cost)) {
       if (game.resources[key as keyof ResourceAmounts] < amount) {
         return { ok: false, reason: `Not enough ${key}` };
@@ -1558,7 +1982,16 @@ export default function App() {
     }
     const pathTiles = [
       ...game.pathTiles,
-      { coord, tier: "goat_track" as const, totalInvested: cost, upgrade: null, buildCost: cost, damaged: false },
+      {
+        coord,
+        tier: "goat_track" as const,
+        totalInvested: cost,
+        upgrade: null,
+        buildCost: cost,
+        damaged: false,
+        damageRepair: null,
+        buildStartedAt: game.clock.virtualNow,
+      },
     ];
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "build_path_tile", game.base.level) };
 
@@ -1653,7 +2086,19 @@ export default function App() {
     for (const [key, amount] of Object.entries(cost)) {
       resources[key as keyof ResourceAmounts] -= amount;
     }
-    const towers = [...game.towers, { coord, level: 1, totalInvested: cost, upgrade: null, buildCost: cost, damaged: false }];
+    const towers = [
+      ...game.towers,
+      {
+        coord,
+        level: 1,
+        totalInvested: cost,
+        upgrade: null,
+        buildCost: cost,
+        damaged: false,
+        damageRepair: null,
+        buildStartedAt: game.clock.virtualNow,
+      },
+    ];
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "build_tower", game.base.level) };
 
     await Promise.all([set(RESOURCES_DB_KEY, resources), set(TOWERS_DB_KEY, towers), set(NOISE_DB_KEY, noise)]);
@@ -1753,6 +2198,8 @@ export default function App() {
         action: null,
         buildCost: cost,
         damaged: false,
+        damageRepair: null,
+        buildStartedAt: game.clock.virtualNow,
       },
     ];
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "build_wall", game.base.level) };
@@ -1906,10 +2353,11 @@ export default function App() {
   /**
    * Restores a structure a horde captured and the player has since reclaimed
    * — DESIGN.md §12. Distinct from handleRepairWall (that's wall-durability
-   * HP restoration, an unrelated pre-existing mechanic); this clears the
-   * `damaged` flag set by markCapturedStructuresDamaged (engine/hordes.ts)
-   * for any of the five structure kinds, at repairCost's 50%-of-original-
-   * build-cost price (engine/formulas.ts).
+   * HP restoration, an unrelated pre-existing mechanic); this starts a timer
+   * (structureRepairDurationMs, engine/formulas.ts) that clears the `damaged`
+   * flag set by markCapturedStructuresDamaged (engine/hordes.ts) — for any of
+   * the five structure kinds — once it completes (runTick), at repairCost's
+   * 50%-of-original-build-cost price (engine/formulas.ts), paid upfront.
    */
   async function handleRepairStructure(coord: Axial): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
@@ -1936,6 +2384,7 @@ export default function App() {
     const structure = extractionTile ?? pathTile ?? tower ?? wall ?? barracks;
     if (!structure) return { ok: false, reason: "Nothing to repair here" };
     if (!structure.damaged) return { ok: false, reason: "Not damaged" };
+    if (structure.damageRepair) return { ok: false, reason: "Repair already in progress" };
 
     const cost = repairCost(tweaks, structure.buildCost);
     for (const [resKey, amount] of Object.entries(cost)) {
@@ -1949,11 +2398,24 @@ export default function App() {
       resources[resKey as keyof ResourceAmounts] -= amount ?? 0;
     }
 
-    const repair = <T extends { coord: Axial; damaged: boolean; totalInvested: Partial<Record<ResourceType, number>> }>(
+    const repair = <
+      T extends {
+        coord: Axial;
+        damaged: boolean;
+        damageRepair?: { startedAt: number } | null;
+        totalInvested: Partial<Record<ResourceType, number>>;
+      },
+    >(
       list: T[],
     ): T[] =>
       list.map((t) =>
-        axialKey(t.coord) === key ? { ...t, damaged: false, totalInvested: addToInvestment(t.totalInvested, cost) } : t,
+        axialKey(t.coord) === key
+          ? {
+              ...t,
+              damageRepair: { startedAt: game.clock.virtualNow },
+              totalInvested: addToInvestment(t.totalInvested, cost),
+            }
+          : t,
       );
 
     const extractionTiles = extractionTile ? repair(game.extractionTiles) : game.extractionTiles;
@@ -2019,7 +2481,19 @@ export default function App() {
     for (const [key, amount] of Object.entries(cost)) {
       resources[key as keyof ResourceAmounts] -= amount;
     }
-    const barracksList = [...game.barracksList, { coord, level: 1, totalInvested: cost, upgrade: null, buildCost: cost, damaged: false }];
+    const barracksList = [
+      ...game.barracksList,
+      {
+        coord,
+        level: 1,
+        totalInvested: cost,
+        upgrade: null,
+        buildCost: cost,
+        damaged: false,
+        damageRepair: null,
+        buildStartedAt: game.clock.virtualNow,
+      },
+    ];
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "build_barracks", game.base.level) };
 
     await Promise.all([
@@ -2311,7 +2785,7 @@ export default function App() {
 
   async function handleScoutTile(coord: Axial): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { game } = boot;
+    const { tweaks, game } = boot;
 
     const ownedKeys = new Set(game.territory.owned.map(axialKey));
     if (ownedKeys.has(axialKey(coord))) return { ok: false, reason: "Already owned" };
@@ -2329,9 +2803,18 @@ export default function App() {
     const units: UnitsRecord = { ...game.units, scoutStockpile: game.units.scoutStockpile - 1 };
     const scoutedTiles = [...game.scoutedTiles, coord];
 
-    await Promise.all([set(UNITS_DB_KEY, units), set(SCOUTED_TILES_DB_KEY, scoutedTiles)]);
+    // Passive lab-clue roll (DESIGN.md §13) — deterministic per scout action,
+    // capped at total_clues (guaranteed den-clear clues, App.tsx's tick loop,
+    // can also fill the count independently).
+    const lab: LabRecord =
+      game.lab.cluesCollected < tweaks.lab_clues.total_clues &&
+      rollScoutClue(tweaks, game.world.seed, coord, game.scoutedTiles.length)
+        ? { ...game.lab, cluesCollected: game.lab.cluesCollected + 1 }
+        : game.lab;
+
+    await Promise.all([set(UNITS_DB_KEY, units), set(SCOUTED_TILES_DB_KEY, scoutedTiles), set(LAB_DB_KEY, lab)]);
     setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, units, scoutedTiles } } : prev,
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, units, scoutedTiles, lab } } : prev,
     );
     return { ok: true };
   }
@@ -2368,15 +2851,19 @@ export default function App() {
   }
 
   /**
-   * Reinforcement HP (DESIGN.md §9/§13) upgrades instantly on purchase, capped
-   * by base level (maxReinforcementLevel) — unlike base-level upgrades, tweaks.jsonc
-   * defines no duration for this track, see engine/base.ts:reinforcementUpgradeCost.
-   * Also fully restores base.currentHp to the new max — an upgrade doubles as
-   * a full repair, so damage never has to be dealt with twice.
+   * Reinforcement HP (DESIGN.md §9/§13) upgrade, capped by base level
+   * (maxReinforcementLevel) — timed like every other upgrade (engine/base.ts:
+   * baseReinforcementUpgradeDurationMs), sharing one in-progress slot with
+   * handleRepairBase (reinforcementAction) so only one can run at a time.
+   * Applied by runTick once the timer completes, which also fully restores
+   * base.currentHp to the new max — an upgrade doubles as a full repair, so
+   * damage never has to be dealt with twice.
    */
   async function handleUpgradeReinforcement(): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
+
+    if (game.base.reinforcementAction) return { ok: false, reason: "Already busy (upgrade or repair in progress)" };
 
     const targetLevel = game.base.reinforcementLevel + 1;
     if (targetLevel > maxReinforcementLevel(game.base.level)) {
@@ -2396,8 +2883,7 @@ export default function App() {
     }
     const base: BaseRecord = {
       ...game.base,
-      reinforcementLevel: targetLevel,
-      currentHp: baseReinforcementHp(tweaks, targetLevel),
+      reinforcementAction: { kind: "upgrade", targetLevel, startedAt: game.clock.virtualNow },
     };
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "upgrade_extraction_tile", game.base.level) };
 
@@ -2410,14 +2896,18 @@ export default function App() {
 
   /**
    * Repairs base.currentHp back to max — cost scales with how much is
-   * missing (engine/base.ts:baseRepairCost), instant on payment like
-   * reinforcement upgrades. Blocked while a horde is still adjacent to the
-   * base, same reasoning as handleRepairStructure's hordeOccupiedKeys guard:
-   * repairing mid-assault would just get chipped straight back down.
+   * missing (engine/base.ts:baseRepairCost), timed like every other repair
+   * (baseReinforcementRepairDurationMs), sharing reinforcementAction's single
+   * in-progress slot with handleUpgradeReinforcement. Blocked while a horde
+   * is still adjacent to the base, same reasoning as handleRepairStructure's
+   * hordeOccupiedKeys guard: repairing mid-assault would just get chipped
+   * straight back down.
    */
   async function handleRepairBase(): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
+
+    if (game.base.reinforcementAction) return { ok: false, reason: "Already busy (upgrade or repair in progress)" };
 
     const maxHp = baseReinforcementHp(tweaks, game.base.reinforcementLevel);
     if (game.base.currentHp >= maxHp) return { ok: false, reason: "Not damaged" };
@@ -2438,7 +2928,10 @@ export default function App() {
     for (const [key, amount] of Object.entries(cost)) {
       resources[key as keyof ResourceAmounts] -= amount ?? 0;
     }
-    const base: BaseRecord = { ...game.base, currentHp: maxHp };
+    const base: BaseRecord = {
+      ...game.base,
+      reinforcementAction: { kind: "repair", startedAt: game.clock.virtualNow },
+    };
 
     await Promise.all([set(RESOURCES_DB_KEY, resources), set(BASE_DB_KEY, base)]);
     setBoot((prev) =>
@@ -2448,12 +2941,12 @@ export default function App() {
   }
 
   /**
-   * Outpost-scoped version of handleUpgradeReinforcement — instant on
-   * purchase, capped by the player's base level (maxOutpostReinforcementLevel,
-   * engine/outposts.ts), same as the main base's track. Paid from the shared
-   * main resource pool, same as every other action — an outpost's connected
-   * tiles feed that same pool (engine/tick.ts:accrueResources), so there's
-   * no separate stockpile to draw from.
+   * Outpost-scoped version of handleUpgradeReinforcement — timed, capped by
+   * the player's base level (maxOutpostReinforcementLevel, engine/outposts.ts),
+   * same as the main base's track. Paid from the shared main resource pool,
+   * same as every other action — an outpost's connected tiles feed that same
+   * pool (engine/tick.ts:accrueResources), so there's no separate stockpile
+   * to draw from.
    */
   async function handleUpgradeOutpostReinforcement(outpostId: string): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
@@ -2461,6 +2954,7 @@ export default function App() {
 
     const outpost = game.outposts.find((o) => o.id === outpostId);
     if (!outpost) return { ok: false, reason: "Outpost not found" };
+    if (outpost.reinforcementAction) return { ok: false, reason: "Already busy (upgrade or repair in progress)" };
 
     const targetLevel = outpost.reinforcementLevel + 1;
     if (targetLevel > maxOutpostReinforcementLevel(game.base.level)) {
@@ -2480,7 +2974,7 @@ export default function App() {
     }
     const outposts: OutpostsRecord = game.outposts.map((o) =>
       o.id === outpostId
-        ? { ...o, reinforcementLevel: targetLevel, currentHp: outpostReinforcementHp(tweaks, targetLevel) }
+        ? { ...o, reinforcementAction: { kind: "upgrade", targetLevel, startedAt: game.clock.virtualNow } }
         : o,
     );
 
@@ -2493,9 +2987,10 @@ export default function App() {
 
   /**
    * Outpost-scoped version of handleRepairBase — cost scales with how much
-   * HP is missing (engine/outposts.ts:outpostRepairCost), paid from the
-   * shared main resource pool (see handleUpgradeOutpostReinforcement),
-   * blocked while a horde is still adjacent, same reasoning as the base.
+   * HP is missing (engine/outposts.ts:outpostRepairCost), timed
+   * (outpostReinforcementRepairDurationMs), paid from the shared main
+   * resource pool (see handleUpgradeOutpostReinforcement), blocked while a
+   * horde is still adjacent, same reasoning as the base.
    */
   async function handleRepairOutpost(outpostId: string): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
@@ -2503,6 +2998,7 @@ export default function App() {
 
     const outpost = game.outposts.find((o) => o.id === outpostId);
     if (!outpost) return { ok: false, reason: "Outpost not found" };
+    if (outpost.reinforcementAction) return { ok: false, reason: "Already busy (upgrade or repair in progress)" };
 
     const maxHp = outpostReinforcementHp(tweaks, outpost.reinforcementLevel);
     if (outpost.currentHp >= maxHp) return { ok: false, reason: "Not damaged" };
@@ -2521,7 +3017,9 @@ export default function App() {
     for (const [key, amount] of Object.entries(cost)) {
       resources[key as keyof ResourceAmounts] -= amount ?? 0;
     }
-    const outposts: OutpostsRecord = game.outposts.map((o) => (o.id === outpostId ? { ...o, currentHp: maxHp } : o));
+    const outposts: OutpostsRecord = game.outposts.map((o) =>
+      o.id === outpostId ? { ...o, reinforcementAction: { kind: "repair", startedAt: game.clock.virtualNow } } : o,
+    );
 
     await Promise.all([set(RESOURCES_DB_KEY, resources), set(OUTPOSTS_DB_KEY, outposts)]);
     setBoot((prev) =>
@@ -2616,11 +3114,18 @@ export default function App() {
     if (game.dens.some((d) => axialKey(d.coord) === axialKey(target))) {
       return { ok: false, reason: "A den stands here — assault it instead" };
     }
+    // Same reasoning for the lab — it's guarded by a static defender far
+    // beyond tileDefense, not ordinary unowned territory (handleSecureLab).
+    if (axialKey(game.lab.coord) === axialKey(target)) {
+      return { ok: false, reason: "The lab is guarded — assault it instead" };
+    }
 
     const route = findBestExpeditionRoute(
       tweaks,
       game.world.seed,
       game.barracksList,
+      game.towers,
+      game.outposts,
       game.territory,
       game.scoutedTiles,
       tweaks.game.grid_size,
@@ -2642,13 +3147,13 @@ export default function App() {
     const countsValid =
       Number.isInteger(militiaCommitted) &&
       militiaCommitted >= 0 &&
-      militiaCommitted <= availableMilitia(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls) &&
+      militiaCommitted <= availableMilitia(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
       Number.isInteger(junkyardKnightCommitted) &&
       junkyardKnightCommitted >= 0 &&
-      junkyardKnightCommitted <= availableJunkyardKnights(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls) &&
+      junkyardKnightCommitted <= availableJunkyardKnights(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
       Number.isInteger(crossBowSniperCommitted) &&
       crossBowSniperCommitted >= 0 &&
-      crossBowSniperCommitted <= availableCrossBowSnipers(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls);
+      crossBowSniperCommitted <= availableCrossBowSnipers(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults);
     if (!countsValid) return { ok: false, reason: "Invalid unit counts" };
     if (partySize <= 0) return { ok: false, reason: "Commit at least one unit" };
 
@@ -2665,7 +3170,8 @@ export default function App() {
       junkyardKnightCommitted,
       crossBowSniperCommitted,
       departedAt,
-      arriveAt: departedAt + expeditionTravelDurationMs(tweaks, route.cost),
+      arriveAt: departedAt + expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, game.research)),
+      resolvedIndex: 0,
     };
     const expeditions: ExpeditionsRecord = [...game.expeditions, expedition];
 
@@ -2704,6 +3210,8 @@ export default function App() {
       tweaks,
       game.world.seed,
       game.barracksList,
+      game.towers,
+      game.outposts,
       game.territory,
       game.scoutedTiles,
       tweaks.game.grid_size,
@@ -2722,13 +3230,13 @@ export default function App() {
     const countsValid =
       Number.isInteger(militiaCommitted) &&
       militiaCommitted >= 0 &&
-      militiaCommitted <= availableMilitia(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls) &&
+      militiaCommitted <= availableMilitia(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
       Number.isInteger(junkyardKnightCommitted) &&
       junkyardKnightCommitted >= 0 &&
-      junkyardKnightCommitted <= availableJunkyardKnights(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls) &&
+      junkyardKnightCommitted <= availableJunkyardKnights(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
       Number.isInteger(crossBowSniperCommitted) &&
       crossBowSniperCommitted >= 0 &&
-      crossBowSniperCommitted <= availableCrossBowSnipers(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls);
+      crossBowSniperCommitted <= availableCrossBowSnipers(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults);
     if (!countsValid) return { ok: false, reason: "Invalid unit counts" };
     if (partySize <= 0) return { ok: false, reason: "Commit at least one unit" };
 
@@ -2746,13 +3254,97 @@ export default function App() {
       junkyardKnightCommitted,
       crossBowSniperCommitted,
       departedAt,
-      arriveAt: departedAt + expeditionTravelDurationMs(tweaks, route.cost),
+      arriveAt: departedAt + expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, game.research)),
+      resolvedIndex: 0,
     };
     const denAssaults: DenAssaultsRecord = [...game.denAssaults, assault];
 
     await Promise.all([set(RESOURCES_DB_KEY, resources), set(DEN_ASSAULTS_DB_KEY, denAssaults)]);
     setBoot((prev) =>
       prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, denAssaults } } : prev,
+    );
+    return { ok: true };
+  }
+
+  /**
+   * Commits a party at the hidden lab — mirrors handleAssaultDen closely
+   * (same route-finding, availability, and provisions-cost shape), but
+   * there's only ever one lab and no siege/hold period: the tick loop
+   * (App.tsx) resolves this as a single all-or-nothing fight against the
+   * static guardian (engine/lab.ts:resolveLabAssault) once the party
+   * survives the corridor leading up to it. findBestExpeditionRoute's
+   * allowedTiles gate (owned ∪ scouted) means the lab must already be
+   * scouted for a route to exist at all — this is what "hidden" cashes out
+   * to (DESIGN.md §13).
+   */
+  async function handleSecureLab(
+    militiaCommitted: number,
+    junkyardKnightCommitted: number,
+    crossBowSniperCommitted: number,
+  ): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+
+    if (game.lab.secured) return { ok: false, reason: "The lab is already secured" };
+    if (game.labAssaults.length > 0) return { ok: false, reason: "A party is already en route" };
+
+    const route = findBestExpeditionRoute(
+      tweaks,
+      game.world.seed,
+      game.barracksList,
+      game.towers,
+      game.outposts,
+      game.territory,
+      game.scoutedTiles,
+      tweaks.game.grid_size,
+      game.lab.coord,
+    );
+    if (!route) {
+      return { ok: false, reason: "No known route — scout the lab, and make sure you have a barracks" };
+    }
+
+    const hordeOccupiedKeys = new Set(game.hordes.map((h) => axialKey(h.path[h.pathIndex])));
+    if (route.path.some((tile) => hordeOccupiedKeys.has(axialKey(tile)))) {
+      return { ok: false, reason: "A horde blocks this route" };
+    }
+
+    const partySize = militiaCommitted + junkyardKnightCommitted + crossBowSniperCommitted;
+    const countsValid =
+      Number.isInteger(militiaCommitted) &&
+      militiaCommitted >= 0 &&
+      militiaCommitted <= availableMilitia(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
+      Number.isInteger(junkyardKnightCommitted) &&
+      junkyardKnightCommitted >= 0 &&
+      junkyardKnightCommitted <=
+        availableJunkyardKnights(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
+      Number.isInteger(crossBowSniperCommitted) &&
+      crossBowSniperCommitted >= 0 &&
+      crossBowSniperCommitted <=
+        availableCrossBowSnipers(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults);
+    if (!countsValid) return { ok: false, reason: "Invalid unit counts" };
+    if (partySize <= 0) return { ok: false, reason: "Commit at least one unit" };
+
+    const provisionsCost = expeditionProvisionsCost(tweaks, partySize, route.cost);
+    if (game.resources.food < provisionsCost) return { ok: false, reason: "Not enough food" };
+
+    const resources = { ...game.resources, food: game.resources.food - provisionsCost };
+    const departedAt = game.clock.virtualNow;
+    const assault: LabAssaultRecord = {
+      id: `labAssault-${departedAt}`,
+      target: game.lab.coord,
+      path: route.path,
+      militiaCommitted,
+      junkyardKnightCommitted,
+      crossBowSniperCommitted,
+      departedAt,
+      arriveAt: departedAt + expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, game.research)),
+      resolvedIndex: 0,
+    };
+    const labAssaults: LabAssaultsRecord = [...game.labAssaults, assault];
+
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(LAB_ASSAULTS_DB_KEY, labAssaults)]);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, labAssaults } } : prev,
     );
     return { ok: true };
   }
@@ -2772,6 +3364,7 @@ export default function App() {
 
     const ownedKeys = new Set(game.territory.owned.map(axialKey));
     if (!ownedKeys.has(axialKey(coord))) return { ok: false, reason: "Tile not owned" };
+    if (!isBuildableLand(game.world.seed, coord)) return { ok: false, reason: "Cannot garrison on water" };
 
     // A tile can be back in territory.owned (via an expedition claiming it —
     // engine/expeditions.ts, unlike the tower viewshed auto-claim, doesn't
@@ -2796,7 +3389,7 @@ export default function App() {
     const hostileDenHere = game.dens.some((d) => axialKey(d.coord) === axialKey(coord) && !d.siege);
     if (hostileDenHere) return { ok: false, reason: "A hostile den occupies this tile — assault it first" };
 
-    if (!Number.isInteger(count) || count <= 0 || count > availableMilitia(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls)) {
+    if (!Number.isInteger(count) || count <= 0 || count > availableMilitia(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults)) {
       return { ok: false, reason: "Invalid militia count" };
     }
 
@@ -2820,6 +3413,7 @@ export default function App() {
 
     const ownedKeys = new Set(game.territory.owned.map(axialKey));
     if (!ownedKeys.has(axialKey(coord))) return { ok: false, reason: "Tile not owned" };
+    if (!isBuildableLand(game.world.seed, coord)) return { ok: false, reason: "Cannot garrison on water" };
 
     const hordeOccupiedKeys = new Set(game.hordes.map((h) => axialKey(h.path[h.pathIndex])));
     if (hordeOccupiedKeys.has(axialKey(coord))) return { ok: false, reason: "A horde is still on this tile" };
@@ -2831,7 +3425,7 @@ export default function App() {
     if (
       !Number.isInteger(count) ||
       count <= 0 ||
-      count > availableJunkyardKnights(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls)
+      count > availableJunkyardKnights(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults)
     ) {
       return { ok: false, reason: "Invalid junkyard knight count" };
     }
@@ -2858,6 +3452,7 @@ export default function App() {
 
     const ownedKeys = new Set(game.territory.owned.map(axialKey));
     if (!ownedKeys.has(axialKey(coord))) return { ok: false, reason: "Tile not owned" };
+    if (!isBuildableLand(game.world.seed, coord)) return { ok: false, reason: "Cannot garrison on water" };
 
     const hordeOccupiedKeys = new Set(game.hordes.map((h) => axialKey(h.path[h.pathIndex])));
     if (hordeOccupiedKeys.has(axialKey(coord))) return { ok: false, reason: "A horde is still on this tile" };
@@ -2869,7 +3464,7 @@ export default function App() {
     if (
       !Number.isInteger(count) ||
       count <= 0 ||
-      count > availableCrossBowSnipers(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls)
+      count > availableCrossBowSnipers(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults)
     ) {
       return { ok: false, reason: "Invalid cross-bow sniper count" };
     }
@@ -2911,6 +3506,8 @@ export default function App() {
       tweaks,
       game.world.seed,
       game.barracksList,
+      game.towers,
+      game.outposts,
       game.territory,
       game.scoutedTiles,
       tweaks.game.grid_size,
@@ -2927,7 +3524,7 @@ export default function App() {
       junkyardKnightCommitted: garrison.junkyardKnightCount,
       crossBowSniperCommitted: garrison.crossBowSniperCount,
       departedAt,
-      arriveAt: departedAt + recallDurationMs(tweaks, route.cost),
+      arriveAt: departedAt + recallDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, game.research)),
     };
     const garrisonRecalls: GarrisonRecallsRecord = [...game.garrisonRecalls, recall];
 
@@ -2958,6 +3555,18 @@ export default function App() {
     );
   }
 
+  if (boot.game?.gameStatus.won) {
+    return (
+      <WinScreen
+        wonAt={boot.game.gameStatus.wonAt}
+        currentSeed={boot.game.world.seed}
+        onReplayCurrent={handleReplayCurrentGame}
+        onStartNewSeed={handleStartNewSeed}
+        onNewPlayer={handleNewPlayer}
+      />
+    );
+  }
+
   return boot.game ? (
     <GameScreen
       tweaks={boot.tweaks}
@@ -2975,19 +3584,25 @@ export default function App() {
       garrisons={boot.game.garrisons}
       scoutedTiles={boot.game.scoutedTiles}
       storageLevels={boot.game.storageLevels}
+      storageUpgrades={boot.game.storageUpgrades}
       noise={boot.game.noise}
       dens={boot.game.dens}
       denAssaults={boot.game.denAssaults}
       outposts={boot.game.outposts}
+      lab={boot.game.lab}
+      labAssaults={boot.game.labAssaults}
       garrisonRecalls={boot.game.garrisonRecalls}
       hordes={boot.game.hordes}
       expeditions={boot.game.expeditions}
+      tombstones={boot.game.tombstones}
       docks={boot.game.docks}
       scoutSkiffs={boot.game.scoutSkiffs}
       wanderingScouts={boot.game.wanderingScouts}
+      research={boot.game.research}
       now={boot.game.clock.virtualNow}
       speedMultiplier={speedMultiplier}
       onCycleFastForward={cycleFastForward}
+      onStartResearch={handleStartResearch}
       onBuildExtractionTile={handleBuildExtractionTile}
       onUpgradeExtractionTile={handleUpgradeExtractionTile}
       onUpgradeStorage={handleUpgradeStorage}
@@ -3018,6 +3633,7 @@ export default function App() {
       onRelocateBase={handleRelocateBase}
       onDispatchExpedition={handleDispatchExpedition}
       onAssaultDen={handleAssaultDen}
+      onSecureLab={handleSecureLab}
       onGarrisonMilitia={handleGarrisonMilitia}
       onGarrisonJunkyardKnight={handleGarrisonJunkyardKnight}
       onGarrisonCrossBowSniper={handleGarrisonCrossBowSniper}

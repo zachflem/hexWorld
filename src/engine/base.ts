@@ -61,9 +61,7 @@ export function maxReinforcementLevel(baseLevel: number): number {
 
 /**
  * Cost to upgrade reinforcement to `targetLevel` — Formula B, same shape as
- * baseUpgradeCost. Instant on purchase: unlike every timed upgrade
- * elsewhere, tweaks.jsonc's base_reinforcement block defines no duration for
- * this track — a deliberate first-pass simplification, not an oversight.
+ * baseUpgradeCost.
  */
 export function reinforcementUpgradeCost(tweaks: Tweaks, targetLevel: number): Partial<Record<ResourceType, number>> {
   const cost: Partial<Record<ResourceType, number>> = {};
@@ -73,13 +71,17 @@ export function reinforcementUpgradeCost(tweaks: Tweaks, targetLevel: number): P
   return cost;
 }
 
+/** time(targetLevel) = upgrade_time_minutes_base * targetLevel — same shape as barracksUpgradeDurationMs/towerUpgradeDurationMs. */
+export function baseReinforcementUpgradeDurationMs(tweaks: Tweaks, targetLevel: number): number {
+  return tweaks.base_reinforcement.upgrade_time_minutes_base * targetLevel * 60 * 1000;
+}
+
 /**
  * Cost to fully heal base.currentHp back to maxHp, scaled by how much is
  * missing (mirrors engine/walls.ts:wallRepairCost's missingFraction shape)
  * against the same cost_base Formula B uses for reinforcement upgrades at
  * the base's current reinforcementLevel — a more-invested base costs more to
- * fully patch back up. Instant on payment, same as reinforcementUpgradeCost
- * (no separate timer track). First pass, untested.
+ * fully patch back up. First pass, untested.
  */
 export function baseRepairCost(
   tweaks: Tweaks,
@@ -93,6 +95,12 @@ export function baseRepairCost(
     cost[res as ResourceType] = formulaBCost(amount, reinforcementLevel) * missingFraction;
   }
   return cost;
+}
+
+/** Repair duration scales with severity, mirroring wallRepairDurationMs — tweaks.jsonc base_reinforcement.seconds_per_missing_hp. */
+export function baseReinforcementRepairDurationMs(tweaks: Tweaks, currentHp: number, maxHp: number): number {
+  const missingHp = Math.max(0, maxHp - currentHp);
+  return missingHp * tweaks.base_reinforcement.seconds_per_missing_hp * 1000;
 }
 
 /** Relocation is gated behind a minimum base level (tweaks.jsonc base_relocation.min_base_level), per explicit design request. */

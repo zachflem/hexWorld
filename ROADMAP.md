@@ -112,8 +112,9 @@ Reference `DESIGN.md` for *what* each system does and *why*; reference `tweaks.j
 - Lab tile placement (fixed, hidden from normal scouting)
 - Rumor/clue surfacing via scouting/watchtowers: passive chance per scout action/watchtower tick (scaled by intel level) plus a guaranteed clue per den clear; 5 total clues, each a directional hint narrowing to a small hex cluster (see DESIGN.md §13)
 - Static guardian defense at the lab tile
-- Win-state check: all dens cleared + lab secured → win screen
-- **Testable outcome:** clear all dens on a small test map, receive correctly-surfaced clues, locate and secure the lab, win screen triggers
+- Win-state check: securing the lab, alone, wins the game
+- **Corrected scope (2026-07-21):** the original draft of this milestone (and an early pass of DESIGN.md §13) gated the win screen on "all dens cleared + lab secured." That was never the intent — a player who finds and secures the lab without ever touching a den still wins outright. Den-clearing stays valuable in its own right (a guaranteed clue per clear, outposts, economy, army size) but was never meant to be a win requirement, and DESIGN.md §13 has been corrected to match.
+- **Testable outcome:** on a small test map, locate and secure the lab without clearing any den and confirm the win screen triggers anyway; separately, confirm clearing a den still awards its guaranteed clue and converts to an outpost as normal.
 
 ## Milestone 16 — UI Polish Pass
 - 8-hex persistent stat display (bottom-right), replacing debug numbers from earlier milestones

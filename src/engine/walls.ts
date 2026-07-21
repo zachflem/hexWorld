@@ -20,6 +20,11 @@ export function wallBuildCost(tweaks: Tweaks, n: number): Record<string, number>
   return cost;
 }
 
+/** Flat construction duration for a freshly-built (always wood tier) wall — tweaks.jsonc walls.build_time_minutes. */
+export function wallBuildDurationMs(tweaks: Tweaks): number {
+  return tweaks.walls.build_time_minutes * 60_000;
+}
+
 /**
  * TWEAKS.md explicitly flags durability_hits_to_break as "descriptive
  * reference, not the live combat number." Resolved by deriving an actual HP

@@ -163,7 +163,7 @@ A successfully held den **converts into a player-usable Outpost** (`engine/outpo
 - **Form:** each clue is a directional hint relative to the base — early clues give a coarse compass quadrant ("something calls from the north"), later clues refine that into a narrower arc ("north-north-east").
 - **Precision:** a fixed total of 5 clues, narrowing down to a small cluster of hexes rather than the exact tile — the player still has to manually scout that cluster to pinpoint the lab.
 
-**Win condition:** clear every den on the map, then locate and secure the lab.
+**Win condition:** locate and secure the lab — that alone ends the game in a win. Clearing dens is never required; it's simply one of the best routes to an army strong enough to beat the guardian (and a guaranteed clue source along the way). *(Corrected 2026-07-21 — an earlier pass of this section read "clear every den on the map, then locate and secure the lab," which was never the intent; see ROADMAP.md Milestone 15.)*
 **Loss condition:** the base tile's reinforcement HP is depleted by a horde, or the player voluntarily surrenders.
 
 ---

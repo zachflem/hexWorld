@@ -25,7 +25,9 @@ import type { DenRecord } from "../data/dens";
 import type { OutpostRecord } from "../data/outposts";
 import type { HordeRecord } from "../data/hordes";
 import type { Expedition, ExpeditionsRecord } from "../data/expeditions";
+import { expeditionPathIndexAt } from "../engine/expeditions";
 import type { DenAssaultRecord, DenAssaultsRecord } from "../data/denAssaults";
+import type { TombstoneRecord, TombstonesRecord } from "../data/tombstones";
 import type { DockRecord, DocksRecord } from "../data/docks";
 import type { ScoutSkiffRecord, ScoutSkiffsRecord } from "../data/scoutSkiffs";
 import type { WanderingScoutRecord, WanderingScoutsRecord } from "../data/wanderingScouts";
@@ -150,6 +152,7 @@ export const HexCanvas = forwardRef<
     hordes: HordeRecord[];
     expeditions: ExpeditionsRecord;
     denAssaults: DenAssaultsRecord;
+    tombstones: TombstonesRecord;
     /** The virtual clock (data/clock.ts:ClockRecord.virtualNow) — used to interpolate each in-flight expedition's current position along its route, same units as Expedition.departedAt/arriveAt. */
     now: number;
     docks: DocksRecord;
@@ -180,6 +183,7 @@ export const HexCanvas = forwardRef<
     hordes,
     expeditions,
     denAssaults,
+    tombstones,
     now,
     docks,
     scoutSkiffs,
@@ -251,6 +255,11 @@ export const HexCanvas = forwardRef<
     for (const scout of wanderingScouts) map.set(axialKey(scout.coord), scout);
     return map;
   }, [wanderingScouts]);
+  const tombstonesByKey = useMemo(() => {
+    const map = new Map<string, TombstoneRecord>();
+    for (const tombstone of tombstones) map.set(axialKey(tombstone.coord), tombstone);
+    return map;
+  }, [tombstones]);
   // Destination of any in-flight expedition (App.tsx runTick resolves these
   // on arrival) — just the target coord, so the map shows where a party is
   // headed even though its actual path isn't drawn.
@@ -260,17 +269,17 @@ export const HexCanvas = forwardRef<
     return set;
   }, [expeditions]);
   // Live en-route position for each in-flight expedition — interpolated from
-  // elapsed time against Expedition.path, the same way a horde's position is
-  // read straight off path[pathIndex] (hordesByKey above). Expedition itself
-  // stores no position/index (just target/path/departedAt/arriveAt), so this
-  // is purely a render-time derivation, recomputed every tick as `now` ticks
-  // forward — no data model changes needed.
+  // elapsed time against Expedition.path via expeditionPathIndexAt
+  // (engine/expeditions.ts), the SAME formula App.tsx's tick loop uses to
+  // decide how far a party has really progressed (stepCorridorWalk's
+  // targetIndex) — so the visual marker and the logical resolvedIndex can
+  // never diverge, the same way a horde's position is read straight off
+  // path[pathIndex] (hordesByKey above). Recomputed every tick as `now`
+  // ticks forward.
   const expeditionsByKey = useMemo(() => {
     const map = new Map<string, Expedition>();
     for (const expedition of expeditions) {
-      const totalMs = expedition.arriveAt - expedition.departedAt;
-      const fraction = totalMs > 0 ? Math.min(1, Math.max(0, (now - expedition.departedAt) / totalMs)) : 1;
-      const index = Math.round(fraction * (expedition.path.length - 1));
+      const index = expeditionPathIndexAt(expedition.departedAt, expedition.arriveAt, now, expedition.path.length);
       map.set(axialKey(expedition.path[index]), expedition);
     }
     return map;
@@ -289,9 +298,7 @@ export const HexCanvas = forwardRef<
   const denAssaultsByKey = useMemo(() => {
     const map = new Map<string, DenAssaultRecord>();
     for (const assault of denAssaults) {
-      const totalMs = assault.arriveAt - assault.departedAt;
-      const fraction = totalMs > 0 ? Math.min(1, Math.max(0, (now - assault.departedAt) / totalMs)) : 1;
-      const index = Math.round(fraction * (assault.path.length - 1));
+      const index = expeditionPathIndexAt(assault.departedAt, assault.arriveAt, now, assault.path.length);
       map.set(axialKey(assault.path[index]), assault);
     }
     return map;
@@ -360,6 +367,21 @@ export const HexCanvas = forwardRef<
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
+  // Mobile pinch-to-zoom — every currently-touching pointer's latest screen
+  // position, keyed by pointerId (pointer events unify mouse/touch/pen, so
+  // this is populated by touch as well as e.g. a stylus). Once a second
+  // pointer joins, drag-panning (dragRef above) hands off to pinch scaling.
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{
+    initialDistance: number;
+    initialZoom: number;
+    initialMidpoint: { x: number; y: number };
+    initialPan: { x: number; y: number };
+  } | null>(null);
+  // Sticky for the whole gesture (not reset until every pointer lifts) so a
+  // pinch that happens to end on a single remaining finger doesn't get
+  // mistaken for a tap-to-select-tile in handlePointerUp's last branch.
+  const multiTouchRef = useRef(false);
 
   // Center the view on the base tile once we know the canvas size.
   useEffect(() => {
@@ -641,7 +663,9 @@ export const HexCanvas = forwardRef<
                 ctx.lineWidth = Math.max(2, size * 0.12);
                 ctx.stroke();
               }
-              const towerIcon = getStructureIconTexture("tower");
+              const towerIcon = tower.buildStartedAt
+                ? getStructureIconTexture("construction")
+                : getStructureIconTexture("tower");
               if (towerIcon) {
                 drawImageAtWidth(ctx, towerIcon, screenCenter.x, screenCenter.y, size * 1.2);
               } else {
@@ -654,7 +678,9 @@ export const HexCanvas = forwardRef<
               }
               drawLevelBadge(screenCenter, tower.level);
             } else if (barracks) {
-              const barracksIcon = getStructureIconTexture("barracks");
+              const barracksIcon = barracks.buildStartedAt
+                ? getStructureIconTexture("construction")
+                : getStructureIconTexture("barracks");
               if (barracksIcon) {
                 drawImageAtWidth(ctx, barracksIcon, screenCenter.x, screenCenter.y, size * 1.6);
               } else {
@@ -667,7 +693,9 @@ export const HexCanvas = forwardRef<
               }
               drawLevelBadge(screenCenter, barracks.level);
             } else if (wall) {
-              const wallIcon = getStructureIconTexture(WALL_TIER_ICON_NAMES[wall.tier]);
+              const wallIcon = wall.buildStartedAt
+                ? getStructureIconTexture("construction")
+                : getStructureIconTexture(WALL_TIER_ICON_NAMES[wall.tier]);
               if (wallIcon) {
                 drawImageAtWidth(ctx, wallIcon, screenCenter.x, screenCenter.y, size * 1.4);
               } else {
@@ -679,7 +707,9 @@ export const HexCanvas = forwardRef<
                 ctx.stroke();
               }
             } else if (tile) {
-              const resourceImg = getResourceTexture(tile.resource);
+              const resourceImg = tile.buildStartedAt
+                ? getStructureIconTexture("construction")
+                : getResourceTexture(tile.resource);
               if (resourceImg) {
                 drawImageAtWidth(ctx, resourceImg, screenCenter.x, screenCenter.y, size * RESOURCE_ICON_SCALE[tile.resource]);
               } else {
@@ -689,6 +719,14 @@ export const HexCanvas = forwardRef<
                 ctx.fill();
                 ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
                 ctx.stroke();
+              }
+            } else if (pathTile && pathTile.buildStartedAt) {
+              // Path tiles otherwise have no persistent icon (just the tier
+              // color fill in pass 1) — this only ever fires while under
+              // construction, falling through to no marker at all once built.
+              const constructionIcon = getStructureIconTexture("construction");
+              if (constructionIcon) {
+                drawImageAtWidth(ctx, constructionIcon, screenCenter.x, screenCenter.y, size * 1.0);
               }
             } else if (dock) {
               const dockIcon = getStructureIconTexture("dock");
@@ -765,7 +803,7 @@ export const HexCanvas = forwardRef<
           if (expedition) {
             const expeditionIcon = getUnitIconTexture("expedition");
             if (expeditionIcon) {
-              drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size);
+              drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size * 2.0);
             } else {
               ctx.font = `${Math.max(10, size * 0.55)}px sans-serif`;
               ctx.textAlign = "center";
@@ -782,12 +820,30 @@ export const HexCanvas = forwardRef<
           if (denAssault) {
             const expeditionIcon = getUnitIconTexture("expedition");
             if (expeditionIcon) {
-              drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size);
+              drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size * 2.0);
             } else {
               ctx.font = `${Math.max(10, size * 0.55)}px sans-serif`;
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
               ctx.fillText("🎒", screenCenter.x, screenCenter.y);
+            }
+          }
+
+          // A tombstone marks where a party died mid-route (data/tombstones.ts)
+          // — purely informational (click-to-inspect via TilePopup), same
+          // top-layer transient-marker treatment as the scout skiff/wandering
+          // scout/expedition markers above. Expires on its own (App.tsx's
+          // tick loop), so this only ever draws while it's still fresh.
+          const tombstone = tombstonesByKey.get(coordKey);
+          if (tombstone) {
+            const tombstoneIcon = getUnitIconTexture("tombstone");
+            if (tombstoneIcon) {
+              drawImageAtWidth(ctx, tombstoneIcon, screenCenter.x, screenCenter.y, size * 1.2);
+            } else {
+              ctx.font = `${Math.max(10, size * 0.55)}px sans-serif`;
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText("🪦", screenCenter.x, screenCenter.y);
             }
           }
 
@@ -980,13 +1036,55 @@ export const HexCanvas = forwardRef<
     setZoom(nextZoom);
   }
 
+  function pinchDistance(points: { x: number; y: number }[]): number {
+    return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+  }
+
+  function pinchMidpoint(points: { x: number; y: number }[]): { x: number; y: number } {
+    return { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 };
+  }
+
   function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     if (pan === null) return;
     (event.target as HTMLElement).setPointerCapture(event.pointerId);
-    dragRef.current = { startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y };
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (pointersRef.current.size >= 2) {
+      multiTouchRef.current = true;
+      dragRef.current = null;
+      const points = [...pointersRef.current.values()];
+      pinchRef.current = {
+        initialDistance: pinchDistance(points),
+        initialZoom: zoom,
+        initialMidpoint: pinchMidpoint(points),
+        initialPan: pan,
+      };
+    } else {
+      pinchRef.current = null;
+      dragRef.current = { startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y };
+    }
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (pointersRef.current.has(event.pointerId)) {
+      pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+
+    const pinch = pinchRef.current;
+    if (pinch && pointersRef.current.size >= 2) {
+      const points = [...pointersRef.current.values()];
+      const distance = pinchDistance(points);
+      if (distance <= 0 || pinch.initialDistance <= 0) return;
+
+      const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, pinch.initialZoom * (distance / pinch.initialDistance)));
+      const worldX = (pinch.initialMidpoint.x - pinch.initialPan.x) / pinch.initialZoom;
+      const worldY = (pinch.initialMidpoint.y - pinch.initialPan.y) / pinch.initialZoom;
+      const midpoint = pinchMidpoint(points);
+      setPan({ x: midpoint.x - worldX * nextZoom, y: midpoint.y - worldY * nextZoom });
+      setZoom(nextZoom);
+      return;
+    }
+
     const drag = dragRef.current;
     if (!drag) return;
     setPan({
@@ -996,9 +1094,40 @@ export const HexCanvas = forwardRef<
   }
 
   function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (pan === null) return;
+    pointersRef.current.delete(event.pointerId);
+
+    if (pointersRef.current.size >= 2) {
+      // Still pinching with whichever pointers remain — re-anchor from here
+      // so the next move doesn't jump using a now-stale initial reading.
+      const points = [...pointersRef.current.values()];
+      pinchRef.current = {
+        initialDistance: pinchDistance(points),
+        initialZoom: zoom,
+        initialMidpoint: pinchMidpoint(points),
+        initialPan: pan,
+      };
+      return;
+    }
+
+    pinchRef.current = null;
+
+    if (pointersRef.current.size === 1) {
+      // Dropped from a pinch back down to one finger — resume as a fresh
+      // pan from here instead of jumping back to the pre-pinch drag origin.
+      const [remaining] = pointersRef.current.values();
+      dragRef.current = { startX: remaining.x, startY: remaining.y, panX: pan.x, panY: pan.y };
+      return;
+    }
+
+    // Every pointer is up — this is the only point a tap resolves into a
+    // tile click, and only if this whole gesture never went multi-touch
+    // (a pinch that happens to end back on one finger shouldn't select a tile).
     const drag = dragRef.current;
     dragRef.current = null;
-    if (!drag || pan === null) return;
+    const wasMultiTouch = multiTouchRef.current;
+    multiTouchRef.current = false;
+    if (!drag || wasMultiTouch) return;
 
     const movedDistance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
     if (movedDistance > CLICK_DRAG_THRESHOLD_PX) return;
@@ -1022,6 +1151,7 @@ export const HexCanvas = forwardRef<
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         style={{ display: "block", cursor: "grab", touchAction: "none" }}
       />
     </div>

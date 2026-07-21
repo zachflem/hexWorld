@@ -2,7 +2,28 @@ import type { DockRecord } from "../data/docks";
 import type { ResourceAmounts } from "../data/resources";
 import type { StorageLevels } from "../data/storageLevels";
 import type { Tweaks } from "../data/tweaksSchema";
+import { linearBuildCost } from "./formulas";
 import { storageCapacity } from "./storage";
+
+/**
+ * Linear (not Formula A) build-count cost — same reasoning as
+ * walls.slot_cost/wallBuildCost: Formula A's compounding pushed a 13th dock
+ * to ~62,000 wood (CORRECTION, 2026-07-21 playtesting feedback: "60k wood
+ * for one dock" was far too steep), so docks now scale the same gentler way
+ * walls and goat tracks already do. See TWEAKS.md.
+ */
+export function dockBuildCost(tweaks: Tweaks, n: number): Record<string, number> {
+  const cost: Record<string, number> = {};
+  for (const [res, amount] of Object.entries(tweaks.docks.build_cost_base)) {
+    cost[res] = linearBuildCost(amount, n);
+  }
+  return cost;
+}
+
+/** Flat construction duration for a freshly-built dock — tweaks.jsonc docks.build_time_minutes. CORRECTION (2026-07-21, playtesting feedback): docks previously had no construction timer at all, unlike every other structure. */
+export function dockBuildDurationMs(tweaks: Tweaks): number {
+  return tweaks.docks.build_time_minutes * 60_000;
+}
 
 /**
  * Food generated per real second by one dock — a flat rate off the food
@@ -23,7 +44,9 @@ export function dockYieldPerSecond(tweaks: Tweaks, dock: DockRecord): number {
  * docks: no path-connection draining (a water tile is never on the land path
  * network) — each dock's local stockpile fills, then deposits straight into
  * base food storage every tick, capped there same as everywhere else. No
- * `damaged` freeze either — docks are immune to horde capture.
+ * `damaged` freeze either — docks are immune to horde capture. A dock still
+ * under construction (`buildStartedAt` set) yields nothing yet, same as any
+ * other not-yet-finished structure.
  */
 export function accrueDockResources(
   tweaks: Tweaks,
@@ -38,6 +61,7 @@ export function accrueDockResources(
   let food = resources.food;
 
   const nextDocks = docks.map((dock) => {
+    if (dock.buildStartedAt) return dock;
     const rate = dockYieldPerSecond(tweaks, dock);
     let stockpile = Math.min(tileStockpileCap, dock.stockpile + rate * elapsedSeconds);
 

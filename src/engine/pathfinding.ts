@@ -28,21 +28,30 @@ export interface PathResult {
  * water-locked from base, or a destination not yet reachable through known
  * territory).
  */
-function dijkstraCore(
+/**
+ * Same search as the single-goal version, generalized to stop at whichever
+ * of `goalKeys` is popped first — since the frontier is explored in
+ * increasing-distance order, that's guaranteed to be the nearest goal
+ * reachable, not just *a* reachable one. The single-goal `dijkstraCore`
+ * below is just this with a one-element goal set.
+ */
+function dijkstraCoreMultiGoal(
   tweaks: Tweaks,
   seed: number,
   from: Axial,
-  to: Axial,
+  goalKeys: Set<string>,
   gridSize: number,
   isAllowed: (coord: Axial) => boolean,
-): PathResult | null {
+): (PathResult & { reachedKey: string }) | null {
   const startKey = axialKey(from);
-  const goalKey = axialKey(to);
 
   const dist = new Map<string, number>([[startKey, 0]]);
   const prev = new Map<string, Axial>();
   const visited = new Set<string>();
   const frontier: Axial[] = [from];
+
+  let reachedKey: string | null = null;
+  let reachedNode: Axial | null = null;
 
   while (frontier.length > 0) {
     let bestIndex = -1;
@@ -61,7 +70,11 @@ function dijkstraCore(
     if (visited.has(currentKey)) continue;
     visited.add(currentKey);
 
-    if (currentKey === goalKey) break;
+    if (goalKeys.has(currentKey)) {
+      reachedKey = currentKey;
+      reachedNode = current;
+      break;
+    }
 
     for (const neighbor of axialNeighbors(current)) {
       if (!isWithinMapBounds(neighbor, gridSize)) continue;
@@ -81,23 +94,62 @@ function dijkstraCore(
     }
   }
 
-  const goalDist = dist.get(goalKey);
+  if (reachedKey === null || reachedNode === null) return null;
+  const goalDist = dist.get(reachedKey);
   if (goalDist === undefined) return null;
 
-  const path: Axial[] = [to];
-  let cursor = to;
+  const path: Axial[] = [reachedNode];
+  let cursor = reachedNode;
   while (axialKey(cursor) !== startKey) {
     const previous = prev.get(axialKey(cursor));
-    if (!previous) return null; // unreachable in practice — dist.has(goalKey) already guards this
+    if (!previous) return null; // unreachable in practice — dist.has(reachedKey) already guards this
     path.push(previous);
     cursor = previous;
   }
-  return { path: path.reverse(), cost: goalDist };
+  return { path: path.reverse(), cost: goalDist, reachedKey };
+}
+
+function dijkstraCore(
+  tweaks: Tweaks,
+  seed: number,
+  from: Axial,
+  to: Axial,
+  gridSize: number,
+  isAllowed: (coord: Axial) => boolean,
+): PathResult | null {
+  const result = dijkstraCoreMultiGoal(tweaks, seed, from, new Set([axialKey(to)]), gridSize, isAllowed);
+  return result ? { path: result.path, cost: result.cost } : null;
 }
 
 /** Unrestricted by ownership — see dijkstraCore's doc comment. Unchanged behavior/signature from before the dijkstraCore extraction. */
 export function findHordePath(tweaks: Tweaks, seed: number, from: Axial, to: Axial, gridSize: number): Axial[] | null {
   return dijkstraCore(tweaks, seed, from, to, gridSize, () => true)?.path ?? null;
+}
+
+/**
+ * Like findHordePath, but instead of one fixed destination takes a list of
+ * candidate hub coordinates (the main base plus every live outpost) and
+ * paths to whichever one is nearest by accumulated terrain cost — used at
+ * horde spawn time (engine/hordes.ts:checkHordeSpawns) so a horde attacks
+ * the closest player structure instead of always beelining for the base.
+ * Same "fixed path for the horde's whole lifetime" behavior as
+ * findHordePath — this only changes which target that fixed path is
+ * computed toward, not when it's recomputed. Returns null if none of the
+ * candidates are reachable at all.
+ */
+export function findNearestHordeTarget(
+  tweaks: Tweaks,
+  seed: number,
+  from: Axial,
+  candidates: Axial[],
+  gridSize: number,
+): { path: Axial[]; target: Axial } | null {
+  const goalKeys = new Set(candidates.map(axialKey));
+  const result = dijkstraCoreMultiGoal(tweaks, seed, from, goalKeys, gridSize, () => true);
+  if (!result) return null;
+  const target = candidates.find((c) => axialKey(c) === result.reachedKey);
+  if (!target) return null;
+  return { path: result.path, target };
 }
 
 /**

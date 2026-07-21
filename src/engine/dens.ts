@@ -4,6 +4,7 @@ import type { Tower } from "../data/towers";
 import type { Tweaks } from "../data/tweaksSchema";
 import type { Wall } from "../data/walls";
 import { garrisonDefense } from "./garrisons";
+import { isStructureActive } from "./formulas";
 import { axialKey, axialNeighbors, type Axial } from "./hexCoords";
 import { resolveHordeTileFight, towersInRange } from "./hordes";
 import { towerDamage } from "./towers";
@@ -15,7 +16,7 @@ export function denDefense(tweaks: Tweaks, level: number): number {
 }
 
 /**
- * The den-assault equivalent of resolveExpeditionWalk's final tile fight —
+ * The den-assault equivalent of stepCorridorWalk's final tile fight —
  * checked separately from the corridor walk leading up to the den (see
  * App.tsx's den-assault resolution), since a den isn't an ordinary map tile
  * and uses its own defense formula (denDefense above), not tileDefense.
@@ -71,10 +72,11 @@ export function denAssaultSurvivors(
  * player's answer to "build towers/walls/garrison here to survive the
  * siege." A garrison stationed directly on the den's own coord (owned the
  * moment the assault succeeds, engine/dens.ts is not itself responsible for
- * that claim — see App.tsx) stacks with every non-damaged tower whose range
+ * that claim — see App.tsx) stacks with every active tower whose range
  * reaches the den (towersInRange, same reach a tower defends/claims with
- * elsewhere) and every non-damaged wall built on one of the den's immediate
- * neighbors — the den's own coord can't host a structure directly (mirrors
+ * elsewhere) and every active wall (engine/formulas.ts:isStructureActive)
+ * built on one of the den's immediate neighbors — the den's own coord can't
+ * host a structure directly (mirrors
  * the main base tile's exclusion), so walls necessarily ring it rather than
  * sit on it.
  */
@@ -88,7 +90,7 @@ export function holdDefenseAt(
   const towerTotal = towersInRange(tweaks, towers, coord).reduce((sum, t) => sum + towerDamage(tweaks, t.level), 0);
   const neighborKeys = new Set(axialNeighbors(coord).map(axialKey));
   const wallTotal = walls.reduce(
-    (sum, w) => (!w.damaged && neighborKeys.has(axialKey(w.coord)) ? sum + w.durability : sum),
+    (sum, w) => (isStructureActive(w) && neighborKeys.has(axialKey(w.coord)) ? sum + w.durability : sum),
     0,
   );
   return garrisonDefense(tweaks, garrisons, coord) + towerTotal + wallTotal;

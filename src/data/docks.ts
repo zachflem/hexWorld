@@ -16,6 +16,8 @@ export interface DockFishingBoatInProgress {
  */
 export interface DockRecord {
   coord: Axial;
+  /** Set at build time, cleared once the construction timer (tweaks.docks.build_time_minutes) elapses — App.tsx's tick loop resolves it the same way as every other structure kind. A dock yields nothing while this is set (engine/docks.ts:accrueDockResources). */
+  buildStartedAt: number | null;
   /** Local food buffer, capped at storage.capacity_base_per_resource — drains straight to base storage each tick (engine/docks.ts:accrueDockResources). */
   stockpile: number;
   /** True once built — boosts this dock's yield by tweaks.docks.fishing_boat.yield_bonus_multiplier and shows a boat icon (src/render/HexCanvas.tsx). */

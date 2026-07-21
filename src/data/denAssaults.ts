@@ -10,8 +10,13 @@ import type { Axial } from "../engine/hexCoords";
  * committed units stay counted in UnitsRecord (upkeep keeps applying) until
  * resolution, tracked as unavailable via engine/garrisons.ts's
  * denAssault-aware availableMilitia/availableJunkyardKnights/
- * availableCrossBowSnipers. Resolved from the tick loop once
- * `virtualNow >= arriveAt` (App.tsx), same as an Expedition.
+ * availableCrossBowSnipers. The corridor up to (but excluding) the den's own
+ * coord resolves tile-by-tile in real time every tick, same as an
+ * Expedition (engine/expeditions.ts:stepCorridorWalk) — a corridor loss
+ * leaves a tombstone (data/tombstones.ts) at the death tile. Once
+ * `resolvedIndex` reaches the corridor's end, the den-specific final fight
+ * (engine/dens.ts) resolves immediately, not gated on `arriveAt` directly
+ * (though the two normally coincide).
  */
 export interface DenAssaultRecord {
   id: string;
@@ -24,6 +29,8 @@ export interface DenAssaultRecord {
   /** ms, against game.clock.virtualNow — not Date.now(), same as every other timer in this game. */
   departedAt: number;
   arriveAt: number;
+  /** Index into `path` already resolved — 0 at dispatch. Corridor is path[0..length-2]; path[length-1] is the den's own coord, fought separately (engine/dens.ts) once this reaches length-2. */
+  resolvedIndex: number;
 }
 
 export type DenAssaultsRecord = DenAssaultRecord[];

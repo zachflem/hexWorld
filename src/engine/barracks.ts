@@ -2,7 +2,7 @@ import type { Barracks } from "../data/barracks";
 import { MAX_BARRACKS_LEVEL } from "../data/barracks";
 import type { ResourceType } from "../data/resources";
 import type { Tweaks } from "../data/tweaksSchema";
-import { formulaACost, formulaBCost } from "./formulas";
+import { formulaACost, formulaBCost, isStructureActive } from "./formulas";
 
 export function barracksBuildCost(tweaks: Tweaks, n: number): Record<string, number> {
   const cost: Record<string, number> = {};
@@ -10,6 +10,11 @@ export function barracksBuildCost(tweaks: Tweaks, n: number): Record<string, num
     cost[res] = formulaACost(amount, n);
   }
   return cost;
+}
+
+/** Flat construction duration for a freshly-built (always L1) barracks — tweaks.jsonc barracks.build_time_minutes. */
+export function barracksBuildDurationMs(tweaks: Tweaks): number {
+  return tweaks.barracks.build_time_minutes * 60_000;
 }
 
 export function nextBarracksLevel(level: number): number | null {
@@ -75,13 +80,14 @@ export function crossBowSniperCapacity(tweaks: Tweaks, barracksList: Barracks[])
 }
 
 /**
- * Training-throughput weight: each non-damaged barracks contributes its own
+ * Training-throughput weight: each active barracks contributes its own
  * level, not just a flat "1" per barracks — a lone L4 barracks trains 4x as
  * fast as a lone L1, the same "per level, summed across barracks" pattern
  * militiaCapacity/scoutCapacity already use for standing capacity above.
- * Damaged barracks contribute nothing, same rule as everywhere else a
- * horde-captured structure goes non-functional.
+ * Damaged or still-under-construction barracks contribute nothing, same
+ * rule as everywhere else a non-functional structure is excluded
+ * (engine/formulas.ts:isStructureActive).
  */
 export function barracksTrainingCapacity(barracksList: Barracks[]): number {
-  return barracksList.reduce((sum, b) => (b.damaged ? sum : sum + b.level), 0);
+  return barracksList.reduce((sum, b) => (isStructureActive(b) ? sum + b.level : sum), 0);
 }

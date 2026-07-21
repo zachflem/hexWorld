@@ -6,7 +6,9 @@ import type { Wall, WallTier } from "../data/walls";
 import type { Barracks } from "../data/barracks";
 import type { DockRecord } from "../data/docks";
 import type { DenRecord } from "../data/dens";
+import type { LabRecord } from "../data/lab";
 import type { OutpostRecord } from "../data/outposts";
+import type { TombstoneRecord } from "../data/tombstones";
 import type { ResourceType } from "../data/resources";
 import type { TerrainType } from "../engine/terrain";
 
@@ -14,6 +16,7 @@ export interface BuildOption {
   resource: ResourceType;
   cost: Partial<Record<ResourceType, number>>;
   affordable: boolean;
+  durationMinutes: number;
 }
 
 export interface TierUpgradeOption {
@@ -29,11 +32,14 @@ export interface StorageUpgradeOption {
   capacity: number;
   cost: Partial<Record<ResourceType, number>>;
   affordable: boolean;
+  /** Non-null while this resource's storage upgrade is in progress — remainingMs counts down to the level bump. */
+  inProgress: { targetLevel: number; remainingMs: number } | null;
 }
 
 export interface PathBuildOption {
   cost: Partial<Record<ResourceType, number>>;
   affordable: boolean;
+  durationMinutes: number;
 }
 
 export interface PathUpgradeOption {
@@ -46,6 +52,13 @@ export interface PathUpgradeOption {
 export interface SimpleCostOption {
   cost: Partial<Record<ResourceType, number>>;
   affordable: boolean;
+}
+
+/** Same shape as WallRepairOption but not wall-specific — used by base/outpost repair, the shared 5-structure damage repair, and the initial construction of a tower/wall/barracks (also cost+duration, just not a repair), all timed. */
+export interface RepairOption {
+  cost: Partial<Record<ResourceType, number>>;
+  affordable: boolean;
+  durationMinutes: number;
 }
 
 export interface SkiffBuildOption {
@@ -96,14 +109,20 @@ export interface BaseUpgradeOption {
   durationMs: number;
 }
 
-/** Instant on purchase, unlike BaseUpgradeOption — see engine/base.ts:reinforcementUpgradeCost. */
+/** Timed like every other upgrade — see engine/base.ts:baseReinforcementUpgradeDurationMs. Null while an upgrade or repair is already in progress (reinforcementActionStatus/outpostReinforcementActionStatus). */
 export interface ReinforcementUpgradeOption {
   targetLevel: number;
   /** Resulting total reinforcement HP after this upgrade. */
   hp: number;
   cost: Partial<Record<ResourceType, number>>;
   affordable: boolean;
+  durationMs: number;
 }
+
+/** Base/outpost reinforcement upgrade and repair share one in-progress slot — mirrors WallActionStatus. */
+export type ReinforcementActionStatus =
+  | { kind: "upgrade"; targetLevel: number; remainingMs: number }
+  | { kind: "repair"; remainingMs: number };
 
 /** Null when this tile isn't a valid relocation destination (base level too low, already relocating, unknown ground, water, occupied, or the base's own tile) — engine/base.ts:canRelocateBase/baseRelocationCost. */
 export interface RelocationOption {
@@ -140,6 +159,16 @@ export interface DenSiegeStatus {
 
 /** Non-null only while a party is in transit toward this den (dispatched, not yet arrived) — see GameScreen.tsx:denAssaultInProgressFor. */
 export interface DenAssaultInProgress {
+  etaMs: number;
+}
+
+/** Same shape as ExpeditionOption plus the lab's static guardian defense — see GameScreen.tsx:labAssaultOptionFor. */
+export interface LabAssaultOption extends ExpeditionOption {
+  guardianDefense: number;
+}
+
+/** Non-null only while a party is in transit toward the lab — see GameScreen.tsx:labAssaultInProgress. */
+export interface LabAssaultInProgress {
   etaMs: number;
 }
 
@@ -263,6 +292,8 @@ export function TilePopup({
   canDemolish,
   repairOption,
   repairBlockedByHorde,
+  repairInProgress,
+  constructionInProgress,
   baseLevel,
   baseUpgradeOption,
   baseUpgradeInProgress,
@@ -271,6 +302,7 @@ export function TilePopup({
   reinforcementUpgradeOption,
   baseRepairOption,
   baseRepairBlockedByHorde,
+  reinforcementActionStatus,
   relocationOption,
   canRelocateBase,
   baseRelocationInProgress,
@@ -279,11 +311,17 @@ export function TilePopup({
   denAssaultOption,
   denSiegeStatus,
   denAssaultInProgress,
+  lab,
+  labAssaultOption,
+  labAssaultInProgress,
   outpost,
   outpostMaxHp,
   outpostReinforcementUpgradeOption,
   outpostRepairOption,
   outpostRepairBlockedByHorde,
+  outpostReinforcementActionStatus,
+  tombstone,
+  tombstoneExpiresInMs,
   militiaToSend,
   junkyardKnightToSend,
   crossBowSniperToSend,
@@ -341,6 +379,7 @@ export function TilePopup({
   onRelocateBase,
   onDispatchExpedition,
   onAssaultDen,
+  onSecureLab,
   onGarrisonMilitia,
   onMaxGarrison,
   onGarrisonJunkyardKnight,
@@ -379,19 +418,21 @@ export function TilePopup({
   pathUpgradeInProgress: UpgradeInProgress<PathTier> | null;
   tower: Tower | null;
   towerStats: { range: number; damage: number } | null;
-  towerBuildOption: SimpleCostOption | null;
+  towerBuildOption: RepairOption | null;
   towerUpgradeOption: TowerUpgradeOption | null;
   towerUpgradeInProgress: UpgradeInProgress<number> | null;
   wall: Wall | null;
   wallMaxDurability: number | null;
-  wallBuildOption: SimpleCostOption | null;
+  wallBuildOption: RepairOption | null;
   wallUpgradeOption: WallUpgradeOption | null;
   wallRepairOption: WallRepairOption | null;
   wallActionStatus: WallActionStatus | null;
   barracks: Barracks | null;
-  barracksBuildOption: SimpleCostOption | null;
+  barracksBuildOption: RepairOption | null;
   barracksUpgradeOption: BarracksUpgradeOption | null;
   barracksUpgradeInProgress: UpgradeInProgress<number> | null;
+  /** Non-null while the selected structure (whichever of the 5 kinds is on this tile) hasn't finished its initial construction timer yet. */
+  constructionInProgress: { remainingMs: number } | null;
   dock: DockRecord | null;
   /** Current food/sec rate for `dock` — null when there's no dock here. */
   dockYieldPerSecond: number | null;
@@ -434,10 +475,12 @@ export function TilePopup({
   crossBowSniperToTrain: number;
   scoutTileOption: boolean;
   canDemolish: boolean;
-  /** Non-null when the tile's structure was captured by a horde and (if owned) is now repairable — DESIGN.md §12. */
-  repairOption: SimpleCostOption | null;
+  /** Non-null when the tile's structure was captured by a horde and (if owned) is now repairable — DESIGN.md §12. Null while repairInProgress is set. */
+  repairOption: RepairOption | null;
   /** True while a horde is still physically standing on this tile — repair is blocked until it's cleared. */
   repairBlockedByHorde: boolean;
+  /** Non-null while this structure's damage repair timer is running. */
+  repairInProgress: { remainingMs: number } | null;
   baseLevel: number;
   baseUpgradeOption: BaseUpgradeOption | null;
   baseUpgradeInProgress: { targetLevel: number; remainingMs: number } | null;
@@ -445,12 +488,14 @@ export function TilePopup({
   baseCurrentHp: number;
   /** Max HP for the current reinforcement level — engine/base.ts:baseReinforcementHp. */
   baseMaxHp: number;
-  /** Null once reinforcement is capped by base level (maxReinforcementLevel, engine/base.ts). */
+  /** Null once reinforcement is capped by base level (maxReinforcementLevel, engine/base.ts) or while reinforcementActionStatus is set. */
   reinforcementUpgradeOption: ReinforcementUpgradeOption | null;
-  /** Null when currentHp is already at max — nothing to repair. */
-  baseRepairOption: SimpleCostOption | null;
+  /** Null when currentHp is already at max — nothing to repair — or while reinforcementActionStatus is set. */
+  baseRepairOption: RepairOption | null;
   /** True while a horde is still adjacent to (or on) the base tile — repair is blocked until it's cleared, same reasoning as repairBlockedByHorde. */
   baseRepairBlockedByHorde: boolean;
+  /** Non-null while a reinforcement upgrade or repair is running on the base. */
+  reinforcementActionStatus: ReinforcementActionStatus | null;
   /** Null when this tile isn't a valid relocation destination — see RelocationOption's doc comment for every reason. */
   relocationOption: RelocationOption | null;
   /** True once base.level meets tweaks.base_relocation.min_base_level — shown as a hint on the base tile itself, since the action lives on the destination tile's popup. */
@@ -466,16 +511,28 @@ export function TilePopup({
   denSiegeStatus: DenSiegeStatus | null;
   /** Non-null only while a party is currently in transit toward this den (dispatched, not yet arrived — not the same as denSiegeStatus, which only starts once the assault has already arrived and won). */
   denAssaultInProgress: DenAssaultInProgress | null;
+  /** The hidden lab, if this tile IS the lab's coord and it's been scouted — null everywhere else (including an unscouted lab tile, which looks like ordinary ground, DESIGN.md §13). */
+  lab: LabRecord | null;
+  /** Null when there's no known route to the lab yet (unscouted, or no barracks) — non-null once secured too (shown as "already secured" instead of a form). */
+  labAssaultOption: LabAssaultOption | null;
+  /** Non-null only while a party is currently in transit toward the lab. */
+  labAssaultInProgress: LabAssaultInProgress | null;
   /** A converted, player-held outpost at this tile, if any — null everywhere else, including a still-hostile den. */
   outpost: OutpostRecord | null;
   /** Max HP for outpost's current reinforcementLevel — engine/outposts.ts:outpostReinforcementHp. Null when `outpost` is null. */
   outpostMaxHp: number | null;
-  /** Null once capped by base level (maxOutpostReinforcementLevel, engine/outposts.ts). */
+  /** Null once capped by base level (maxOutpostReinforcementLevel, engine/outposts.ts) or while outpostReinforcementActionStatus is set. */
   outpostReinforcementUpgradeOption: ReinforcementUpgradeOption | null;
-  /** Null when currentHp is already at max. */
-  outpostRepairOption: SimpleCostOption | null;
+  /** Null when currentHp is already at max, or while outpostReinforcementActionStatus is set. */
+  outpostRepairOption: RepairOption | null;
   /** True while a horde is still adjacent to (or on) the outpost tile — same reasoning as baseRepairBlockedByHorde. */
   outpostRepairBlockedByHorde: boolean;
+  /** Non-null while a reinforcement upgrade or repair is running on this outpost. */
+  outpostReinforcementActionStatus: ReinforcementActionStatus | null;
+  /** A marker left where an expedition/den-assault/lab-assault party died mid-route, if this tile is one — null everywhere else. Purely informational, click-to-inspect. */
+  tombstone: TombstoneRecord | null;
+  /** Time left before `tombstone` fades — null when `tombstone` is null. */
+  tombstoneExpiresInMs: number | null;
   militiaToSend: number;
   junkyardKnightToSend: number;
   crossBowSniperToSend: number;
@@ -540,6 +597,7 @@ export function TilePopup({
   onRelocateBase: () => void;
   onDispatchExpedition: () => void;
   onAssaultDen: () => void;
+  onSecureLab: () => void;
   onGarrisonMilitia: () => void;
   onMaxGarrison: () => void;
   onGarrisonJunkyardKnight: () => void;
@@ -626,6 +684,69 @@ export function TilePopup({
     );
   }
 
+  /** Mirrors renderDenPartyForm exactly, dispatching through onSecureLab instead of onAssaultDen — there's no "reinforcements" variant since the lab has no siege/hold period, just the one all-or-nothing fight. */
+  function renderLabPartyForm(option: LabAssaultOption) {
+    return (
+      <>
+        <p>
+          Guardian defense: {option.guardianDefense.toFixed(0)} — Route: {option.distanceTiles} tile
+          {option.distanceTiles === 1 ? "" : "s"} (cost {option.pathCost.toFixed(1)}) —{" "}
+          {formatCost(option.provisionsCost)} — ETA {formatDuration(option.etaMs)}
+        </p>
+        {availableMilitiaForExpeditionCount > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <input
+              type="number"
+              min={0}
+              max={availableMilitiaForExpeditionCount}
+              value={militiaToSend}
+              onChange={(e) => onChangeMilitiaToSend(Number(e.target.value))}
+              style={{ width: 60 }}
+              aria-label="Militia to send"
+            />
+            <span>militia (of {availableMilitiaForExpeditionCount} available)</span>
+          </div>
+        )}
+        {availableJunkyardKnightForExpeditionCount > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.25rem" }}>
+            <input
+              type="number"
+              min={0}
+              max={availableJunkyardKnightForExpeditionCount}
+              value={junkyardKnightToSend}
+              onChange={(e) => onChangeJunkyardKnightToSend(Number(e.target.value))}
+              style={{ width: 60 }}
+              aria-label="Junkyard knights to send"
+            />
+            <span>junkyard knights (of {availableJunkyardKnightForExpeditionCount} available)</span>
+          </div>
+        )}
+        {availableCrossBowSniperForExpeditionCount > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.25rem" }}>
+            <input
+              type="number"
+              min={0}
+              max={availableCrossBowSniperForExpeditionCount}
+              value={crossBowSniperToSend}
+              onChange={(e) => onChangeCrossBowSniperToSend(Number(e.target.value))}
+              style={{ width: 60 }}
+              aria-label="Cross-bow snipers to send"
+            />
+            <span>cross-bow snipers (of {availableCrossBowSniperForExpeditionCount} available)</span>
+          </div>
+        )}
+        <button
+          type="button"
+          disabled={!option.affordable || militiaToSend + junkyardKnightToSend + crossBowSniperToSend <= 0}
+          onClick={onSecureLab}
+          style={{ marginTop: "0.25rem" }}
+        >
+          Secure Lab
+        </button>
+      </>
+    );
+  }
+
   return (
     <div
       style={{
@@ -666,7 +787,7 @@ export function TilePopup({
         <p>A structure here was overrun by a horde — retake this tile to begin repairs.</p>
       )}
 
-      {!owned && isScouted && !den && (
+      {!owned && isScouted && !den && !lab && (
         <div style={{ marginTop: "0.5rem" }}>
           <p>
             <strong>Send Expedition</strong>
@@ -782,6 +903,35 @@ export function TilePopup({
         </div>
       )}
 
+      {lab && lab.secured && (
+        <div style={{ marginTop: "0.5rem" }}>
+          <p>
+            <strong>Hidden Lab</strong> — secured. You win.
+          </p>
+        </div>
+      )}
+
+      {lab && !lab.secured && labAssaultInProgress && (
+        <div style={{ marginTop: "0.5rem" }}>
+          <p>
+            <strong>Hidden Lab</strong> — a party is en route, arriving in {formatDuration(labAssaultInProgress.etaMs)}.
+          </p>
+        </div>
+      )}
+
+      {lab && !lab.secured && !labAssaultInProgress && (
+        <div style={{ marginTop: "0.5rem" }}>
+          <p>
+            <strong>Hidden Lab</strong> — guarded by a static defender far tougher than anything else encountered.
+          </p>
+          {labAssaultOption ? (
+            renderLabPartyForm(labAssaultOption)
+          ) : (
+            <p>No known route — make sure you have a barracks.</p>
+          )}
+        </div>
+      )}
+
       {outpost && outpostMaxHp !== null && (
         <div style={{ marginTop: "0.5rem" }}>
           <p>
@@ -791,32 +941,66 @@ export function TilePopup({
           <p>
             Reinforcement: {Math.floor(outpost.currentHp)}/{Math.floor(outpostMaxHp)} HP — a horde that overruns this
             doesn't end the game, but reverts it to a hostile den that has to be re-sieged.
-            {outpostReinforcementUpgradeOption && (
+            {outpostReinforcementActionStatus ? (
+              outpostReinforcementActionStatus.kind === "upgrade" ? (
+                <>
+                  {" — upgrading to L"}
+                  {outpostReinforcementActionStatus.targetLevel} (
+                  {formatDuration(outpostReinforcementActionStatus.remainingMs)} remaining)
+                </>
+              ) : (
+                <> — repairing ({formatDuration(outpostReinforcementActionStatus.remainingMs)} remaining)</>
+              )
+            ) : (
               <>
-                {" — "}
-                <button
-                  type="button"
-                  disabled={!outpostReinforcementUpgradeOption.affordable}
-                  onClick={onUpgradeOutpostReinforcement}
-                >
-                  Upgrade to {Math.floor(outpostReinforcementUpgradeOption.hp)} HP (
-                  {formatCost(outpostReinforcementUpgradeOption.cost)})
-                </button>
-              </>
-            )}
-            {outpostRepairOption && (
-              <>
-                {" — "}
-                <button
-                  type="button"
-                  disabled={!outpostRepairOption.affordable || outpostRepairBlockedByHorde}
-                  onClick={onRepairOutpost}
-                >
-                  {outpostRepairBlockedByHorde ? "Horde nearby" : `Repair (${formatCost(outpostRepairOption.cost)})`}
-                </button>
+                {outpostReinforcementUpgradeOption && (
+                  <>
+                    {" — "}
+                    <button
+                      type="button"
+                      disabled={!outpostReinforcementUpgradeOption.affordable}
+                      onClick={onUpgradeOutpostReinforcement}
+                    >
+                      Upgrade to {Math.floor(outpostReinforcementUpgradeOption.hp)} HP (
+                      {formatCost(outpostReinforcementUpgradeOption.cost)},{" "}
+                      {formatDuration(outpostReinforcementUpgradeOption.durationMs)})
+                    </button>
+                  </>
+                )}
+                {outpostRepairOption && (
+                  <>
+                    {" — "}
+                    <button
+                      type="button"
+                      disabled={!outpostRepairOption.affordable || outpostRepairBlockedByHorde}
+                      onClick={onRepairOutpost}
+                    >
+                      {outpostRepairBlockedByHorde
+                        ? "Horde nearby"
+                        : `Repair (${formatCost(outpostRepairOption.cost)}, ${outpostRepairOption.durationMinutes}m)`}
+                    </button>
+                  </>
+                )}
               </>
             )}
           </p>
+        </div>
+      )}
+
+      {tombstone && tombstoneExpiresInMs !== null && (
+        <div style={{ marginTop: "0.5rem" }}>
+          <p>
+            <strong>A party was lost here</strong>
+            {" — "}
+            {tombstone.cause.kind === "horde_blocked"
+              ? `overrun by a horde (size ${Math.round(tombstone.cause.hordeSize)}) blocking the road.`
+              : `out-fought — attack power ${tombstone.cause.attackPower.toFixed(1)} vs. defense ${tombstone.cause.defense.toFixed(1)}.`}
+          </p>
+          <p>
+            Lost: {tombstone.militiaLost} militia, {tombstone.junkyardKnightLost} knights, {tombstone.crossBowSniperLost}{" "}
+            snipers.
+          </p>
+          <p>Fades in {formatDuration(tombstoneExpiresInMs)}.</p>
         </div>
       )}
 
@@ -856,28 +1040,45 @@ export function TilePopup({
           <p>
             Reinforcement: {Math.floor(baseCurrentHp)}/{Math.floor(baseMaxHp)} HP — a horde that beats this destroys
             it but still costs HP; a horde whose attack outright beats it takes the base and ends the game.
-            {reinforcementUpgradeOption && (
+            {reinforcementActionStatus ? (
+              reinforcementActionStatus.kind === "upgrade" ? (
+                <>
+                  {" — upgrading to L"}
+                  {reinforcementActionStatus.targetLevel} ({formatDuration(reinforcementActionStatus.remainingMs)}{" "}
+                  remaining)
+                </>
+              ) : (
+                <> — repairing ({formatDuration(reinforcementActionStatus.remainingMs)} remaining)</>
+              )
+            ) : (
               <>
-                {" — "}
-                <button
-                  type="button"
-                  disabled={!reinforcementUpgradeOption.affordable}
-                  onClick={onUpgradeReinforcement}
-                >
-                  Upgrade to {Math.floor(reinforcementUpgradeOption.hp)} HP ({formatCost(reinforcementUpgradeOption.cost)})
-                </button>
-              </>
-            )}
-            {baseRepairOption && (
-              <>
-                {" — "}
-                <button
-                  type="button"
-                  disabled={!baseRepairOption.affordable || baseRepairBlockedByHorde}
-                  onClick={onRepairBase}
-                >
-                  {baseRepairBlockedByHorde ? "Horde nearby" : `Repair (${formatCost(baseRepairOption.cost)})`}
-                </button>
+                {reinforcementUpgradeOption && (
+                  <>
+                    {" — "}
+                    <button
+                      type="button"
+                      disabled={!reinforcementUpgradeOption.affordable}
+                      onClick={onUpgradeReinforcement}
+                    >
+                      Upgrade to {Math.floor(reinforcementUpgradeOption.hp)} HP (
+                      {formatCost(reinforcementUpgradeOption.cost)}, {formatDuration(reinforcementUpgradeOption.durationMs)})
+                    </button>
+                  </>
+                )}
+                {baseRepairOption && (
+                  <>
+                    {" — "}
+                    <button
+                      type="button"
+                      disabled={!baseRepairOption.affordable || baseRepairBlockedByHorde}
+                      onClick={onRepairBase}
+                    >
+                      {baseRepairBlockedByHorde
+                        ? "Horde nearby"
+                        : `Repair (${formatCost(baseRepairOption.cost)}, ${baseRepairOption.durationMinutes}m)`}
+                    </button>
+                  </>
+                )}
               </>
             )}
           </p>
@@ -908,9 +1109,9 @@ export function TilePopup({
 
       {owned && !isBase && !existingTile && buildOptions && (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-          {buildOptions.map(({ resource, cost, affordable }) => (
+          {buildOptions.map(({ resource, cost, affordable, durationMinutes }) => (
             <button key={resource} type="button" disabled={!affordable} onClick={() => onBuild(resource)}>
-              Build {resource} ({formatCost(cost)})
+              Build {resource} ({formatCost(cost)}, {durationMinutes}m)
             </button>
           ))}
         </div>
@@ -919,15 +1120,24 @@ export function TilePopup({
       {existingTile && existingTile.damaged ? (
         <p>
           Damaged by a horde — not usable until repaired.
-          {owned && repairOption && (
-            <>
-              {" "}
-              <button type="button" disabled={!repairOption.affordable || repairBlockedByHorde} onClick={onRepair}>
-                {repairBlockedByHorde ? "Horde present" : `Repair (${formatCost(repairOption.cost)})`}
-              </button>
-            </>
-          )}
+          {owned &&
+            (repairInProgress ? (
+              <> — repairing ({formatDuration(repairInProgress.remainingMs)} remaining)</>
+            ) : (
+              repairOption && (
+                <>
+                  {" "}
+                  <button type="button" disabled={!repairOption.affordable || repairBlockedByHorde} onClick={onRepair}>
+                    {repairBlockedByHorde
+                      ? "Horde present"
+                      : `Repair (${formatCost(repairOption.cost)}, ${repairOption.durationMinutes}m)`}
+                  </button>
+                </>
+              )
+            ))}
         </p>
+      ) : existingTile && constructionInProgress ? (
+        <p>Under construction ({formatDuration(constructionInProgress.remainingMs)} remaining)</p>
       ) : (
         <>
           {existingTile && owned && (
@@ -958,7 +1168,7 @@ export function TilePopup({
 
       {owned && !isBase && !pathTile && pathBuildOption && (
         <button type="button" disabled={!pathBuildOption.affordable} onClick={onBuildPath}>
-          Build goat track ({formatCost(pathBuildOption.cost)})
+          Build goat track ({formatCost(pathBuildOption.cost)}, {pathBuildOption.durationMinutes}m)
         </button>
       )}
 
@@ -969,15 +1179,28 @@ export function TilePopup({
           {pathTile.damaged ? (
             <>
               {" — damaged by a horde, not usable until repaired"}
-              {owned && repairOption && (
-                <>
-                  {" — "}
-                  <button type="button" disabled={!repairOption.affordable || repairBlockedByHorde} onClick={onRepair}>
-                    {repairBlockedByHorde ? "Horde present" : `Repair (${formatCost(repairOption.cost)})`}
-                  </button>
-                </>
-              )}
+              {owned &&
+                (repairInProgress ? (
+                  <> — repairing ({formatDuration(repairInProgress.remainingMs)} remaining)</>
+                ) : (
+                  repairOption && (
+                    <>
+                      {" — "}
+                      <button
+                        type="button"
+                        disabled={!repairOption.affordable || repairBlockedByHorde}
+                        onClick={onRepair}
+                      >
+                        {repairBlockedByHorde
+                          ? "Horde present"
+                          : `Repair (${formatCost(repairOption.cost)}, ${repairOption.durationMinutes}m)`}
+                      </button>
+                    </>
+                  )
+                ))}
             </>
+          ) : constructionInProgress ? (
+            <> — under construction ({formatDuration(constructionInProgress.remainingMs)} remaining)</>
           ) : pathUpgradeInProgress ? (
             <>
               {" — upgrading to "}
@@ -1000,7 +1223,7 @@ export function TilePopup({
 
       {owned && !isBase && !tower && towerBuildOption && (
         <button type="button" disabled={!towerBuildOption.affordable} onClick={onBuildTower}>
-          Build tower ({formatCost(towerBuildOption.cost)})
+          Build tower ({formatCost(towerBuildOption.cost)}, {towerBuildOption.durationMinutes}m)
         </button>
       )}
 
@@ -1011,15 +1234,28 @@ export function TilePopup({
           {tower.damaged ? (
             <>
               {" — damaged by a horde, not defending until repaired"}
-              {owned && repairOption && (
-                <>
-                  {" — "}
-                  <button type="button" disabled={!repairOption.affordable || repairBlockedByHorde} onClick={onRepair}>
-                    {repairBlockedByHorde ? "Horde present" : `Repair (${formatCost(repairOption.cost)})`}
-                  </button>
-                </>
-              )}
+              {owned &&
+                (repairInProgress ? (
+                  <> — repairing ({formatDuration(repairInProgress.remainingMs)} remaining)</>
+                ) : (
+                  repairOption && (
+                    <>
+                      {" — "}
+                      <button
+                        type="button"
+                        disabled={!repairOption.affordable || repairBlockedByHorde}
+                        onClick={onRepair}
+                      >
+                        {repairBlockedByHorde
+                          ? "Horde present"
+                          : `Repair (${formatCost(repairOption.cost)}, ${repairOption.durationMinutes}m)`}
+                      </button>
+                    </>
+                  )
+                ))}
             </>
+          ) : constructionInProgress ? (
+            <> — under construction ({formatDuration(constructionInProgress.remainingMs)} remaining)</>
           ) : towerUpgradeInProgress ? (
             <>
               {" — upgrading to L"}
@@ -1041,7 +1277,7 @@ export function TilePopup({
 
       {owned && !isBase && !wall && wallBuildOption && (
         <button type="button" disabled={!wallBuildOption.affordable} onClick={onBuildWall}>
-          Build wall ({formatCost(wallBuildOption.cost)})
+          Build wall ({formatCost(wallBuildOption.cost)}, {wallBuildOption.durationMinutes}m)
         </button>
       )}
 
@@ -1052,15 +1288,28 @@ export function TilePopup({
           {wall.damaged ? (
             <>
               {" — overrun by a horde, not defending until repaired"}
-              {owned && repairOption && (
-                <>
-                  {" — "}
-                  <button type="button" disabled={!repairOption.affordable || repairBlockedByHorde} onClick={onRepair}>
-                    {repairBlockedByHorde ? "Horde present" : `Repair (${formatCost(repairOption.cost)})`}
-                  </button>
-                </>
-              )}
+              {owned &&
+                (repairInProgress ? (
+                  <> — repairing ({formatDuration(repairInProgress.remainingMs)} remaining)</>
+                ) : (
+                  repairOption && (
+                    <>
+                      {" — "}
+                      <button
+                        type="button"
+                        disabled={!repairOption.affordable || repairBlockedByHorde}
+                        onClick={onRepair}
+                      >
+                        {repairBlockedByHorde
+                          ? "Horde present"
+                          : `Repair (${formatCost(repairOption.cost)}, ${repairOption.durationMinutes}m)`}
+                      </button>
+                    </>
+                  )
+                ))}
             </>
+          ) : constructionInProgress ? (
+            <> — under construction ({formatDuration(constructionInProgress.remainingMs)} remaining)</>
           ) : wallActionStatus ? (
             wallActionStatus.kind === "upgrade" ? (
               <>
@@ -1096,7 +1345,7 @@ export function TilePopup({
 
       {owned && !isBase && !barracks && barracksBuildOption && (
         <button type="button" disabled={!barracksBuildOption.affordable} onClick={onBuildBarracks}>
-          Build barracks ({formatCost(barracksBuildOption.cost)})
+          Build barracks ({formatCost(barracksBuildOption.cost)}, {barracksBuildOption.durationMinutes}m)
         </button>
       )}
 
@@ -1107,15 +1356,28 @@ export function TilePopup({
             {barracks.damaged ? (
               <>
                 {" — damaged by a horde, not usable until repaired"}
-                {owned && repairOption && (
-                  <>
-                    {" — "}
-                    <button type="button" disabled={!repairOption.affordable || repairBlockedByHorde} onClick={onRepair}>
-                      {repairBlockedByHorde ? "Horde present" : `Repair (${formatCost(repairOption.cost)})`}
-                    </button>
-                  </>
-                )}
+                {owned &&
+                  (repairInProgress ? (
+                    <> — repairing ({formatDuration(repairInProgress.remainingMs)} remaining)</>
+                  ) : (
+                    repairOption && (
+                      <>
+                        {" — "}
+                        <button
+                          type="button"
+                          disabled={!repairOption.affordable || repairBlockedByHorde}
+                          onClick={onRepair}
+                        >
+                          {repairBlockedByHorde
+                            ? "Horde present"
+                            : `Repair (${formatCost(repairOption.cost)}, ${repairOption.durationMinutes}m)`}
+                        </button>
+                      </>
+                    )
+                  ))}
               </>
+            ) : constructionInProgress ? (
+              <> — under construction ({formatDuration(constructionInProgress.remainingMs)} remaining)</>
             ) : barracksUpgradeInProgress ? (
               <>
                 {" — upgrading to L"}
@@ -1291,7 +1553,10 @@ export function TilePopup({
         </button>
       )}
 
-      {dock && (
+      {dock && constructionInProgress ? (
+        <p>Dock — under construction ({formatDuration(constructionInProgress.remainingMs)} remaining)</p>
+      ) : (
+        dock && (
         <div style={{ marginTop: "0.5rem" }}>
           <p>
             Dock{dockYieldPerSecond !== null && <> — {dockYieldPerSecond.toFixed(2)} food/sec</>}
@@ -1329,6 +1594,7 @@ export function TilePopup({
             )}
           </p>
         </div>
+        )
       )}
 
       {owned && recallInProgress && (
@@ -1431,16 +1697,18 @@ export function TilePopup({
         <div style={{ marginTop: "0.5rem" }}>
           <strong>Base — storage</strong>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", marginTop: "0.25rem" }}>
-            {storageUpgrades.map(({ resource, level, capacity, cost, affordable }) => (
-              <button
-                key={resource}
-                type="button"
-                disabled={!affordable}
-                onClick={() => onUpgradeStorage(resource)}
-              >
-                {resource} L{level} ({capacity} cap) → L{level + 1} ({formatCost(cost)})
-              </button>
-            ))}
+            {storageUpgrades.map(({ resource, level, capacity, cost, affordable, inProgress }) =>
+              inProgress ? (
+                <span key={resource}>
+                  {resource} L{level} ({capacity} cap) — upgrading to L{inProgress.targetLevel} (
+                  {formatDuration(inProgress.remainingMs)} remaining)
+                </span>
+              ) : (
+                <button key={resource} type="button" disabled={!affordable} onClick={() => onUpgradeStorage(resource)}>
+                  {resource} L{level} ({capacity} cap) → L{level + 1} ({formatCost(cost)})
+                </button>
+              ),
+            )}
           </div>
         </div>
       )}
