@@ -36,6 +36,7 @@ import {
   drawHexTileOverlay,
   drawHexTileTexture,
   drawImageAtWidth,
+  getPathTileTexture,
   getResourceTexture,
   getStructureIconTexture,
   getTerrainTexture,
@@ -85,6 +86,13 @@ const PATH_TIER_COLORS: Record<PathTier, string> = {
   goat_track: "#a67c52",
   stone_road: "#d9d9d9",
   highway: "#ffdd55",
+};
+
+/** getPathTileTexture names for each path tier's sprite (tiles/structures/path-{track,stone,highway}.png) — falls back to PATH_TIER_COLORS's flat fill until/unless a given sprite is missing. */
+const PATH_TIER_ICON_NAMES: Record<PathTier, string> = {
+  goat_track: "path-track",
+  stone_road: "path-stone",
+  highway: "path-highway",
 };
 
 /** getStructureIconTexture names for each wall tier's sprite (tiles/structures/wall-{small,medium,large}.png) — falls back to WALL_TIER_COLORS's flat dot until/unless a given sprite is missing. */
@@ -570,13 +578,18 @@ export const HexCanvas = forwardRef<
             drawHexTileOverlay(ctx, terrainImg, screenCenter.x, screenCenter.y - size, size * sqrt3, size * 2);
           }
 
-          // Placeholder for a future graphic overlay: a path tile covers the
-          // whole tile (it's not a decoration on top of the terrain), so it
-          // fully replaces the terrain fill here rather than just outlining it.
+          // A path tile covers the whole tile (it's not a decoration on top
+          // of the terrain), so it fully replaces the terrain fill here
+          // rather than just outlining it.
           const pathTile = pathTilesByKey.get(axialKey(coord));
           if (pathTile) {
             ctx.fillStyle = PATH_TIER_COLORS[pathTile.tier];
             ctx.fill();
+            const pathImg = getPathTileTexture(PATH_TIER_ICON_NAMES[pathTile.tier]);
+            if (pathImg) {
+              drawHexTileTexture(ctx, pathImg, screenCenter.x, screenCenter.y, size * sqrt3, size * 2);
+              drawHexTileOverlay(ctx, pathImg, screenCenter.x, screenCenter.y - size, size * sqrt3, size * 2);
+            }
           }
         }
       }
