@@ -45,6 +45,7 @@ function makeExpedition(overrides: Partial<Expedition> = {}): Expedition {
     crossBowSniperCommitted: 0,
     departedAt: 0,
     arriveAt: 0,
+    resolvedIndex: 0,
     ...overrides,
   };
 }
@@ -60,6 +61,7 @@ function makeDenAssault(overrides: Partial<DenAssaultRecord> = {}): DenAssaultRe
     crossBowSniperCommitted: 0,
     departedAt: 0,
     arriveAt: 0,
+    resolvedIndex: 0,
     ...overrides,
   };
 }
@@ -74,6 +76,7 @@ function makeLabAssault(overrides: Partial<LabAssaultRecord> = {}): LabAssaultRe
     crossBowSniperCommitted: 0,
     departedAt: 0,
     arriveAt: 0,
+    resolvedIndex: 0,
     ...overrides,
   };
 }

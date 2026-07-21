@@ -1411,6 +1411,7 @@ export default function App() {
     const lab = createLab(world.seed, boot.tweaks.game.grid_size, territory.base, dens, boot.tweaks);
     const labAssaults: LabAssaultsRecord = [];
     const research = initialResearch();
+    const tombstones: TombstonesRecord = [];
 
     await Promise.all([
       set(PLAYER_DB_KEY, player),
@@ -1443,6 +1444,7 @@ export default function App() {
       set(LAB_DB_KEY, lab),
       set(LAB_ASSAULTS_DB_KEY, labAssaults),
       set(RESEARCH_DB_KEY, research),
+      set(TOMBSTONES_DB_KEY, tombstones),
     ]);
 
     setBoot((prev) =>
@@ -1480,6 +1482,7 @@ export default function App() {
               lab,
               labAssaults,
               research,
+              tombstones,
             },
           }
         : prev,
