@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { loadTweaks } from "./data/tweaksLoader";
 import type { Tweaks } from "./data/tweaksSchema";
 import { PLAYER_DB_KEY, type Player } from "./data/player";
@@ -100,7 +100,7 @@ import {
 } from "./engine/garrisons";
 import { isTimerComplete } from "./engine/timers";
 import { denAssaultSurvivors, denDefense, holdDefenseAt, resolveDenAssault, resolveHoldPeriod } from "./engine/dens";
-import { resolveLabAssault, rollScoutClue } from "./engine/lab";
+import { labClueText, resolveLabAssault, rollScoutClue } from "./engine/lab";
 import {
   maxOutpostReinforcementLevel,
   outpostReinforcementHp,
@@ -149,6 +149,7 @@ import {
   scoutTrainDurationMs,
 } from "./engine/units";
 import { GameScreen } from "./ui/GameScreen";
+import type { ToastRecord } from "./ui/hud/Toast";
 import { GameOverScreen } from "./ui/GameOverScreen";
 import { WinScreen } from "./ui/WinScreen";
 import { OnboardingScreen } from "./ui/OnboardingScreen";
@@ -334,6 +335,22 @@ export default function App() {
   useEffect(() => {
     speedMultiplierRef.current = speedMultiplier;
   }, [speedMultiplier]);
+
+  /**
+   * Ephemeral one-off event toasts (lab clue landed, den cleared, base
+   * upgrade completed) — distinct from the ambient countdown rows in
+   * NotificationTray. Lives here (not in GameScreen) because the state
+   * transitions that trigger a toast are detected inside runTick's
+   * before/after diffing, not inside GameScreen.
+   */
+  const [toasts, setToasts] = useState<ToastRecord[]>([]);
+  const toastSeqRef = useRef(0);
+  const pushToast = useCallback((toast: Omit<ToastRecord, "id">) => {
+    setToasts((prev) => [...prev, { ...toast, id: `toast-${Date.now()}-${toastSeqRef.current++}` }]);
+  }, []);
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -542,10 +559,11 @@ export default function App() {
       // after this ternary was first written — isn't silently dropped when a
       // level-up completes the same tick a relocation happens to be pending.
       const currentUpgrade = current.game.base.upgrade;
-      const baseAfterUpgrade: BaseRecord =
-        currentUpgrade && isBaseUpgradeComplete(current.tweaks, currentUpgrade, virtualNow)
-          ? { ...current.game.base, level: currentUpgrade.targetLevel, upgrade: null }
-          : current.game.base;
+      let baseAfterUpgrade: BaseRecord = current.game.base;
+      if (currentUpgrade && isBaseUpgradeComplete(current.tweaks, currentUpgrade, virtualNow)) {
+        baseAfterUpgrade = { ...current.game.base, level: currentUpgrade.targetLevel, upgrade: null };
+        pushToast({ message: `Base upgraded to level ${currentUpgrade.targetLevel}` });
+      }
 
       // Reinforcement (HP) upgrade/repair timer — same virtual-clock-
       // threshold pattern, resolved before hordeHubs below reads currentHp
@@ -1169,6 +1187,7 @@ export default function App() {
 
           if (outcome === "converted") {
             outpostsAfterSieges = [...outpostsAfterSieges, createOutpostFromDen(current.tweaks, den, virtualNow)];
+            pushToast({ message: `Den at (${den.coord.q}, ${den.coord.r}) cleared — converted to an outpost` });
             const startingRing = axialSpiral(den.coord, current.tweaks.outposts.starting_owned_radius);
             const ownedKeysSoFar = new Set(territoryAfterExpeditions.owned.map(axialKey));
             const newlyOwned = startingRing.filter((coord) => !ownedKeysSoFar.has(axialKey(coord)));
@@ -1180,6 +1199,8 @@ export default function App() {
             }
             if (labAfterClues.cluesCollected < current.tweaks.lab_clues.total_clues) {
               labAfterClues = { ...labAfterClues, cluesCollected: labAfterClues.cluesCollected + 1 };
+              const clueText = labClueText(labAfterClues.cluesCollected, territoryAfterExpeditions.base, labAfterClues.coord);
+              pushToast({ message: `New lab clue (${labAfterClues.cluesCollected}/${current.tweaks.lab_clues.total_clues}): ${clueText}` });
             }
             return null; // the den no longer exists — it's an outpost now
           }
@@ -1362,7 +1383,7 @@ export default function App() {
     runTick();
     const interval = setInterval(runTick, 1000);
     return () => clearInterval(interval);
-  }, [hasGame]);
+  }, [hasGame, pushToast]);
 
   function cycleFastForward() {
     if (boot.status !== "ready" || !boot.game) return;
@@ -2809,11 +2830,15 @@ export default function App() {
     // Passive lab-clue roll (DESIGN.md §13) — deterministic per scout action,
     // capped at total_clues (guaranteed den-clear clues, App.tsx's tick loop,
     // can also fill the count independently).
-    const lab: LabRecord =
+    let lab: LabRecord = game.lab;
+    if (
       game.lab.cluesCollected < tweaks.lab_clues.total_clues &&
       rollScoutClue(tweaks, game.world.seed, coord, game.scoutedTiles.length)
-        ? { ...game.lab, cluesCollected: game.lab.cluesCollected + 1 }
-        : game.lab;
+    ) {
+      lab = { ...game.lab, cluesCollected: game.lab.cluesCollected + 1 };
+      const clueText = labClueText(lab.cluesCollected, game.territory.base, lab.coord);
+      pushToast({ message: `New lab clue (${lab.cluesCollected}/${tweaks.lab_clues.total_clues}): ${clueText}` });
+    }
 
     await Promise.all([set(UNITS_DB_KEY, units), set(SCOUTED_TILES_DB_KEY, scoutedTiles), set(LAB_DB_KEY, lab)]);
     setBoot((prev) =>
@@ -3602,9 +3627,11 @@ export default function App() {
       scoutSkiffs={boot.game.scoutSkiffs}
       wanderingScouts={boot.game.wanderingScouts}
       research={boot.game.research}
+      toasts={toasts}
       now={boot.game.clock.virtualNow}
       speedMultiplier={speedMultiplier}
       onCycleFastForward={cycleFastForward}
+      onDismissToast={dismissToast}
       onStartResearch={handleStartResearch}
       onBuildExtractionTile={handleBuildExtractionTile}
       onUpgradeExtractionTile={handleUpgradeExtractionTile}

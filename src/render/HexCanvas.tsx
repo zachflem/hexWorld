@@ -117,6 +117,8 @@ const GARRISON_COLOR = "#2e7d32";
 const GARRISON_RANGE_TINT_SELECTED = "rgba(46, 125, 50, 0.55)";
 const EXPEDITION_TARGET_COLOR = "#e08e0b";
 const RELOCATION_TARGET_COLOR = "#2e86de";
+/** Reuses the existing expedition-target orange for a different purpose: a level badge (drawLevelBadge) colored this way means that structure's next upgrade is unlocked and affordable right now. Deliberately the same constant, not just the same value, so the two meanings stay visibly linked if this color is ever revisited. */
+const UPGRADE_AVAILABLE_BADGE_COLOR = EXPEDITION_TARGET_COLOR;
 
 /** Picks readable icon/text ink against an arbitrary player-chosen background color. */
 function contrastingInk(hex: string): string {
@@ -130,6 +132,8 @@ function contrastingInk(hex: string): string {
 /** Imperative handle exposed via ref, since pan/zoom are internal state here — lets a parent (e.g. a "recenter" button in the header) drive the view without lifting that state up. */
 export interface HexCanvasHandle {
   recenterOnBase: () => void;
+  /** Current on-screen pixel position of a tile's center, or null before the initial center-on-base pan has been computed. Recomputed fresh on every call against the latest pan/zoom — safe to call every frame (e.g. to keep a DOM overlay glued to a selected tile). */
+  getTileScreenPosition: (coord: Axial) => { x: number; y: number } | null;
 }
 
 export const HexCanvas = forwardRef<
@@ -160,9 +164,30 @@ export const HexCanvas = forwardRef<
     wanderingScouts: WanderingScoutsRecord;
     /** Destination of an in-flight base relocation countdown (data/base.ts:BaseRelocationInProgress), or null if none is running. */
     relocationDestination: Axial | null;
+    /** Base doesn't carry its own level the way Tower/Barracks records do (the coord IS the base's identity here) — passed separately so its level badge can be drawn like every other leveled structure. */
+    baseLevel: number;
+    /**
+     * Coord keys (axialKey) of every upgradeable structure — currently base,
+     * Tower, Barracks — whose next upgrade is both unlocked AND affordable
+     * right now (GameScreen.tsx computes this from the same *UpgradeOptionFor
+     * helpers TilePopup's buttons use, so this can never disagree with
+     * whether the upgrade button is actually clickable). Colors that
+     * structure's level badge orange instead of the default black.
+     *
+     * Dens intentionally never appear here — a den's level is fixed
+     * permanently at world-gen (DESIGN.md §13 / ROADMAP.md Milestone 14),
+     * there's no player upgrade to flag. If a structure type becomes
+     * player-upgradeable in the future (or a den ever stops being
+     * fixed-level), add its coords here upstream and reference
+     * `upgradeAvailableKeys.has(coordKey)` at its `drawLevelBadge` call site
+     * below, same as base/tower/barracks already do.
+     */
+    upgradeAvailableKeys: Set<string>;
     selected: Axial | null;
     playerColor: string;
     onTileClick?: (coord: Axial) => void;
+    /** Fired after every redraw with the viewport currently on screen — lets a parent keep a DOM overlay (e.g. a per-tile action ring) glued to a tile through pan/zoom. Read via a ref internally, not a draw-effect dependency, so an unstable callback identity from the parent doesn't itself trigger extra redraws. */
+    onViewportChange?: (viewport: { pan: { x: number; y: number }; zoom: number }) => void;
   }
 >(function HexCanvas(
   {
@@ -189,9 +214,12 @@ export const HexCanvas = forwardRef<
     scoutSkiffs,
     wanderingScouts,
     relocationDestination,
+    baseLevel,
+    upgradeAvailableKeys,
     selected,
     playerColor,
     onTileClick,
+    onViewportChange,
   },
   ref,
 ) {
@@ -397,6 +425,13 @@ export const HexCanvas = forwardRef<
   const [textureVersion, setTextureVersion] = useState(0);
   useEffect(() => onTextureLoad(() => setTextureVersion((v) => v + 1)), []);
 
+  // Read via a ref (not a draw-effect dependency) so a new function identity
+  // from the parent on every render doesn't itself force a redraw.
+  const onViewportChangeRef = useRef(onViewportChange);
+  useEffect(() => {
+    onViewportChangeRef.current = onViewportChange;
+  }, [onViewportChange]);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -407,8 +442,13 @@ export const HexCanvas = forwardRef<
         setZoom(1);
         setPan({ x: canvas.width / 2 - basePixel.x, y: canvas.height / 2 - basePixel.y });
       },
+      getTileScreenPosition(coord: Axial) {
+        if (pan === null) return null;
+        const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
+        return { x: worldPixel.x * zoom + pan.x, y: worldPixel.y * zoom + pan.y };
+      },
     }),
-    [base],
+    [base, zoom, pan],
   );
 
   useEffect(() => {
@@ -452,17 +492,18 @@ export const HexCanvas = forwardRef<
         context.stroke();
       };
 
-      // Bottom-left corner badge for a structure's level (den/tower/barracks)
+      // Bottom-left corner badge for a structure's level (base/den/tower/barracks)
       // — the opposite corner from the garrison count badge (top-right,
       // further below), so the two never collide on a tile that has both.
-      // Always a black dot with a white number, regardless of whether the
-      // structure's own icon has loaded yet.
-      const drawLevelBadge = (screenCenter: { x: number; y: number }, level: number) => {
+      // A black dot with a white number by default, regardless of whether the
+      // structure's own icon has loaded yet — pass badgeColor to flag an
+      // available+affordable upgrade instead (UPGRADE_AVAILABLE_BADGE_COLOR).
+      const drawLevelBadge = (screenCenter: { x: number; y: number }, level: number, badgeColor: string = "#000000") => {
         const badgeX = screenCenter.x - size * 0.55;
         const badgeY = screenCenter.y + size * 0.55;
         context.beginPath();
         context.arc(badgeX, badgeY, size * 0.3, 0, Math.PI * 2);
-        context.fillStyle = "#000000";
+        context.fillStyle = badgeColor;
         context.fill();
         context.strokeStyle = "rgba(255, 255, 255, 0.6)";
         context.stroke();
@@ -607,6 +648,11 @@ export const HexCanvas = forwardRef<
               ctx.textBaseline = "middle";
               ctx.fillText("⌂", screenCenter.x, screenCenter.y);
             }
+            drawLevelBadge(
+              screenCenter,
+              baseLevel,
+              upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
+            );
           } else {
             const tower = towersByKey.get(axialKey(coord));
             const wall = wallsByKey.get(axialKey(coord));
@@ -654,6 +700,9 @@ export const HexCanvas = forwardRef<
                 ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
                 ctx.stroke();
               }
+              // No badgeColor override here: a den's level is fixed at world-gen
+              // (see the upgradeAvailableKeys doc comment above) — never
+              // upgradeable, so it never gets the orange treatment.
               drawLevelBadge(screenCenter, den.level);
             } else if (tower) {
               if (activeTowerKeys.has(coordKey)) {
@@ -676,7 +725,7 @@ export const HexCanvas = forwardRef<
                 ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
                 ctx.stroke();
               }
-              drawLevelBadge(screenCenter, tower.level);
+              drawLevelBadge(screenCenter, tower.level, upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined);
             } else if (barracks) {
               const barracksIcon = barracks.buildStartedAt
                 ? getStructureIconTexture("construction")
@@ -691,7 +740,11 @@ export const HexCanvas = forwardRef<
                 ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
                 ctx.stroke();
               }
-              drawLevelBadge(screenCenter, barracks.level);
+              drawLevelBadge(
+                screenCenter,
+                barracks.level,
+                upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
+              );
             } else if (wall) {
               const wallIcon = wall.buildStartedAt
                 ? getStructureIconTexture("construction")
@@ -978,6 +1031,7 @@ export const HexCanvas = forwardRef<
     }
 
     draw();
+    if (pan !== null) onViewportChangeRef.current?.({ pan, zoom });
 
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(container);
@@ -1011,6 +1065,8 @@ export const HexCanvas = forwardRef<
     denAssaultTargetKeys,
     denAssaultsByKey,
     relocationDestination,
+    baseLevel,
+    upgradeAvailableKeys,
     fogByKey,
     selected,
     playerColor,

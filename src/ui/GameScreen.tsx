@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { axialDistance, axialEquals, axialKey, type Axial } from "../engine/hexCoords";
 import { isBuildableLand, isTransitionTile, terrainAt } from "../engine/terrain";
 import { dockBuildCost, dockBuildDurationMs, dockYieldPerSecond } from "../engine/docks";
-import { buildSlotCap, repairCost, scaledCostMap, structureRepairDurationMs, totalStructureCount } from "../engine/formulas";
+import { repairCost, scaledCostMap, structureRepairDurationMs } from "../engine/formulas";
 import { extractionTileBuildDurationMs, nextTier, tierUpgradeCost, tierUpgradeDurationMs } from "../engine/tiers";
 import { storageCapacity, storageUpgradeCost, storageUpgradeDurationMs } from "../engine/storage";
 import {
@@ -68,7 +69,14 @@ import {
   reinforcementUpgradeCost,
 } from "../engine/base";
 import { remainingMs } from "../engine/timers";
-import { extractionFloorContribution, pathFloorContribution, towerFloorContribution, wallFloorContribution } from "../engine/noiseMeter";
+import {
+  extractionFloorContribution,
+  noiseCap,
+  pathFloorContribution,
+  towerFloorContribution,
+  wallFloorContribution,
+} from "../engine/noiseMeter";
+import { computeResourceRates } from "../engine/resourceRates";
 import { isTileScoutable } from "../engine/territory";
 import {
   expeditionProvisionsCost,
@@ -78,7 +86,6 @@ import {
 import { troopSpeedMultiplier } from "../engine/research";
 import type { ResearchId, ResearchRecord } from "../data/research";
 import { denDefense, holdDefenseAt, lastStandWaveSize } from "../engine/dens";
-import { labClueText } from "../engine/lab";
 import {
   maxOutpostReinforcementLevel,
   outpostReinforcementHp,
@@ -87,13 +94,7 @@ import {
   outpostReinforcementUpgradeDurationMs,
   outpostRepairCost,
 } from "../engine/outposts";
-import {
-  availableCrossBowSnipers,
-  availableJunkyardKnights,
-  availableMilitia,
-  garrisonAt,
-  garrisonedMilitiaTotal,
-} from "../engine/garrisons";
+import { availableCrossBowSnipers, availableJunkyardKnights, availableMilitia, garrisonAt } from "../engine/garrisons";
 import type { Player } from "../data/player";
 import type { ResourceAmounts, ResourceType } from "../data/resources";
 import type { TerritoryRecord } from "../data/territory";
@@ -128,7 +129,6 @@ import { HexCanvas, type HexCanvasHandle } from "../render/HexCanvas";
 import { NewGameDialog } from "./NewGameDialog";
 import {
   TilePopup,
-  formatDuration,
   type BarracksUpgradeOption,
   type BaseUpgradeOption,
   type BuildOption,
@@ -158,8 +158,44 @@ import {
   type WanderingScoutOption,
 } from "./TilePopup";
 import { ResearchPanel } from "./ResearchPanel";
+import { NotificationTray } from "./hud/NotificationTray";
+import { ToastStack, type ToastRecord } from "./hud/Toast";
+import { StatRow } from "./primitives/StatRow";
+import { Volume2 } from "lucide-react";
 
 const RESOURCE_ORDER: ResourceType[] = ["food", "wood", "stone", "steel", "power"];
+
+/** icon + value(+delta) chip — the HUD bar's atom. No progress bar (StatRow is for capped values); resources/scouts/base-level/build-slots are either uncapped or already show their own denominator inline. */
+function StatChip({
+  icon,
+  value,
+  delta,
+  title,
+}: {
+  icon?: ReactNode;
+  value: ReactNode;
+  /** Signed rate, shown as "+84"/"-12" in green/red — omitted entirely when 0 (nothing to report). */
+  delta?: number;
+  title?: string;
+}) {
+  return (
+    <span
+      style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: "0.1rem", fontSize: "0.9rem" }}
+      title={title}
+    >
+      <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+        {icon}
+        <span>{value}</span>
+      </span>
+      {delta !== undefined && Math.round(delta) !== 0 && (
+        <span style={{ alignSelf: "flex-end", fontSize: "0.7rem", lineHeight: 1, color: delta > 0 ? "#81c784" : "#ef5350" }}>
+          {delta > 0 ? "+" : ""}
+          {Math.round(delta)}
+        </span>
+      )}
+    </span>
+  );
+}
 
 export function GameScreen({
   tweaks,
@@ -192,9 +228,11 @@ export function GameScreen({
   scoutSkiffs,
   wanderingScouts,
   research,
+  toasts,
   now,
   speedMultiplier,
   onCycleFastForward,
+  onDismissToast,
   onStartResearch,
   onBuildExtractionTile,
   onUpgradeExtractionTile,
@@ -270,11 +308,13 @@ export function GameScreen({
   scoutSkiffs: ScoutSkiffsRecord;
   wanderingScouts: WanderingScoutsRecord;
   research: ResearchRecord;
+  toasts: ToastRecord[];
   /** The virtual clock (data/clock.ts:ClockRecord.virtualNow) every build/upgrade/training timer here is checked against, instead of Date.now() — advances at speedMultiplier-scaled rate, see App.tsx. */
   now: number;
   /** Playtesting convenience — cycles through rates that scale the tick loop's resource/noise/horde simulation AND every build/upgrade/training timer (via `now` above), see App.tsx. */
   speedMultiplier: number;
   onCycleFastForward: () => void;
+  onDismissToast: (id: string) => void;
   onStartResearch: (id: ResearchId) => Promise<BuildResult>;
   onBuildExtractionTile: (coord: Axial, resource: ResourceType) => Promise<BuildResult>;
   onUpgradeExtractionTile: (coord: Axial) => Promise<BuildResult>;
@@ -1421,6 +1461,45 @@ export function GameScreen({
           : null;
   const selectedStructure = selectedTile ?? selectedPath ?? selectedTower ?? selectedWall ?? selectedBarracks;
   const selectedGarrison = selected ? garrisonAt(garrisons, selected) : null;
+  const resourceRates = useMemo(() => {
+    const hubCoords: Axial[] = [territory.base, ...outposts.map((o) => o.coord)];
+    return computeResourceRates(tweaks, extractionTiles, pathTiles, docks, hubCoords, resources, storageLevels, units, world.seed);
+  }, [tweaks, extractionTiles, pathTiles, docks, territory.base, outposts, resources, storageLevels, units, world.seed]);
+  /**
+   * Coord keys of every upgradeable structure (base, Tower, Barracks) whose
+   * next upgrade is unlocked and affordable right now — reuses the exact
+   * same *UpgradeOptionFor helpers the tile popup's own upgrade buttons call,
+   * so the map badge can never disagree with whether the button is actually
+   * clickable. Feeds HexCanvas's upgradeAvailableKeys prop, which colors that
+   * structure's level badge orange (see HexCanvas.tsx's doc comment on that
+   * prop for the full pattern, including why dens are excluded).
+   *
+   * Not memoized — matches every other *OptionFor helper in this component
+   * (all called directly, unmemoized), and HexCanvas's own draw effect
+   * already reruns every tick regardless (expeditionsByKey/denAssaultsByKey
+   * depend on `now`), so memoizing this alone wouldn't save a redraw anyway.
+   *
+   * Adding a new upgradeable structure type: compute its affordability here
+   * the same way (guard on buildStartedAt so a structure still under its
+   * *initial* construction doesn't light up), add its coords to this Set,
+   * and make sure its `drawLevelBadge` call in HexCanvas passes
+   * `upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined`
+   * — that's the whole pattern, no other wiring needed.
+   */
+  function upgradeAvailableKeysFor(): Set<string> {
+    const set = new Set<string>();
+    if (baseUpgradeOptionFor()?.affordable) set.add(axialKey(territory.base));
+    for (const t of towers) {
+      if (t.buildStartedAt) continue;
+      if (towerUpgradeOptionFor(t)?.affordable) set.add(axialKey(t.coord));
+    }
+    for (const b of barracksList) {
+      if (b.buildStartedAt) continue;
+      if (barracksUpgradeOptionFor(b)?.affordable) set.add(axialKey(b.coord));
+    }
+    return set;
+  }
+  const upgradeAvailableKeys = upgradeAvailableKeysFor();
 
   return (
     <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column" }}>
@@ -1429,8 +1508,10 @@ export function GameScreen({
           padding: "0.5rem 1rem",
           flex: "0 0 auto",
           display: "flex",
+          flexWrap: "wrap",
           alignItems: "center",
-          gap: "1.5rem",
+          rowGap: "0.4rem",
+          columnGap: "1.25rem",
         }}
       >
         {/* Placeholder menu — functional, not yet styled; due for a full UI pass. */}
@@ -1469,6 +1550,7 @@ export function GameScreen({
                 minWidth: 180,
               }}
             >
+              <strong style={{ color: player.color, padding: "0 0 0.25rem", borderBottom: "1px solid #444" }}>{player.name}</strong>
               <button
                 type="button"
                 onClick={() => {
@@ -1491,35 +1573,27 @@ export function GameScreen({
             </div>
           )}
         </div>
-        <strong style={{ color: player.color }}>{player.name}</strong>
-        <div style={{ display: "flex", gap: "1rem" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", rowGap: "0.4rem", columnGap: "0.85rem" }}>
           {RESOURCE_ORDER.map((type) => (
-            <span key={type}>
-              {type}: {Math.floor(resources[type])}
-            </span>
+            <StatChip
+              key={type}
+              icon={<img src={`/tiles/resources/${type}.png`} width={18} height={18} alt="" style={{ display: "block" }} />}
+              value={Math.floor(resources[type]).toLocaleString()}
+              delta={resourceRates[type]}
+              title={type}
+            />
           ))}
         </div>
-        <span>noise: {Math.floor(noise.value)}db</span>
-        {lab.secured ? (
-          <span>lab: secured</span>
-        ) : (
-          <span>
-            clues: {lab.cluesCollected}/{tweaks.lab_clues.total_clues}
-            {lab.cluesCollected > 0 && ` — ${labClueText(lab.cluesCollected, territory.base, lab.coord)}`}
-          </span>
-        )}
-        <span>
-          scouts: {units.scoutStockpile}/{scoutCapacityFor(tweaks, barracksList)}
-        </span>
-        <span>
-          militia: {units.militiaCount}/{militiaCapacityFor(tweaks, barracksList)}
-          {garrisonedMilitiaTotal(garrisons) > 0 && ` (${garrisonedMilitiaTotal(garrisons)} garrisoned)`}
-        </span>
-        <span>base L{base.level}</span>
-        <span>
-          slots: {totalStructureCount(tweaks, extractionTiles, pathTiles, towers, walls, barracksList, docks).toFixed(1)}/
-          {buildSlotCap(tweaks, base.level)}
-        </span>
+        <div style={{ width: 130 }}>
+          <StatRow
+            icon={<Volume2 size={16} />}
+            label="noise"
+            current={noise.value}
+            max={noiseCap(tweaks, base.level)}
+            displayValue={`${Math.floor(noise.value)}db`}
+            barColor="#f2b64d"
+          />
+        </div>
       </header>
       <div style={{ flex: "1 1 auto", minHeight: 0 }}>
         <HexCanvas
@@ -1528,6 +1602,8 @@ export function GameScreen({
           gridSize={tweaks.game.grid_size}
           tweaks={tweaks}
           base={territory.base}
+          baseLevel={base.level}
+          upgradeAvailableKeys={upgradeAvailableKeys}
           owned={territory.owned}
           extractionTiles={extractionTiles}
           pathTiles={pathTiles}
@@ -1868,54 +1944,27 @@ export function GameScreen({
           onClose={() => setShowResearchPanel(false)}
         />
       )}
-      {(expeditions.length > 0 || denAssaults.length > 0 || garrisonRecalls.length > 0) && (
-        <div
-          style={{
-            position: "fixed",
-            left: "1rem",
-            top: "3.5rem",
-            background: "rgba(20, 20, 22, 0.92)",
-            borderRadius: 8,
-            padding: "0.5rem 0.75rem",
-            color: "white",
-            fontSize: "0.85rem",
-          }}
-        >
-          {expeditions.length > 0 && (
-            <>
-              <strong>Expeditions en route</strong>
-              {expeditions.map((expedition) => (
-                <div key={expedition.id}>
-                  ({expedition.target.q}, {expedition.target.r}) —{" "}
-                  {formatDuration(remainingMs(expedition.departedAt, expedition.arriveAt - expedition.departedAt, now))}
-                </div>
-              ))}
-            </>
-          )}
-          {denAssaults.length > 0 && (
-            <>
-              <strong>Den assaults en route</strong>
-              {denAssaults.map((assault) => (
-                <div key={assault.id}>
-                  ({assault.target.q}, {assault.target.r}) —{" "}
-                  {formatDuration(remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now))}
-                </div>
-              ))}
-            </>
-          )}
-          {garrisonRecalls.length > 0 && (
-            <>
-              <strong>Garrisons recalling</strong>
-              {garrisonRecalls.map((recall) => (
-                <div key={recall.id}>
-                  ({recall.coord.q}, {recall.coord.r}) —{" "}
-                  {formatDuration(remainingMs(recall.departedAt, recall.arriveAt - recall.departedAt, now))}
-                </div>
-              ))}
-            </>
-          )}
-        </div>
-      )}
+      <div
+        style={{
+          position: "fixed",
+          right: "1rem",
+          top: "3.5rem",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-end",
+          gap: "0.35rem",
+          maxWidth: "min(90vw, 320px)",
+        }}
+      >
+        <ToastStack toasts={toasts} onDismiss={onDismissToast} />
+        <NotificationTray
+          expeditions={expeditions}
+          denAssaults={denAssaults}
+          labAssaults={labAssaults}
+          garrisonRecalls={garrisonRecalls}
+          now={now}
+        />
+      </div>
       {newGameDialogOpen && (
         <NewGameDialog
           currentSeed={world.seed}
