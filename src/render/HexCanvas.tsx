@@ -204,6 +204,15 @@ export const HexCanvas = forwardRef<
     selected: Axial | null;
     playerColor: string;
     onTileClick?: (coord: Axial) => void;
+    /**
+     * Fired on genuine mouse hover (pointerType "mouse", no buttons held) as
+     * the cursor crosses tile boundaries — null once the cursor leaves the
+     * canvas. Deliberately mouse-only: touch pointermove events fire while
+     * dragging/panning, which isn't "hovering" a tile, and there's no touch
+     * equivalent of hover anyway. Not fired while panning/pinching with a
+     * mouse either (a held-button drag isn't a hover, same reasoning).
+     */
+    onTileHover?: (coord: Axial | null) => void;
     /** Fired after every redraw with the viewport currently on screen — lets a parent keep a DOM overlay (e.g. a per-tile action ring) glued to a tile through pan/zoom. Read via a ref internally, not a draw-effect dependency, so an unstable callback identity from the parent doesn't itself trigger extra redraws. */
     onViewportChange?: (viewport: { pan: { x: number; y: number }; zoom: number }) => void;
   }
@@ -240,6 +249,7 @@ export const HexCanvas = forwardRef<
     selected,
     playerColor,
     onTileClick,
+    onTileHover,
     onViewportChange,
   },
   ref,
@@ -452,6 +462,17 @@ export const HexCanvas = forwardRef<
   useEffect(() => {
     onViewportChangeRef.current = onViewportChange;
   }, [onViewportChange]);
+
+  // Same ref-not-dependency reasoning as onViewportChangeRef — read from
+  // handlePointerMove, which isn't itself a React-dependency-tracked callback.
+  const onTileHoverRef = useRef(onTileHover);
+  useEffect(() => {
+    onTileHoverRef.current = onTileHover;
+  }, [onTileHover]);
+  // Last axialKey reported to onTileHover — de-dupes so crossing pixels
+  // within the same hex doesn't re-fire the callback (and the parent's
+  // resulting state update) on every mousemove frame.
+  const hoveredKeyRef = useRef<string | null>(null);
 
   useImperativeHandle(
     ref,
@@ -1187,7 +1208,29 @@ export const HexCanvas = forwardRef<
     }
   }
 
+  function handleHoverMove(event: React.PointerEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current;
+    if (!canvas || pan === null) return;
+    const rect = canvas.getBoundingClientRect();
+    const worldX = (event.clientX - rect.left - pan.x) / zoom;
+    const worldY = (event.clientY - rect.top - pan.y) / zoom;
+    const coord = pixelToAxial({ x: worldX, y: worldY }, BASE_HEX_SIZE);
+    const key = axialKey(coord);
+    if (key === hoveredKeyRef.current) return;
+    hoveredKeyRef.current = key;
+    onTileHoverRef.current?.(coord);
+  }
+
   function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
+    // A genuine hover — mouse, no button held, and not mid-pinch/drag from
+    // an earlier pointerdown — never advances past this branch: touch
+    // pointermove only ever fires while a finger is down (there's no touch
+    // hover), so this is unambiguously desktop mouse movement.
+    if (event.pointerType === "mouse" && event.buttons === 0 && !dragRef.current && !pinchRef.current) {
+      handleHoverMove(event);
+      return;
+    }
+
     if (pointersRef.current.has(event.pointerId)) {
       pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     }
@@ -1216,6 +1259,12 @@ export const HexCanvas = forwardRef<
   }
 
   function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
+    // Covers pointerup/cancel/leave alike — leaving the canvas (mouse) or
+    // releasing (touch) both end whatever hover was in effect.
+    if (hoveredKeyRef.current !== null) {
+      hoveredKeyRef.current = null;
+      onTileHoverRef.current?.(null);
+    }
     if (pan === null) return;
     pointersRef.current.delete(event.pointerId);
 

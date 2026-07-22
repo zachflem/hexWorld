@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { axialDistance, axialEquals, axialKey, type Axial } from "../engine/hexCoords";
 import { isBuildableLand, isTransitionTile, terrainAt } from "../engine/terrain";
-import { dockBuildCost, dockBuildDurationMs } from "../engine/docks";
-import { repairCost, scaledCostMap, structureRepairDurationMs } from "../engine/formulas";
+import { dockBuildCost, dockBuildDurationMs, dockYieldPerSecond } from "../engine/docks";
+import { isStructureActive, repairCost, scaledCostMap, structureRepairDurationMs } from "../engine/formulas";
+import { yieldPerSecond } from "../engine/tick";
 import { extractionTileBuildDurationMs, nextTier, tierUpgradeCost, tierUpgradeDurationMs } from "../engine/tiers";
 import { storageCapacity, storageUpgradeCost, storageUpgradeDurationMs } from "../engine/storage";
 import {
@@ -71,6 +72,7 @@ import {
 import { remainingMs } from "../engine/timers";
 import {
   extractionFloorContribution,
+  noiseCap,
   pathFloorContribution,
   towerFloorContribution,
   wallFloorContribution,
@@ -164,6 +166,7 @@ import { Panel } from "./primitives/Panel";
 import { PartyDispatchForm } from "./primitives/PartyDispatchForm";
 import { GlobalHexCluster } from "./menu/GlobalHexCluster";
 import { TileActionRing, type RingAction, type TileActionRingHandle } from "./menu/TileActionRing";
+import { HoverTooltip, type HoverTooltipHandle } from "./menu/HoverTooltip";
 import { formatCost, formatDuration } from "./format";
 import { GarrisonsPanel } from "./panels/GarrisonsPanel";
 import { ScoutingPanel } from "./panels/ScoutingPanel";
@@ -238,6 +241,35 @@ function StatChip({
         </span>
       )}
     </span>
+  );
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** The hover tooltip's card — icon + type name, a status line, then whatever stat rows apply to this structure kind. Deliberately terser than infoDialogContent's Panel (smaller font/padding, no "Info" heading) since this follows the cursor rather than sitting in a fixed dialog slot. */
+function HoverPanel({ icon, title, status, children }: { icon: ReactNode; title: string; status: string; children?: ReactNode }) {
+  return (
+    <Panel
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.2rem",
+        fontSize: "0.75rem",
+        lineHeight: 1.4,
+        minWidth: 150,
+        maxWidth: 230,
+        padding: "0.5rem 0.65rem",
+      }}
+    >
+      <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+        {icon}
+        <strong style={{ fontSize: "0.82rem" }}>{title}</strong>
+      </span>
+      <span style={{ opacity: 0.8 }}>{status}</span>
+      {children}
+    </Panel>
   );
 }
 
@@ -424,7 +456,11 @@ export function GameScreen({
   const hexCanvasRef = useRef<HexCanvasHandle>(null);
   /** Positioned imperatively, not via React state — see TileActionRing.tsx's doc comment. Repositioned directly inside handleViewportChange below. */
   const ringRef = useRef<TileActionRingHandle>(null);
+  /** Same imperative-positioning convention as ringRef — see HoverTooltip.tsx. */
+  const hoverTooltipRef = useRef<HoverTooltipHandle>(null);
   const [selected, setSelected] = useState<Axial | null>(null);
+  /** Desktop-mouse hover target (HexCanvas's onTileHover) — null on touch devices, which never report hover. Only changes when the hovered tile itself changes (deduped in HexCanvas), not on every mousemove pixel. */
+  const [hoveredCoord, setHoveredCoord] = useState<Axial | null>(null);
   const [newGameDialogOpen, setNewGameDialogOpen] = useState(false);
   /** Which of the global hex cluster's five panel slots (flag/binoculars/gear/chart — hammer is a toggle, not a panel) is open, if any. Only one at a time. */
   const [openPanel, setOpenPanel] = useState<"garrisons" | "scouting" | "military" | "settings" | "research" | null>(null);
@@ -1511,6 +1547,15 @@ export function GameScreen({
       (coord) => hexCanvasRef.current?.getTileScreenPosition(coord) ?? null,
       BASE_HEX_SIZE * viewport.zoom,
     );
+    hoverTooltipRef.current?.reposition(
+      (coord) => hexCanvasRef.current?.getTileScreenPosition(coord) ?? null,
+      BASE_HEX_SIZE * viewport.zoom,
+    );
+  }
+
+  /** HexCanvas's onTileHover — already deduped to only fire on an actual tile change, so this is a cheap, infrequent state update rather than a per-mousemove-frame one. */
+  function handleTileHover(coord: Axial | null) {
+    setHoveredCoord(coord);
   }
 
   /**
@@ -2515,6 +2560,199 @@ export function GameScreen({
   }
 
   /**
+   * Read-only hover-tooltip content for whatever's at `coord` — desktop-mouse
+   * only (see HexCanvas's onTileHover), independent of the click-to-select
+   * flow the ring menu uses, so this re-derives its own lookups rather than
+   * reusing the `selectedX` family above (those are keyed off `selected`,
+   * not whatever tile the cursor happens to be over). Covers the same set of
+   * tile kinds as structuralActionsFor, in the same precedence order, but
+   * reports status/stats instead of offering actions. Returns null for empty
+   * or not-yet-scouted-lab ground — nothing to show.
+   */
+  function hoverInfoFor(coord: Axial): ReactNode | null {
+    if (axialEquals(coord, territory.base)) {
+      const status = base.relocation
+        ? "Relocating…"
+        : base.reinforcementAction
+          ? base.reinforcementAction.kind === "upgrade"
+            ? `Upgrading reinforcement to L${base.reinforcementAction.targetLevel}…`
+            : "Repairing…"
+          : base.upgrade
+            ? `Upgrading to L${base.upgrade.targetLevel}…`
+            : "Operational";
+      const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
+      return (
+        <HoverPanel icon={structureIcon("base", 28)} title={`Base — L${base.level}`} status={status}>
+          <span>HP: {Math.floor(base.currentHp)}/{Math.floor(maxHp)}</span>
+          <span>Noise cap: {noiseCap(tweaks, base.level)}db</span>
+        </HoverPanel>
+      );
+    }
+
+    const outpost = outpostAt(coord);
+    if (outpost) {
+      const status = outpost.reinforcementAction
+        ? outpost.reinforcementAction.kind === "upgrade"
+          ? `Upgrading to L${outpost.reinforcementAction.targetLevel}…`
+          : "Repairing…"
+        : "Operational";
+      const maxHp = outpostReinforcementHp(tweaks, outpost.reinforcementLevel);
+      return (
+        <HoverPanel icon={structureIcon("outpost", 28)} title={`Outpost — L${outpost.reinforcementLevel}`} status={status}>
+          <span>HP: {Math.floor(outpost.currentHp)}/{Math.floor(maxHp)}</span>
+        </HoverPanel>
+      );
+    }
+
+    const den = dens.find((d) => axialEquals(d.coord, coord));
+    if (den) {
+      const status = den.siege ? `Under siege — wave ${den.siege.waveIndex + 1}` : "Hostile";
+      return (
+        <HoverPanel icon={<Swords size={22} />} title={`Den — L${den.level}`} status={status}>
+          <span>Defense: {denDefense(tweaks, den.level).toFixed(1)}</span>
+        </HoverPanel>
+      );
+    }
+
+    if (isScouted(coord) && axialEquals(lab.coord, coord)) {
+      const status = lab.secured ? "Secured" : "Guarded";
+      return (
+        <HoverPanel icon={<FlaskConical size={22} />} title="Research lab" status={status}>
+          {!lab.secured && <span>Guardian defense: {tweaks.lab.guardian_defense.toFixed(0)}</span>}
+        </HoverPanel>
+      );
+    }
+
+    const tile = tileAt(coord);
+    if (tile) {
+      const status = tile.buildStartedAt
+        ? "Under construction"
+        : tile.damaged
+          ? tile.damageRepair
+            ? "Repairing…"
+            : "Damaged"
+          : tile.upgrade
+            ? `Upgrading to ${tile.upgrade.targetTier}…`
+            : "Operational";
+      const connected = findResourceTileConnection(extractionTiles, pathTiles, territory.base, coord) !== null;
+      return (
+        <HoverPanel icon={resourceIcon(tile.resource, 28)} title={`${capitalize(tile.resource)} — ${tile.tier}`} status={status}>
+          {isStructureActive(tile) && (
+            <span>
+              Yield: {yieldPerSecond(tweaks, tile, world.seed).toFixed(1)} {tile.resource}/sec
+            </span>
+          )}
+          <span>{connected ? "Connected — auto-flows to base" : "Not connected — manual collection"}</span>
+          <span>Stockpile: {Math.floor(tile.stockpile)}</span>
+        </HoverPanel>
+      );
+    }
+
+    const path = pathAt(coord);
+    if (path) {
+      const status = path.buildStartedAt
+        ? "Under construction"
+        : path.damaged
+          ? path.damageRepair
+            ? "Repairing…"
+            : "Damaged"
+          : path.upgrade
+            ? `Upgrading to ${path.upgrade.targetTier}…`
+            : "Operational";
+      return (
+        <HoverPanel icon={structureIcon(PATH_TIER_ICON_NAMES[path.tier], 28)} title={`Path — ${path.tier}`} status={status}>
+          <span>Noise floor: +{pathFloorContribution(tweaks, path).toFixed(1)}db</span>
+        </HoverPanel>
+      );
+    }
+
+    const tower = towerAt(coord);
+    if (tower) {
+      const status = tower.buildStartedAt
+        ? "Under construction"
+        : tower.damaged
+          ? tower.damageRepair
+            ? "Repairing…"
+            : "Damaged"
+          : tower.upgrade
+            ? `Upgrading to L${tower.upgrade.targetLevel}…`
+            : "Operational";
+      return (
+        <HoverPanel icon={structureIcon("tower", 28)} title={`Tower — L${tower.level}`} status={status}>
+          {isStructureActive(tower) && (
+            <>
+              <span>Range: {towerRange(tweaks, tower.level)} tiles</span>
+              <span>Damage: {towerDamage(tweaks, tower.level).toFixed(1)} DPS</span>
+            </>
+          )}
+          <span>Noise floor: +{towerFloorContribution(tweaks, tower).toFixed(1)}db</span>
+        </HoverPanel>
+      );
+    }
+
+    const wall = wallAt(coord);
+    if (wall) {
+      const status = wall.buildStartedAt
+        ? "Under construction"
+        : wall.damaged
+          ? wall.damageRepair
+            ? "Repairing…"
+            : "Damaged"
+          : wall.action
+            ? wall.action.kind === "upgrade"
+              ? `Upgrading to ${wall.action.targetTier}…`
+              : "Repairing durability…"
+            : "Operational";
+      const maxHp = maxWallDurability(tweaks, wall.tier);
+      return (
+        <HoverPanel icon={structureIcon(WALL_TIER_ICON_NAMES[wall.tier], 28)} title={`Wall — ${wall.tier}`} status={status}>
+          <span>
+            Durability: {Math.floor(wall.durability)}/{maxHp}
+          </span>
+          <span>Noise floor: +{wallFloorContribution(tweaks, wall).toFixed(1)}db</span>
+        </HoverPanel>
+      );
+    }
+
+    const barracks = barracksAt(coord);
+    if (barracks) {
+      const status = barracks.buildStartedAt
+        ? "Under construction"
+        : barracks.damaged
+          ? barracks.damageRepair
+            ? "Repairing…"
+            : "Damaged"
+          : barracks.upgrade
+            ? `Upgrading to L${barracks.upgrade.targetLevel}…`
+            : "Operational";
+      return <HoverPanel icon={structureIcon("barracks", 28)} title={`Barracks — L${barracks.level}`} status={status} />;
+    }
+
+    const dock = dockAt(coord);
+    if (dock) {
+      const status = dock.buildStartedAt ? "Under construction" : "Operational";
+      return (
+        <HoverPanel icon={structureIcon("dock", 28)} title={dock.fishingBoat ? "Dock — with fishing boat" : "Dock"} status={status}>
+          {!dock.buildStartedAt && <span>Yield: {dockYieldPerSecond(tweaks, dock).toFixed(1)} food/sec</span>}
+          <span>Stockpile: {Math.floor(dock.stockpile)}</span>
+        </HoverPanel>
+      );
+    }
+
+    const tombstone = tombstones.find((t) => axialEquals(t.coord, coord));
+    if (tombstone) {
+      const lost = tombstone.militiaLost + tombstone.junkyardKnightLost + tombstone.crossBowSniperLost;
+      return (
+        <HoverPanel icon={<Info size={22} />} title="Tombstone" status={`Fades in ${formatDuration(Math.max(0, tombstone.expiresAt - now))}`}>
+          <span>Lost: {lost} unit{lost === 1 ? "" : "s"}</span>
+        </HoverPanel>
+      );
+    }
+
+    return null;
+  }
+
+  /**
    * The full ring for the selected tile: structural actions (above) plus
    * the universal, structure-independent actions available on any owned
    * tile — Collect, Garrison (a form, not a discrete choice — quantities
@@ -2572,6 +2810,12 @@ export function GameScreen({
     return actions;
   }
   const ringActions = ringActionsFor();
+  // Suppressed on the currently-selected tile — its ring (and Info hex,
+  // where applicable) already covers the same ground, and the two floating
+  // panels would otherwise visually collide right where the player's about
+  // to click.
+  const hoverInfoContent =
+    hoveredCoord && !(selected && axialEquals(hoveredCoord, selected)) ? hoverInfoFor(hoveredCoord) : null;
 
   return (
     <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column" }}>
@@ -2653,9 +2897,11 @@ export function GameScreen({
           selected={selected}
           playerColor={player.color}
           onTileClick={selectTile}
+          onTileHover={handleTileHover}
           onViewportChange={handleViewportChange}
         />
       </div>
+      <HoverTooltip ref={hoverTooltipRef} coord={hoveredCoord} content={hoverInfoContent} />
       {selected && ringActions.length > 0 && (
         <TileActionRing key={axialKey(selected)} ref={ringRef} rootCoord={selected} actions={ringActions} />
       )}
