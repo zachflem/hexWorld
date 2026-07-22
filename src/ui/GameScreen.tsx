@@ -194,7 +194,6 @@ import {
   Target,
   Trash2,
   Users,
-  Volume2,
   Wrench,
 } from "lucide-react";
 
@@ -204,8 +203,12 @@ const RESOURCE_ORDER: ResourceType[] = ["food", "wood", "stone", "steel", "power
 function structureIcon(name: string, size = 45) {
   return <img src={`/tiles/structures/${name}.png`} width={size} height={size} alt="" style={{ objectFit: "contain" }} />;
 }
+/** Small hand-drawn marker icons (public/tiles/markers/) instead of the full-size in-world resource sprites — those read fine painted on the map itself but turn into an indistinct blob at ring-hex/HUD-chip size. */
 function resourceIcon(resource: ResourceType, size = 45) {
-  return <img src={`/tiles/resources/${resource}.png`} width={size} height={size} alt="" style={{ objectFit: "contain" }} />;
+  return <img src={`/tiles/markers/icon-${resource}.png`} width={size} height={size} alt="" style={{ objectFit: "contain" }} />;
+}
+function noiseIcon(size = 45) {
+  return <img src="/tiles/markers/icon-noise.png" width={size} height={size} alt="" style={{ objectFit: "contain" }} />;
 }
 
 /** icon + value(+delta) chip — the HUD bar's atom. No progress bar (StatRow is for capped values); resources/scouts/base-level/build-slots are either uncapped or already show their own denominator inline. */
@@ -2589,7 +2592,7 @@ export function GameScreen({
           {RESOURCE_ORDER.map((type) => (
             <StatChip
               key={type}
-              icon={<img src={`/tiles/resources/${type}.png`} width={18} height={18} alt="" style={{ display: "block" }} />}
+              icon={resourceIcon(type, 18)}
               value={Math.floor(resources[type]).toLocaleString()}
               delta={resourceRates[type]}
               title={type}
@@ -2598,7 +2601,7 @@ export function GameScreen({
         </div>
         <div style={{ width: 130 }}>
           <StatRow
-            icon={<Volume2 size={16} />}
+            icon={noiseIcon(16)}
             label="noise"
             current={noise.value}
             max={noiseCap(tweaks, base.level)}
