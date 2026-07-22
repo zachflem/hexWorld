@@ -14,6 +14,8 @@ import { terrainAt, type TerrainType } from "../engine/terrain";
 import { towerRange } from "../engine/towers";
 import { sniperDamagePerSecond, towerDamagePerSecond, towersInRange } from "../engine/hordes";
 import { garrisonAt, garrisonWallRangeBonus } from "../engine/garrisons";
+import { maxWallDurability } from "../engine/walls";
+import { outpostReinforcementHp } from "../engine/outposts";
 import type { ExtractionTile } from "../data/extractionTiles";
 import type { PathTier, PathTile } from "../data/pathTiles";
 import type { ResourceType } from "../data/resources";
@@ -25,7 +27,9 @@ import type { DenRecord } from "../data/dens";
 import type { OutpostRecord } from "../data/outposts";
 import type { HordeRecord } from "../data/hordes";
 import type { Expedition, ExpeditionsRecord } from "../data/expeditions";
+import { expeditionPathIndexAt } from "../engine/expeditions";
 import type { DenAssaultRecord, DenAssaultsRecord } from "../data/denAssaults";
+import type { TombstoneRecord, TombstonesRecord } from "../data/tombstones";
 import type { DockRecord, DocksRecord } from "../data/docks";
 import type { ScoutSkiffRecord, ScoutSkiffsRecord } from "../data/scoutSkiffs";
 import type { WanderingScoutRecord, WanderingScoutsRecord } from "../data/wanderingScouts";
@@ -34,6 +38,7 @@ import {
   drawHexTileOverlay,
   drawHexTileTexture,
   drawImageAtWidth,
+  getPathTileTexture,
   getResourceTexture,
   getStructureIconTexture,
   getTerrainTexture,
@@ -41,7 +46,8 @@ import {
   onTextureLoad,
 } from "./tileTextures";
 
-const BASE_HEX_SIZE = 24;
+/** Exported so DOM overlays (TileActionRing) can compute the same on-screen hex circumradius (BASE_HEX_SIZE * zoom) the canvas itself draws with, and size themselves to genuinely overlay a tile rather than approximate it. */
+export const BASE_HEX_SIZE = 24;
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 3;
 const CLICK_DRAG_THRESHOLD_PX = 6;
@@ -85,8 +91,15 @@ const PATH_TIER_COLORS: Record<PathTier, string> = {
   highway: "#ffdd55",
 };
 
-/** getStructureIconTexture names for each wall tier's sprite (tiles/structures/wall-{small,medium,large}.png) — falls back to WALL_TIER_COLORS's flat dot until/unless a given sprite is missing. */
-const WALL_TIER_ICON_NAMES: Record<WallTier, string> = {
+/** getPathTileTexture names for each path tier's sprite (tiles/structures/path-{track,stone,highway}.png) — falls back to PATH_TIER_COLORS's flat fill until/unless a given sprite is missing. Exported so TileActionRing can reuse the same sprite for its build/upgrade-path ring hex. */
+export const PATH_TIER_ICON_NAMES: Record<PathTier, string> = {
+  goat_track: "path-track",
+  stone_road: "path-stone",
+  highway: "path-highway",
+};
+
+/** getStructureIconTexture names for each wall tier's sprite (tiles/structures/wall-{small,medium,large}.png) — falls back to WALL_TIER_COLORS's flat dot until/unless a given sprite is missing. Exported so TileActionRing can reuse the same sprite for its build/upgrade-wall ring hex. */
+export const WALL_TIER_ICON_NAMES: Record<WallTier, string> = {
   wood: "wall-small",
   rock: "wall-medium",
   steel: "wall-large",
@@ -113,8 +126,12 @@ const SIEGE_RING_COLOR = "#ff6b35";
 const HORDE_COLOR = "#b71c1c";
 const GARRISON_COLOR = "#2e7d32";
 const GARRISON_RANGE_TINT_SELECTED = "rgba(46, 125, 50, 0.55)";
+/** Build-mode toggle (hammer slot, global hex cluster) — a distinct teal not used for any other hex fill (red = tower/combat range, green = garrison range, orange/blue = expedition/relocation target badges), so "buildable right now" reads as its own thing. */
+const BUILD_MODE_TINT = "rgba(38, 198, 218, 0.35)";
 const EXPEDITION_TARGET_COLOR = "#e08e0b";
 const RELOCATION_TARGET_COLOR = "#2e86de";
+/** Reuses the existing expedition-target orange for a different purpose: a level badge (drawLevelBadge) colored this way means that structure's next upgrade is unlocked and affordable right now. Deliberately the same constant, not just the same value, so the two meanings stay visibly linked if this color is ever revisited. */
+export const UPGRADE_AVAILABLE_BADGE_COLOR = EXPEDITION_TARGET_COLOR;
 
 /** Picks readable icon/text ink against an arbitrary player-chosen background color. */
 function contrastingInk(hex: string): string {
@@ -128,6 +145,8 @@ function contrastingInk(hex: string): string {
 /** Imperative handle exposed via ref, since pan/zoom are internal state here — lets a parent (e.g. a "recenter" button in the header) drive the view without lifting that state up. */
 export interface HexCanvasHandle {
   recenterOnBase: () => void;
+  /** Current on-screen pixel position of a tile's center, or null before the initial center-on-base pan has been computed. Recomputed fresh on every call against the latest pan/zoom — safe to call every frame (e.g. to keep a DOM overlay glued to a selected tile). */
+  getTileScreenPosition: (coord: Axial) => { x: number; y: number } | null;
 }
 
 export const HexCanvas = forwardRef<
@@ -150,6 +169,7 @@ export const HexCanvas = forwardRef<
     hordes: HordeRecord[];
     expeditions: ExpeditionsRecord;
     denAssaults: DenAssaultsRecord;
+    tombstones: TombstonesRecord;
     /** The virtual clock (data/clock.ts:ClockRecord.virtualNow) — used to interpolate each in-flight expedition's current position along its route, same units as Expedition.departedAt/arriveAt. */
     now: number;
     docks: DocksRecord;
@@ -157,9 +177,44 @@ export const HexCanvas = forwardRef<
     wanderingScouts: WanderingScoutsRecord;
     /** Destination of an in-flight base relocation countdown (data/base.ts:BaseRelocationInProgress), or null if none is running. */
     relocationDestination: Axial | null;
+    /** Base doesn't carry its own level the way Tower/Barracks records do (the coord IS the base's identity here) — passed separately so its level badge can be drawn like every other leveled structure. */
+    baseLevel: number;
+    /** Same reasoning as baseLevel — needed to draw the base's HP bar (see drawHealthBar) the same way outposts/walls already can from their own records. */
+    baseCurrentHp: number;
+    baseMaxHp: number;
+    /**
+     * Coord keys (axialKey) of every upgradeable structure — currently base,
+     * Tower, Barracks — whose next upgrade is both unlocked AND affordable
+     * right now (GameScreen.tsx computes this from the same *UpgradeOptionFor
+     * helpers TilePopup's buttons use, so this can never disagree with
+     * whether the upgrade button is actually clickable). Colors that
+     * structure's level badge orange instead of the default black.
+     *
+     * Dens intentionally never appear here — a den's level is fixed
+     * permanently at world-gen (DESIGN.md §13 / ROADMAP.md Milestone 14),
+     * there's no player upgrade to flag. If a structure type becomes
+     * player-upgradeable in the future (or a den ever stops being
+     * fixed-level), add its coords here upstream and reference
+     * `upgradeAvailableKeys.has(coordKey)` at its `drawLevelBadge` call site
+     * below, same as base/tower/barracks already do.
+     */
+    upgradeAvailableKeys: Set<string>;
+    /** Coord keys (axialKey) of owned, empty, buildable-land tiles where at least one structure type is currently affordable — tinted teal while build-mode (the hammer slot in the global hex cluster) is active. Empty set when build-mode is off. */
+    buildModeEligibleKeys: Set<string>;
     selected: Axial | null;
     playerColor: string;
     onTileClick?: (coord: Axial) => void;
+    /**
+     * Fired on genuine mouse hover (pointerType "mouse", no buttons held) as
+     * the cursor crosses tile boundaries — null once the cursor leaves the
+     * canvas. Deliberately mouse-only: touch pointermove events fire while
+     * dragging/panning, which isn't "hovering" a tile, and there's no touch
+     * equivalent of hover anyway. Not fired while panning/pinching with a
+     * mouse either (a held-button drag isn't a hover, same reasoning).
+     */
+    onTileHover?: (coord: Axial | null) => void;
+    /** Fired after every redraw with the viewport currently on screen — lets a parent keep a DOM overlay (e.g. a per-tile action ring) glued to a tile through pan/zoom. Read via a ref internally, not a draw-effect dependency, so an unstable callback identity from the parent doesn't itself trigger extra redraws. */
+    onViewportChange?: (viewport: { pan: { x: number; y: number }; zoom: number }) => void;
   }
 >(function HexCanvas(
   {
@@ -180,14 +235,22 @@ export const HexCanvas = forwardRef<
     hordes,
     expeditions,
     denAssaults,
+    tombstones,
     now,
     docks,
     scoutSkiffs,
     wanderingScouts,
     relocationDestination,
+    baseLevel,
+    baseCurrentHp,
+    baseMaxHp,
+    upgradeAvailableKeys,
+    buildModeEligibleKeys,
     selected,
     playerColor,
     onTileClick,
+    onTileHover,
+    onViewportChange,
   },
   ref,
 ) {
@@ -251,6 +314,11 @@ export const HexCanvas = forwardRef<
     for (const scout of wanderingScouts) map.set(axialKey(scout.coord), scout);
     return map;
   }, [wanderingScouts]);
+  const tombstonesByKey = useMemo(() => {
+    const map = new Map<string, TombstoneRecord>();
+    for (const tombstone of tombstones) map.set(axialKey(tombstone.coord), tombstone);
+    return map;
+  }, [tombstones]);
   // Destination of any in-flight expedition (App.tsx runTick resolves these
   // on arrival) — just the target coord, so the map shows where a party is
   // headed even though its actual path isn't drawn.
@@ -260,17 +328,17 @@ export const HexCanvas = forwardRef<
     return set;
   }, [expeditions]);
   // Live en-route position for each in-flight expedition — interpolated from
-  // elapsed time against Expedition.path, the same way a horde's position is
-  // read straight off path[pathIndex] (hordesByKey above). Expedition itself
-  // stores no position/index (just target/path/departedAt/arriveAt), so this
-  // is purely a render-time derivation, recomputed every tick as `now` ticks
-  // forward — no data model changes needed.
+  // elapsed time against Expedition.path via expeditionPathIndexAt
+  // (engine/expeditions.ts), the SAME formula App.tsx's tick loop uses to
+  // decide how far a party has really progressed (stepCorridorWalk's
+  // targetIndex) — so the visual marker and the logical resolvedIndex can
+  // never diverge, the same way a horde's position is read straight off
+  // path[pathIndex] (hordesByKey above). Recomputed every tick as `now`
+  // ticks forward.
   const expeditionsByKey = useMemo(() => {
     const map = new Map<string, Expedition>();
     for (const expedition of expeditions) {
-      const totalMs = expedition.arriveAt - expedition.departedAt;
-      const fraction = totalMs > 0 ? Math.min(1, Math.max(0, (now - expedition.departedAt) / totalMs)) : 1;
-      const index = Math.round(fraction * (expedition.path.length - 1));
+      const index = expeditionPathIndexAt(expedition.departedAt, expedition.arriveAt, now, expedition.path.length);
       map.set(axialKey(expedition.path[index]), expedition);
     }
     return map;
@@ -289,9 +357,7 @@ export const HexCanvas = forwardRef<
   const denAssaultsByKey = useMemo(() => {
     const map = new Map<string, DenAssaultRecord>();
     for (const assault of denAssaults) {
-      const totalMs = assault.arriveAt - assault.departedAt;
-      const fraction = totalMs > 0 ? Math.min(1, Math.max(0, (now - assault.departedAt) / totalMs)) : 1;
-      const index = Math.round(fraction * (assault.path.length - 1));
+      const index = expeditionPathIndexAt(assault.departedAt, assault.arriveAt, now, assault.path.length);
       map.set(axialKey(assault.path[index]), assault);
     }
     return map;
@@ -360,6 +426,21 @@ export const HexCanvas = forwardRef<
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<{ x: number; y: number } | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
+  // Mobile pinch-to-zoom — every currently-touching pointer's latest screen
+  // position, keyed by pointerId (pointer events unify mouse/touch/pen, so
+  // this is populated by touch as well as e.g. a stylus). Once a second
+  // pointer joins, drag-panning (dragRef above) hands off to pinch scaling.
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{
+    initialDistance: number;
+    initialZoom: number;
+    initialMidpoint: { x: number; y: number };
+    initialPan: { x: number; y: number };
+  } | null>(null);
+  // Sticky for the whole gesture (not reset until every pointer lifts) so a
+  // pinch that happens to end on a single remaining finger doesn't get
+  // mistaken for a tap-to-select-tile in handlePointerUp's last branch.
+  const multiTouchRef = useRef(false);
 
   // Center the view on the base tile once we know the canvas size.
   useEffect(() => {
@@ -375,6 +456,24 @@ export const HexCanvas = forwardRef<
   const [textureVersion, setTextureVersion] = useState(0);
   useEffect(() => onTextureLoad(() => setTextureVersion((v) => v + 1)), []);
 
+  // Read via a ref (not a draw-effect dependency) so a new function identity
+  // from the parent on every render doesn't itself force a redraw.
+  const onViewportChangeRef = useRef(onViewportChange);
+  useEffect(() => {
+    onViewportChangeRef.current = onViewportChange;
+  }, [onViewportChange]);
+
+  // Same ref-not-dependency reasoning as onViewportChangeRef — read from
+  // handlePointerMove, which isn't itself a React-dependency-tracked callback.
+  const onTileHoverRef = useRef(onTileHover);
+  useEffect(() => {
+    onTileHoverRef.current = onTileHover;
+  }, [onTileHover]);
+  // Last axialKey reported to onTileHover — de-dupes so crossing pixels
+  // within the same hex doesn't re-fire the callback (and the parent's
+  // resulting state update) on every mousemove frame.
+  const hoveredKeyRef = useRef<string | null>(null);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -385,8 +484,22 @@ export const HexCanvas = forwardRef<
         setZoom(1);
         setPan({ x: canvas.width / 2 - basePixel.x, y: canvas.height / 2 - basePixel.y });
       },
+      getTileScreenPosition(coord: Axial) {
+        if (pan === null) return null;
+        const canvas = canvasRef.current;
+        if (!canvas) return null;
+        // pan/zoom operate in the canvas's own backing-buffer coordinate
+        // space (0,0 = the canvas element's own top-left corner) — but this
+        // is meant for viewport-fixed DOM overlays (TileActionRing), so it
+        // needs the canvas's own on-page offset added, or an overlay renders
+        // shifted by however far the canvas sits from the viewport origin
+        // (e.g. up and left, since the header above it pushes it down).
+        const rect = canvas.getBoundingClientRect();
+        const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
+        return { x: worldPixel.x * zoom + pan.x + rect.left, y: worldPixel.y * zoom + pan.y + rect.top };
+      },
     }),
-    [base],
+    [base, zoom, pan],
   );
 
   useEffect(() => {
@@ -430,17 +543,18 @@ export const HexCanvas = forwardRef<
         context.stroke();
       };
 
-      // Bottom-left corner badge for a structure's level (den/tower/barracks)
+      // Bottom-left corner badge for a structure's level (base/den/tower/barracks)
       // — the opposite corner from the garrison count badge (top-right,
       // further below), so the two never collide on a tile that has both.
-      // Always a black dot with a white number, regardless of whether the
-      // structure's own icon has loaded yet.
-      const drawLevelBadge = (screenCenter: { x: number; y: number }, level: number) => {
+      // A black dot with a white number by default, regardless of whether the
+      // structure's own icon has loaded yet — pass badgeColor to flag an
+      // available+affordable upgrade instead (UPGRADE_AVAILABLE_BADGE_COLOR).
+      const drawLevelBadge = (screenCenter: { x: number; y: number }, level: number, badgeColor: string = "#000000") => {
         const badgeX = screenCenter.x - size * 0.55;
         const badgeY = screenCenter.y + size * 0.55;
         context.beginPath();
         context.arc(badgeX, badgeY, size * 0.3, 0, Math.PI * 2);
-        context.fillStyle = "#000000";
+        context.fillStyle = badgeColor;
         context.fill();
         context.strokeStyle = "rgba(255, 255, 255, 0.6)";
         context.stroke();
@@ -449,6 +563,27 @@ export const HexCanvas = forwardRef<
         context.textAlign = "center";
         context.textBaseline = "middle";
         context.fillText(String(level), badgeX, badgeY);
+      };
+
+      // Bottom-right edge bar for anything with an HP/durability-style stat
+      // (base, outpost, wall) — "at a glance" on the map itself rather than
+      // requiring a click, red/orange/green banding matching how players
+      // already read health bars in most games (<30% / 30-60% / 60%+).
+      const drawHealthBar = (screenCenter: { x: number; y: number }, current: number, max: number) => {
+        if (max <= 0) return;
+        const fraction = Math.max(0, Math.min(1, current / max));
+        const barWidth = size * 0.75;
+        const barHeight = Math.max(3, size * 0.16);
+        const barX = screenCenter.x + size * 0.55 - barWidth / 2;
+        const barY = screenCenter.y + size * 0.55 - barHeight / 2;
+        const fillColor = fraction < 0.3 ? "#e74c3c" : fraction < 0.6 ? "#f39c12" : "#2ecc71";
+        context.fillStyle = "rgba(0, 0, 0, 0.6)";
+        context.fillRect(barX, barY, barWidth, barHeight);
+        context.fillStyle = fillColor;
+        context.fillRect(barX, barY, barWidth * fraction, barHeight);
+        context.strokeStyle = "rgba(255, 255, 255, 0.6)";
+        context.lineWidth = 1;
+        context.strokeRect(barX, barY, barWidth, barHeight);
       };
 
       // World-space visible rectangle, then converted to a row range and,
@@ -507,13 +642,18 @@ export const HexCanvas = forwardRef<
             drawHexTileOverlay(ctx, terrainImg, screenCenter.x, screenCenter.y - size, size * sqrt3, size * 2);
           }
 
-          // Placeholder for a future graphic overlay: a path tile covers the
-          // whole tile (it's not a decoration on top of the terrain), so it
-          // fully replaces the terrain fill here rather than just outlining it.
+          // A path tile covers the whole tile (it's not a decoration on top
+          // of the terrain), so it fully replaces the terrain fill here
+          // rather than just outlining it.
           const pathTile = pathTilesByKey.get(axialKey(coord));
           if (pathTile) {
             ctx.fillStyle = PATH_TIER_COLORS[pathTile.tier];
             ctx.fill();
+            const pathImg = getPathTileTexture(PATH_TIER_ICON_NAMES[pathTile.tier]);
+            if (pathImg) {
+              drawHexTileTexture(ctx, pathImg, screenCenter.x, screenCenter.y, size * sqrt3, size * 2);
+              drawHexTileOverlay(ctx, pathImg, screenCenter.x, screenCenter.y - size, size * sqrt3, size * 2);
+            }
           }
         }
       }
@@ -566,6 +706,10 @@ export const HexCanvas = forwardRef<
             ctx.fillStyle = GARRISON_RANGE_TINT_SELECTED;
             ctx.fill();
           }
+          if (buildModeEligibleKeys.has(coordKey)) {
+            ctx.fillStyle = BUILD_MODE_TINT;
+            ctx.fill();
+          }
 
           if (axialEquals(coord, base)) {
             const baseIcon = getStructureIconTexture("base");
@@ -585,6 +729,12 @@ export const HexCanvas = forwardRef<
               ctx.textBaseline = "middle";
               ctx.fillText("⌂", screenCenter.x, screenCenter.y);
             }
+            drawLevelBadge(
+              screenCenter,
+              baseLevel,
+              upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
+            );
+            drawHealthBar(screenCenter, baseCurrentHp, baseMaxHp);
           } else {
             const tower = towersByKey.get(axialKey(coord));
             const wall = wallsByKey.get(axialKey(coord));
@@ -613,6 +763,7 @@ export const HexCanvas = forwardRef<
                 ctx.textBaseline = "middle";
                 ctx.fillText("⌂", screenCenter.x, screenCenter.y);
               }
+              drawHealthBar(screenCenter, outpost.currentHp, outpostReinforcementHp(tweaks, outpost.reinforcementLevel));
             } else if (den) {
               if (den.siege) {
                 ctx.beginPath();
@@ -632,6 +783,9 @@ export const HexCanvas = forwardRef<
                 ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
                 ctx.stroke();
               }
+              // No badgeColor override here: a den's level is fixed at world-gen
+              // (see the upgradeAvailableKeys doc comment above) — never
+              // upgradeable, so it never gets the orange treatment.
               drawLevelBadge(screenCenter, den.level);
             } else if (tower) {
               if (activeTowerKeys.has(coordKey)) {
@@ -641,7 +795,9 @@ export const HexCanvas = forwardRef<
                 ctx.lineWidth = Math.max(2, size * 0.12);
                 ctx.stroke();
               }
-              const towerIcon = getStructureIconTexture("tower");
+              const towerIcon = tower.buildStartedAt
+                ? getStructureIconTexture("construction")
+                : getStructureIconTexture("tower");
               if (towerIcon) {
                 drawImageAtWidth(ctx, towerIcon, screenCenter.x, screenCenter.y, size * 1.2);
               } else {
@@ -652,9 +808,11 @@ export const HexCanvas = forwardRef<
                 ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
                 ctx.stroke();
               }
-              drawLevelBadge(screenCenter, tower.level);
+              drawLevelBadge(screenCenter, tower.level, upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined);
             } else if (barracks) {
-              const barracksIcon = getStructureIconTexture("barracks");
+              const barracksIcon = barracks.buildStartedAt
+                ? getStructureIconTexture("construction")
+                : getStructureIconTexture("barracks");
               if (barracksIcon) {
                 drawImageAtWidth(ctx, barracksIcon, screenCenter.x, screenCenter.y, size * 1.6);
               } else {
@@ -665,9 +823,15 @@ export const HexCanvas = forwardRef<
                 ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
                 ctx.stroke();
               }
-              drawLevelBadge(screenCenter, barracks.level);
+              drawLevelBadge(
+                screenCenter,
+                barracks.level,
+                upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
+              );
             } else if (wall) {
-              const wallIcon = getStructureIconTexture(WALL_TIER_ICON_NAMES[wall.tier]);
+              const wallIcon = wall.buildStartedAt
+                ? getStructureIconTexture("construction")
+                : getStructureIconTexture(WALL_TIER_ICON_NAMES[wall.tier]);
               if (wallIcon) {
                 drawImageAtWidth(ctx, wallIcon, screenCenter.x, screenCenter.y, size * 1.4);
               } else {
@@ -678,8 +842,11 @@ export const HexCanvas = forwardRef<
                 ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
                 ctx.stroke();
               }
+              drawHealthBar(screenCenter, wall.durability, maxWallDurability(tweaks, wall.tier));
             } else if (tile) {
-              const resourceImg = getResourceTexture(tile.resource);
+              const resourceImg = tile.buildStartedAt
+                ? getStructureIconTexture("construction")
+                : getResourceTexture(tile.resource);
               if (resourceImg) {
                 drawImageAtWidth(ctx, resourceImg, screenCenter.x, screenCenter.y, size * RESOURCE_ICON_SCALE[tile.resource]);
               } else {
@@ -689,6 +856,14 @@ export const HexCanvas = forwardRef<
                 ctx.fill();
                 ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
                 ctx.stroke();
+              }
+            } else if (pathTile && pathTile.buildStartedAt) {
+              // Path tiles otherwise have no persistent icon (just the tier
+              // color fill in pass 1) — this only ever fires while under
+              // construction, falling through to no marker at all once built.
+              const constructionIcon = getStructureIconTexture("construction");
+              if (constructionIcon) {
+                drawImageAtWidth(ctx, constructionIcon, screenCenter.x, screenCenter.y, size * 1.0);
               }
             } else if (dock) {
               const dockIcon = getStructureIconTexture("dock");
@@ -765,7 +940,7 @@ export const HexCanvas = forwardRef<
           if (expedition) {
             const expeditionIcon = getUnitIconTexture("expedition");
             if (expeditionIcon) {
-              drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size);
+              drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size * 2.0);
             } else {
               ctx.font = `${Math.max(10, size * 0.55)}px sans-serif`;
               ctx.textAlign = "center";
@@ -782,12 +957,30 @@ export const HexCanvas = forwardRef<
           if (denAssault) {
             const expeditionIcon = getUnitIconTexture("expedition");
             if (expeditionIcon) {
-              drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size);
+              drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size * 2.0);
             } else {
               ctx.font = `${Math.max(10, size * 0.55)}px sans-serif`;
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
               ctx.fillText("🎒", screenCenter.x, screenCenter.y);
+            }
+          }
+
+          // A tombstone marks where a party died mid-route (data/tombstones.ts)
+          // — purely informational (click-to-inspect via TilePopup), same
+          // top-layer transient-marker treatment as the scout skiff/wandering
+          // scout/expedition markers above. Expires on its own (App.tsx's
+          // tick loop), so this only ever draws while it's still fresh.
+          const tombstone = tombstonesByKey.get(coordKey);
+          if (tombstone) {
+            const tombstoneIcon = getUnitIconTexture("tombstone");
+            if (tombstoneIcon) {
+              drawImageAtWidth(ctx, tombstoneIcon, screenCenter.x, screenCenter.y, size * 1.2);
+            } else {
+              ctx.font = `${Math.max(10, size * 0.55)}px sans-serif`;
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText("🪦", screenCenter.x, screenCenter.y);
             }
           }
 
@@ -922,6 +1115,7 @@ export const HexCanvas = forwardRef<
     }
 
     draw();
+    if (pan !== null) onViewportChangeRef.current?.({ pan, zoom });
 
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(container);
@@ -955,6 +1149,11 @@ export const HexCanvas = forwardRef<
     denAssaultTargetKeys,
     denAssaultsByKey,
     relocationDestination,
+    baseLevel,
+    baseCurrentHp,
+    baseMaxHp,
+    upgradeAvailableKeys,
+    buildModeEligibleKeys,
     fogByKey,
     selected,
     playerColor,
@@ -980,13 +1179,77 @@ export const HexCanvas = forwardRef<
     setZoom(nextZoom);
   }
 
+  function pinchDistance(points: { x: number; y: number }[]): number {
+    return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+  }
+
+  function pinchMidpoint(points: { x: number; y: number }[]): { x: number; y: number } {
+    return { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 };
+  }
+
   function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     if (pan === null) return;
     (event.target as HTMLElement).setPointerCapture(event.pointerId);
-    dragRef.current = { startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y };
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (pointersRef.current.size >= 2) {
+      multiTouchRef.current = true;
+      dragRef.current = null;
+      const points = [...pointersRef.current.values()];
+      pinchRef.current = {
+        initialDistance: pinchDistance(points),
+        initialZoom: zoom,
+        initialMidpoint: pinchMidpoint(points),
+        initialPan: pan,
+      };
+    } else {
+      pinchRef.current = null;
+      dragRef.current = { startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y };
+    }
+  }
+
+  function handleHoverMove(event: React.PointerEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current;
+    if (!canvas || pan === null) return;
+    const rect = canvas.getBoundingClientRect();
+    const worldX = (event.clientX - rect.left - pan.x) / zoom;
+    const worldY = (event.clientY - rect.top - pan.y) / zoom;
+    const coord = pixelToAxial({ x: worldX, y: worldY }, BASE_HEX_SIZE);
+    const key = axialKey(coord);
+    if (key === hoveredKeyRef.current) return;
+    hoveredKeyRef.current = key;
+    onTileHoverRef.current?.(coord);
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
+    // A genuine hover — mouse, no button held, and not mid-pinch/drag from
+    // an earlier pointerdown — never advances past this branch: touch
+    // pointermove only ever fires while a finger is down (there's no touch
+    // hover), so this is unambiguously desktop mouse movement.
+    if (event.pointerType === "mouse" && event.buttons === 0 && !dragRef.current && !pinchRef.current) {
+      handleHoverMove(event);
+      return;
+    }
+
+    if (pointersRef.current.has(event.pointerId)) {
+      pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+
+    const pinch = pinchRef.current;
+    if (pinch && pointersRef.current.size >= 2) {
+      const points = [...pointersRef.current.values()];
+      const distance = pinchDistance(points);
+      if (distance <= 0 || pinch.initialDistance <= 0) return;
+
+      const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, pinch.initialZoom * (distance / pinch.initialDistance)));
+      const worldX = (pinch.initialMidpoint.x - pinch.initialPan.x) / pinch.initialZoom;
+      const worldY = (pinch.initialMidpoint.y - pinch.initialPan.y) / pinch.initialZoom;
+      const midpoint = pinchMidpoint(points);
+      setPan({ x: midpoint.x - worldX * nextZoom, y: midpoint.y - worldY * nextZoom });
+      setZoom(nextZoom);
+      return;
+    }
+
     const drag = dragRef.current;
     if (!drag) return;
     setPan({
@@ -996,9 +1259,46 @@ export const HexCanvas = forwardRef<
   }
 
   function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
+    // Covers pointerup/cancel/leave alike — leaving the canvas (mouse) or
+    // releasing (touch) both end whatever hover was in effect.
+    if (hoveredKeyRef.current !== null) {
+      hoveredKeyRef.current = null;
+      onTileHoverRef.current?.(null);
+    }
+    if (pan === null) return;
+    pointersRef.current.delete(event.pointerId);
+
+    if (pointersRef.current.size >= 2) {
+      // Still pinching with whichever pointers remain — re-anchor from here
+      // so the next move doesn't jump using a now-stale initial reading.
+      const points = [...pointersRef.current.values()];
+      pinchRef.current = {
+        initialDistance: pinchDistance(points),
+        initialZoom: zoom,
+        initialMidpoint: pinchMidpoint(points),
+        initialPan: pan,
+      };
+      return;
+    }
+
+    pinchRef.current = null;
+
+    if (pointersRef.current.size === 1) {
+      // Dropped from a pinch back down to one finger — resume as a fresh
+      // pan from here instead of jumping back to the pre-pinch drag origin.
+      const [remaining] = pointersRef.current.values();
+      dragRef.current = { startX: remaining.x, startY: remaining.y, panX: pan.x, panY: pan.y };
+      return;
+    }
+
+    // Every pointer is up — this is the only point a tap resolves into a
+    // tile click, and only if this whole gesture never went multi-touch
+    // (a pinch that happens to end back on one finger shouldn't select a tile).
     const drag = dragRef.current;
     dragRef.current = null;
-    if (!drag || pan === null) return;
+    const wasMultiTouch = multiTouchRef.current;
+    multiTouchRef.current = false;
+    if (!drag || wasMultiTouch) return;
 
     const movedDistance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
     if (movedDistance > CLICK_DRAG_THRESHOLD_PX) return;
@@ -1022,6 +1322,7 @@ export const HexCanvas = forwardRef<
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         style={{ display: "block", cursor: "grab", touchAction: "none" }}
       />
     </div>

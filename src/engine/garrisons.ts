@@ -2,9 +2,11 @@ import type { DenAssaultsRecord } from "../data/denAssaults";
 import type { ExpeditionsRecord } from "../data/expeditions";
 import type { Garrison, GarrisonsRecord } from "../data/garrisons";
 import type { GarrisonRecallsRecord } from "../data/garrisonRecalls";
+import type { LabAssaultsRecord } from "../data/labAssaults";
 import type { UnitsRecord } from "../data/units";
 import type { Wall } from "../data/walls";
 import type { Tweaks } from "../data/tweaksSchema";
+import { isStructureActive } from "./formulas";
 import { axialDistance, axialKey, type Axial } from "./hexCoords";
 
 /** Total militia currently committed to any in-transit expedition (src/data/expeditions.ts) — mirrors garrisonedMilitiaTotal's shape for the other place committed militia are "reserved." */
@@ -31,6 +33,19 @@ function denAssaultJunkyardKnightTotal(denAssaults: DenAssaultsRecord): number {
 
 function denAssaultCrossBowSniperTotal(denAssaults: DenAssaultsRecord): number {
   return denAssaults.reduce((sum, a) => sum + a.crossBowSniperCommitted, 0);
+}
+
+/** Same reasoning as denAssaultMilitiaTotal, for units committed to an in-transit lab assault (data/labAssaults.ts). */
+function labAssaultMilitiaTotal(labAssaults: LabAssaultsRecord): number {
+  return labAssaults.reduce((sum, a) => sum + a.militiaCommitted, 0);
+}
+
+function labAssaultJunkyardKnightTotal(labAssaults: LabAssaultsRecord): number {
+  return labAssaults.reduce((sum, a) => sum + a.junkyardKnightCommitted, 0);
+}
+
+function labAssaultCrossBowSniperTotal(labAssaults: LabAssaultsRecord): number {
+  return labAssaults.reduce((sum, a) => sum + a.crossBowSniperCommitted, 0);
 }
 
 /** Same reasoning as expeditionMilitiaTotal, for units marching home after a recall (data/garrisonRecalls.ts) — pulled off their garrison tile immediately, but not back in the available pool until the recall's timer resolves. */
@@ -80,6 +95,7 @@ export function availableMilitia(
   expeditions: ExpeditionsRecord,
   denAssaults: DenAssaultsRecord,
   garrisonRecalls: GarrisonRecallsRecord,
+  labAssaults: LabAssaultsRecord,
 ): number {
   return Math.max(
     0,
@@ -87,7 +103,8 @@ export function availableMilitia(
       garrisonedMilitiaTotal(garrisons) -
       expeditionMilitiaTotal(expeditions) -
       denAssaultMilitiaTotal(denAssaults) -
-      garrisonRecallMilitiaTotal(garrisonRecalls),
+      garrisonRecallMilitiaTotal(garrisonRecalls) -
+      labAssaultMilitiaTotal(labAssaults),
   );
 }
 
@@ -98,6 +115,7 @@ export function availableJunkyardKnights(
   expeditions: ExpeditionsRecord,
   denAssaults: DenAssaultsRecord,
   garrisonRecalls: GarrisonRecallsRecord,
+  labAssaults: LabAssaultsRecord,
 ): number {
   return Math.max(
     0,
@@ -105,7 +123,8 @@ export function availableJunkyardKnights(
       garrisonedJunkyardKnightTotal(garrisons) -
       expeditionJunkyardKnightTotal(expeditions) -
       denAssaultJunkyardKnightTotal(denAssaults) -
-      garrisonRecallJunkyardKnightTotal(garrisonRecalls),
+      garrisonRecallJunkyardKnightTotal(garrisonRecalls) -
+      labAssaultJunkyardKnightTotal(labAssaults),
   );
 }
 
@@ -116,6 +135,7 @@ export function availableCrossBowSnipers(
   expeditions: ExpeditionsRecord,
   denAssaults: DenAssaultsRecord,
   garrisonRecalls: GarrisonRecallsRecord,
+  labAssaults: LabAssaultsRecord,
 ): number {
   return Math.max(
     0,
@@ -123,7 +143,8 @@ export function availableCrossBowSnipers(
       garrisonedCrossBowSniperTotal(garrisons) -
       expeditionCrossBowSniperTotal(expeditions) -
       denAssaultCrossBowSniperTotal(denAssaults) -
-      garrisonRecallCrossBowSniperTotal(garrisonRecalls),
+      garrisonRecallCrossBowSniperTotal(garrisonRecalls) -
+      labAssaultCrossBowSniperTotal(labAssaults),
   );
 }
 
@@ -147,13 +168,13 @@ export function garrisonAttackPower(tweaks: Tweaks, garrison: Garrison): number 
   );
 }
 
-/** tweaks.walls.garrison_range_bonus_tiles if a non-damaged wall sits at `coord`, else 0 — shared by isHordeReachableFromGarrison and engine/hordes.ts:sniperDamagePerSecond. */
+/** tweaks.walls.garrison_range_bonus_tiles if an active wall (engine/formulas.ts:isStructureActive) sits at `coord`, else 0 — shared by isHordeReachableFromGarrison and engine/hordes.ts:sniperDamagePerSecond. */
 export function garrisonWallRangeBonus(tweaks: Tweaks, walls: Wall[], coord: Axial): number {
-  const wall = walls.find((w) => !w.damaged && axialKey(w.coord) === axialKey(coord));
+  const wall = walls.find((w) => isStructureActive(w) && axialKey(w.coord) === axialKey(coord));
   return wall ? tweaks.walls.garrison_range_bonus_tiles : 0;
 }
 
-/** A garrison can only strike a horde standing on its own tile or a directly adjacent one — extended by garrisonWallRangeBonus when the garrison is stationed on a non-damaged wall. */
+/** A garrison can only strike a horde standing on its own tile or a directly adjacent one — extended by garrisonWallRangeBonus when the garrison is stationed on an active wall. */
 export function isHordeReachableFromGarrison(tweaks: Tweaks, walls: Wall[], garrisonCoord: Axial, hordeCoord: Axial): boolean {
   return axialDistance(garrisonCoord, hordeCoord) <= 1 + garrisonWallRangeBonus(tweaks, walls, garrisonCoord);
 }

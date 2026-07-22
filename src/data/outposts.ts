@@ -16,11 +16,18 @@ import type { Tweaks } from "./tweaksSchema";
  * global base level as their upgrade ceiling — an outpost doesn't get
  * independent level progression, only its own HP.
  */
+/** Same shape as data/base.ts's BaseReinforcementAction — upgrade and repair share one in-progress slot. */
+export type OutpostReinforcementAction =
+  | { kind: "upgrade"; targetLevel: number; startedAt: number }
+  | { kind: "repair"; startedAt: number };
+
 export interface OutpostRecord {
   id: string;
   coord: Axial;
   reinforcementLevel: number;
   currentHp: number;
+  /** Set once a reinforcement upgrade or repair has been paid for but hasn't completed yet. */
+  reinforcementAction: OutpostReinforcementAction | null;
   convertedAt: number;
   /** The den's own level at the moment it was cleared — revertOutpostToDen's punishment is derived from this, not from whatever (unchanging) level the den happened to have. */
   originalDenLevel: number;
@@ -45,6 +52,7 @@ export function createOutpostFromDen(tweaks: Tweaks, den: DenRecord, virtualNow:
     coord: den.coord,
     reinforcementLevel,
     currentHp: outpostReinforcementHp(tweaks, reinforcementLevel),
+    reinforcementAction: null,
     convertedAt: virtualNow,
     originalDenLevel: den.level,
   };

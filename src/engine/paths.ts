@@ -2,7 +2,7 @@ import type { ExtractionTile } from "../data/extractionTiles";
 import type { PathTier, PathTile } from "../data/pathTiles";
 import type { ResourceType } from "../data/resources";
 import type { Tweaks } from "../data/tweaksSchema";
-import { formulaBCost, linearBuildCost } from "./formulas";
+import { formulaBCost, isStructureActive } from "./formulas";
 import { axialDistance, axialKey, axialNeighbors, type Axial } from "./hexCoords";
 import { terrainAt } from "./terrain";
 
@@ -20,18 +20,22 @@ export function nextPathTier(tier: PathTier): Exclude<PathTier, "goat_track"> | 
 }
 
 /**
- * Linear (not Formula A) build-count cost to build the Nth goat track (the
- * only path tier that's "built" rather than "upgraded") — same reasoning as
- * walls.slot_cost/wallBuildCost: infrastructure_paths.slot_cost already
- * discounts path tiles to encourage long connected chains, which Formula A's
- * compounding would otherwise undercut. See TWEAKS.md.
+ * Flat cost to build a goat track (the only path tier that's "built" rather
+ * than "upgraded") — no build-count scaling at all, not even the linear
+ * variant walls use. CORRECTION (2026-07-21, playtesting feedback): even
+ * linear per-additional-tile growth fights infrastructure_paths.slot_cost's
+ * whole point, which is to make long connected path chains (potentially
+ * dozens of tiles) viable — a network you're meant to build in bulk
+ * shouldn't get steadily more expensive per tile just for existing. See
+ * TWEAKS.md.
  */
-export function pathBuildCost(tweaks: Tweaks, n: number): Record<string, number> {
-  const cost: Record<string, number> = {};
-  for (const [res, amount] of Object.entries(tweaks.infrastructure_paths.goat_track.build_cost_base)) {
-    cost[res] = linearBuildCost(amount, n);
-  }
-  return cost;
+export function pathBuildCost(tweaks: Tweaks): Record<string, number> {
+  return { ...tweaks.infrastructure_paths.goat_track.build_cost_base };
+}
+
+/** Flat construction duration for a freshly-built goat_track — tweaks.jsonc infrastructure_paths.goat_track.build_time_minutes, distinct from upgrade_time_minutes_base. */
+export function pathBuildDurationMs(tweaks: Tweaks): number {
+  return tweaks.infrastructure_paths.goat_track.build_time_minutes * 60_000;
 }
 
 /**
@@ -90,7 +94,7 @@ export function transportRateMultiplier(tweaks: Tweaks, tier: PathTier): number 
  * there, per DESIGN.md §12's "not usable until repaired."
  */
 function findPathChainToBase(pathTiles: PathTile[], base: Axial, coord: Axial): Axial[] | null {
-  const pathTilesByKey = new Map(pathTiles.filter((tile) => !tile.damaged).map((tile) => [axialKey(tile.coord), tile]));
+  const pathTilesByKey = new Map(pathTiles.filter(isStructureActive).map((tile) => [axialKey(tile.coord), tile]));
   if (!pathTilesByKey.has(axialKey(coord))) return null;
 
   const cameFrom = new Map<string, Axial>();
@@ -149,9 +153,11 @@ export interface ResourceTileConnection {
  * If multiple connections are reachable, the first one found (by BFS order)
  * is used — not necessarily the fastest; a first-pass simplification.
  *
- * A `damaged` tile — the start tile itself, a path tile in the chain, or a
- * cluster member — never connects or propagates through, per DESIGN.md §12:
- * captured-but-unrepaired ground carries nothing.
+ * A non-functional tile (engine/formulas.ts:isStructureActive — damaged and
+ * not yet repaired, OR still under construction) — the start tile itself, a
+ * path tile in the chain, or a cluster member — never connects or
+ * propagates through, per DESIGN.md §12: captured-but-unrepaired ground
+ * carries nothing, and neither does ground that isn't finished being built.
  */
 export function findResourceTileConnection(
   extractionTiles: ExtractionTile[],
@@ -160,9 +166,9 @@ export function findResourceTileConnection(
   coord: Axial,
 ): ResourceTileConnection | null {
   const extractionTilesByKey = new Map(extractionTiles.map((tile) => [axialKey(tile.coord), tile]));
-  const pathTilesByKey = new Map(pathTiles.filter((tile) => !tile.damaged).map((tile) => [axialKey(tile.coord), tile]));
+  const pathTilesByKey = new Map(pathTiles.filter(isStructureActive).map((tile) => [axialKey(tile.coord), tile]));
   const startTile = extractionTilesByKey.get(axialKey(coord));
-  if (!startTile || startTile.damaged) return null;
+  if (!startTile || !isStructureActive(startTile)) return null;
 
   const visited = new Set<string>([axialKey(coord)]);
   const queue: Axial[] = [coord];
@@ -183,7 +189,7 @@ export function findResourceTileConnection(
       const key = axialKey(neighbor);
       if (visited.has(key)) continue;
       const neighborTile = extractionTilesByKey.get(key);
-      if (!neighborTile || neighborTile.damaged || neighborTile.resource !== startTile.resource) continue;
+      if (!neighborTile || !isStructureActive(neighborTile) || neighborTile.resource !== startTile.resource) continue;
       visited.add(key);
       queue.push(neighbor);
     }

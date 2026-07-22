@@ -6,7 +6,7 @@ import { tweaksSchema } from "../data/tweaksSchema";
 import type { DockRecord } from "../data/docks";
 import type { ResourceAmounts } from "../data/resources";
 import type { StorageLevels } from "../data/storageLevels";
-import { accrueDockResources, collectDock, dockYieldPerSecond } from "./docks";
+import { accrueDockResources, collectDock, dockBuildCost, dockBuildDurationMs, dockYieldPerSecond } from "./docks";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -16,6 +16,7 @@ function loadRealTweaks() {
 function dock(overrides: Partial<DockRecord> = {}): DockRecord {
   return {
     coord: { q: 0, r: 0 },
+    buildStartedAt: null,
     stockpile: 0,
     fishingBoat: false,
     fishingBoatUpgrade: null,
@@ -27,6 +28,25 @@ function dock(overrides: Partial<DockRecord> = {}): DockRecord {
 
 const ALL_L1_STORAGE: StorageLevels = { food: 1, wood: 1, stone: 1, steel: 1, power: 1 };
 const NO_RESOURCES: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0, power: 0 };
+
+describe("dockBuildCost", () => {
+  it("applies linear (not Formula A) build-count scaling to the wood base cost", () => {
+    const tweaks = loadRealTweaks();
+    const base = tweaks.docks.build_cost_base.wood;
+    expect(dockBuildCost(tweaks, 1).wood).toBeCloseTo(base);
+    expect(dockBuildCost(tweaks, 2).wood).toBeCloseTo(base * 1.1);
+    // Diverges hugely from Formula A's compounding by n=13: linear stays a
+    // gentle multiple of base, Formula A would've compounded to ~62,000 wood.
+    expect(dockBuildCost(tweaks, 13).wood).toBeCloseTo(base * (1 + 0.1 * 12));
+  });
+});
+
+describe("dockBuildDurationMs", () => {
+  it("is docks.build_time_minutes in milliseconds", () => {
+    const tweaks = loadRealTweaks();
+    expect(dockBuildDurationMs(tweaks)).toBe(tweaks.docks.build_time_minutes * 60_000);
+  });
+});
 
 describe("dockYieldPerSecond", () => {
   it("is yield_multiplier_vs_food_tile of the food extraction tile's base rate, without a fishing boat", () => {
@@ -96,6 +116,16 @@ describe("accrueDockResources", () => {
 
     const emptyResult = accrueDockResources(tweaks, [], NO_RESOURCES, 10, ALL_L1_STORAGE);
     expect(emptyResult.docks).toEqual([]);
+  });
+
+  it("yields nothing for a dock still under construction", () => {
+    const tweaks = loadRealTweaks();
+    const underConstruction = dock({ buildStartedAt: 1000 });
+
+    const result = accrueDockResources(tweaks, [underConstruction], NO_RESOURCES, 100, ALL_L1_STORAGE);
+
+    expect(result.resources.food).toBe(0);
+    expect(result.docks[0]).toEqual(underConstruction);
   });
 });
 

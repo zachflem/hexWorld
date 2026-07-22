@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
 import { axialDistance, axialKey, axialSpiral, isWithinMapBounds, mapCenter, type Axial } from "./hexCoords";
 import { terrainAt } from "./terrain";
-import { findExpeditionPath, findHordePath, terrainCost } from "./pathfinding";
+import { findExpeditionPath, findHordePath, findNearestHordeTarget, terrainCost } from "./pathfinding";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -134,5 +134,42 @@ describe("findExpeditionPath", () => {
     const allowedTiles = new Set<string>([axialKey(from)]);
     const result = findExpeditionPath(tweaks, seed, from, from, gridSize, allowedTiles);
     expect(result).toEqual({ path: [from], cost: 0 });
+  });
+});
+
+describe("findNearestHordeTarget", () => {
+  const seed = 3;
+  const gridSize = 128;
+  const from: Axial = findLandTile(seed, gridSize, mapCenter(gridSize), 0);
+  const near: Axial = findLandTile(seed, gridSize, from, 3, 20);
+  const far: Axial = findLandTile(seed, gridSize, from, 30);
+
+  it("picks whichever candidate is nearer by accumulated terrain cost", () => {
+    const tweaks = loadRealTweaks();
+    const result = findNearestHordeTarget(tweaks, seed, from, [far, near], gridSize);
+    expect(result).not.toBeNull();
+    expect(axialKey(result!.target)).toBe(axialKey(near));
+    expect(axialKey(result!.path[result!.path.length - 1])).toBe(axialKey(near));
+  });
+
+  it("matches findHordePath's path/cost when there's only one candidate", () => {
+    const tweaks = loadRealTweaks();
+    const direct = findHordePath(tweaks, seed, from, near, gridSize);
+    const single = findNearestHordeTarget(tweaks, seed, from, [near], gridSize);
+    expect(single?.path).toEqual(direct);
+  });
+
+  it("returns null when no candidate is reachable within the grid", () => {
+    const tweaks = loadRealTweaks();
+    const outOfBounds = { q: gridSize + 50, r: gridSize + 50 };
+    expect(findNearestHordeTarget(tweaks, seed, from, [outOfBounds], gridSize)).toBeNull();
+  });
+
+  it("returns the origin itself as target/path when it's one of the candidates", () => {
+    const tweaks = loadRealTweaks();
+    const result = findNearestHordeTarget(tweaks, seed, from, [from, far], gridSize);
+    expect(result).not.toBeNull();
+    expect(axialKey(result!.target)).toBe(axialKey(from));
+    expect(result!.path).toEqual([from]);
   });
 });

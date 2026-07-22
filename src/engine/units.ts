@@ -98,7 +98,7 @@ export function crossBowSniperDefensePower(tweaks: Tweaks, count: number): numbe
   return count * tweaks.units.cross_bow_sniper.defense_per_unit;
 }
 
-function totalUpkeepPerSecond(tweaks: Tweaks, units: UnitsRecord): number {
+export function totalUpkeepPerSecond(tweaks: Tweaks, units: UnitsRecord): number {
   const scoutPerMin = units.scoutStockpile * tweaks.units.scout.upkeep_food_per_min;
   const militiaPerMin = units.militiaCount * tweaks.units.militia.upkeep_food_per_min;
   const junkyardKnightPerMin = units.junkyardKnightCount * tweaks.units.junkyard_knight.upkeep_food_per_min;

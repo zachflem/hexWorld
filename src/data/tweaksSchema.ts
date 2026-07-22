@@ -65,6 +65,8 @@ export const tweaksSchema = z.object({
     }),
     tier_upgrade_time_minutes_base: z.number(),
     _tier_upgrade_time_note: z.string(),
+    build_time_minutes: z.number(),
+    _build_time_note: z.string(),
     food: extractionResourceSchema,
     wood: extractionResourceSchema,
     stone: extractionResourceSchema,
@@ -93,6 +95,7 @@ export const tweaksSchema = z.object({
   docks: z.object({
     build_cost_base: resourceCostMap,
     build_cost_scaling: z.string(),
+    build_time_minutes: z.number(),
     yield_multiplier_vs_food_tile: z.number(),
     fishing_boat: z.object({
       cost: resourceCostMap,
@@ -110,6 +113,8 @@ export const tweaksSchema = z.object({
   towers: z.object({
     build_cost_base: resourceCostMap,
     build_cost_scaling: z.string(),
+    build_time_minutes: z.number(),
+    _build_time_note: z.string(),
     base_range_tiles: z.number(),
     range_per_level: z.number(),
     base_damage: z.number(),
@@ -128,6 +133,8 @@ export const tweaksSchema = z.object({
     tiers: z.array(z.string()),
     build_cost_base: resourceCostMap,
     build_cost_scaling: z.string(),
+    build_time_minutes: z.number(),
+    _build_time_note: z.string(),
     durability_hits_to_break: numberRecord,
     damage_taken_base_per_tier: numberRecord,
     _damage_taken_note: z.string().optional(),
@@ -156,6 +163,8 @@ export const tweaksSchema = z.object({
     _status: z.string(),
     build_cost_base: resourceCostMap,
     build_cost_scaling: z.string(),
+    build_time_minutes: z.number(),
+    _build_time_note: z.string(),
     upgrade_cost_base: resourceCostMap,
     upgrade_cost_scaling: z.string(),
     upgrade_tech_progression: stringArrayRecord,
@@ -229,6 +238,8 @@ export const tweaksSchema = z.object({
     goat_track: z.object({
       build_cost_base: resourceCostMap,
       build_cost_scaling: z.string(),
+      build_time_minutes: z.number(),
+      _build_time_note: z.string(),
       noise_build: z.number(),
     }),
     stone_road: infrastructureUpgradeTierSchema,
@@ -253,6 +264,7 @@ export const tweaksSchema = z.object({
     _tile_stockpile_note: z.string(),
     upgrade_cost_scaling: z.string(),
     upgrade_cost_base: z.record(z.string(), resourceCostMap),
+    upgrade_time_minutes_base: z.number(),
   }),
 
   base_upgrades: z.object({
@@ -276,6 +288,8 @@ export const tweaksSchema = z.object({
     max_reinforcement_level_equals_base_level: z.boolean(),
     cost_base: resourceCostMap,
     cost_scaling: z.string(),
+    upgrade_time_minutes_base: z.number(),
+    seconds_per_missing_hp: z.number(),
   }),
 
   base_relocation: z.object({
@@ -297,7 +311,20 @@ export const tweaksSchema = z.object({
     _status: z.string(),
     provisions_food_per_unit_per_cost: z.number(),
     travel_seconds_per_cost: z.number(),
+    tombstone_lifetime_minutes: z.number(),
     _note: z.string(),
+  }),
+
+  research: z.object({
+    _status: z.string(),
+    troop_speed: z.object({
+      tier_2: z.object({ multiplier: z.number(), cost: resourceCostMap, duration_minutes: z.number() }),
+      tier_3: z.object({ multiplier: z.number(), cost: resourceCostMap, duration_minutes: z.number() }),
+    }),
+    game_speed: z.object({
+      tier_2: z.object({ rate: z.number(), cost: resourceCostMap, duration_minutes: z.number() }),
+      tier_3: z.object({ rate: z.number(), cost: resourceCostMap, duration_minutes: z.number() }),
+    }),
   }),
 
   noise: z.object({
@@ -366,6 +393,8 @@ export const tweaksSchema = z.object({
       base_hp: z.number(),
       hp_gain_per_level: z.number(),
       cost_base: resourceCostMap,
+      upgrade_time_minutes_base: z.number(),
+      seconds_per_missing_hp: z.number(),
     }),
   }),
 
@@ -412,7 +441,14 @@ export const tweaksSchema = z.object({
       resource_loss: z.string(),
       building_state: z.string(),
       repair_cost_pct_of_original_build: z.number(),
+      repair_time_minutes: z.number(),
     }),
+  }),
+
+  lab: z.object({
+    _status: z.string(),
+    min_distance_from_base: z.number(),
+    guardian_defense: z.number(),
   }),
 
   lab_clues: z.object({

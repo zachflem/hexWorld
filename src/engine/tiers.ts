@@ -57,3 +57,8 @@ export function tierUpgradeDurationMs(tweaks: Tweaks, targetTier: ExtractionTier
   const targetLevel = TIER_LEVEL[targetTier];
   return tweaks.extraction_tiles.tier_upgrade_time_minutes_base * targetLevel * 60_000;
 }
+
+/** Flat construction duration for a freshly-built (always small-tier) extraction tile — tweaks.jsonc extraction_tiles.build_time_minutes. */
+export function extractionTileBuildDurationMs(tweaks: Tweaks): number {
+  return tweaks.extraction_tiles.build_time_minutes * 60_000;
+}

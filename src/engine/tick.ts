@@ -8,6 +8,7 @@ import { isTransitionTile, terrainAt } from "./terrain";
 import { tierYieldMultiplier } from "./tiers";
 import { storageCapacity } from "./storage";
 import { findResourceTileConnection, throughputMultiplierForChain, transportRateMultiplier } from "./paths";
+import { isStructureActive } from "./formulas";
 
 /**
  * Resource units generated per real second by one extraction tile, given its
@@ -59,7 +60,7 @@ export function accrueResources(
   const tileStockpileCap = tweaks.storage.capacity_base_per_resource;
 
   let workingTiles = tiles.map((tile) => {
-    if (tile.damaged) return tile;
+    if (!isStructureActive(tile)) return tile;
     const rate = yieldPerSecond(tweaks, tile, seed);
     const stockpile = Math.min(tileStockpileCap, tile.stockpile + rate * elapsedSeconds);
     return { ...tile, stockpile };
@@ -69,7 +70,7 @@ export function accrueResources(
   let nextResources = { ...resources };
   for (const hubCoord of hubCoords) {
     workingTiles = workingTiles.map((tile) => {
-      if (tile.damaged) return tile;
+      if (!isStructureActive(tile)) return tile;
       const key = axialKey(tile.coord);
       if (claimed.has(key)) return tile;
 

@@ -7,6 +7,7 @@ import type { DenAssaultRecord, DenAssaultsRecord } from "../data/denAssaults";
 import type { Expedition, ExpeditionsRecord } from "../data/expeditions";
 import type { Garrison, GarrisonsRecord } from "../data/garrisons";
 import type { GarrisonRecallRecord, GarrisonRecallsRecord } from "../data/garrisonRecalls";
+import type { LabAssaultRecord, LabAssaultsRecord } from "../data/labAssaults";
 import type { UnitsRecord } from "../data/units";
 import type { Wall } from "../data/walls";
 import { tweaksSchema } from "../data/tweaksSchema";
@@ -44,6 +45,7 @@ function makeExpedition(overrides: Partial<Expedition> = {}): Expedition {
     crossBowSniperCommitted: 0,
     departedAt: 0,
     arriveAt: 0,
+    resolvedIndex: 0,
     ...overrides,
   };
 }
@@ -59,6 +61,22 @@ function makeDenAssault(overrides: Partial<DenAssaultRecord> = {}): DenAssaultRe
     crossBowSniperCommitted: 0,
     departedAt: 0,
     arriveAt: 0,
+    resolvedIndex: 0,
+    ...overrides,
+  };
+}
+
+function makeLabAssault(overrides: Partial<LabAssaultRecord> = {}): LabAssaultRecord {
+  return {
+    id: "labAssault-test",
+    target: { q: 9, r: 9 },
+    path: [],
+    militiaCommitted: 0,
+    junkyardKnightCommitted: 0,
+    crossBowSniperCommitted: 0,
+    departedAt: 0,
+    arriveAt: 0,
+    resolvedIndex: 0,
     ...overrides,
   };
 }
@@ -111,34 +129,40 @@ describe("garrisonedMilitiaTotal / availableMilitia", () => {
 
   it("subtracts every garrison's militia from the standing army total", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { militiaCount: 4 })];
-    expect(availableMilitia(units({ militiaCount: 10 }), garrisons, [], [], [])).toBe(6);
+    expect(availableMilitia(units({ militiaCount: 10 }), garrisons, [], [], [], [])).toBe(6);
   });
 
   it("never goes negative, even if garrisons somehow exceed the total (defensive floor)", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { militiaCount: 20 })];
-    expect(availableMilitia(units({ militiaCount: 10 }), garrisons, [], [], [])).toBe(0);
+    expect(availableMilitia(units({ militiaCount: 10 }), garrisons, [], [], [], [])).toBe(0);
   });
 
   it("also subtracts militia committed to any pending expedition", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { militiaCount: 4 })];
     const expeditions: ExpeditionsRecord = [makeExpedition({ militiaCommitted: 3 })];
-    expect(availableMilitia(units({ militiaCount: 10 }), garrisons, expeditions, [], [])).toBe(3);
+    expect(availableMilitia(units({ militiaCount: 10 }), garrisons, expeditions, [], [], [])).toBe(3);
   });
 
   it("never goes negative when garrison + expedition commitments exceed the total", () => {
     const expeditions: ExpeditionsRecord = [makeExpedition({ militiaCommitted: 20 })];
-    expect(availableMilitia(units({ militiaCount: 10 }), [], expeditions, [], [])).toBe(0);
+    expect(availableMilitia(units({ militiaCount: 10 }), [], expeditions, [], [], [])).toBe(0);
   });
 
   it("also subtracts militia committed to any pending den assault", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { militiaCount: 4 })];
     const denAssaults: DenAssaultsRecord = [makeDenAssault({ militiaCommitted: 3 })];
-    expect(availableMilitia(units({ militiaCount: 10 }), garrisons, [], denAssaults, [])).toBe(3);
+    expect(availableMilitia(units({ militiaCount: 10 }), garrisons, [], denAssaults, [], [])).toBe(3);
   });
 
   it("also subtracts militia marching home after a recall, not yet arrived", () => {
     const garrisonRecalls: GarrisonRecallsRecord = [makeGarrisonRecall({ militiaCommitted: 3 })];
-    expect(availableMilitia(units({ militiaCount: 10 }), [], [], [], garrisonRecalls)).toBe(7);
+    expect(availableMilitia(units({ militiaCount: 10 }), [], [], [], garrisonRecalls, [])).toBe(7);
+  });
+
+  it("also subtracts militia committed to any pending lab assault", () => {
+    const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { militiaCount: 4 })];
+    const labAssaults: LabAssaultsRecord = [makeLabAssault({ militiaCommitted: 3 })];
+    expect(availableMilitia(units({ militiaCount: 10 }), garrisons, [], [], [], labAssaults)).toBe(3);
   });
 });
 
@@ -153,24 +177,30 @@ describe("garrisonedJunkyardKnightTotal / availableJunkyardKnights", () => {
 
   it("subtracts garrisoned junkyard knights from the standing army total", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { junkyardKnightCount: 4 })];
-    expect(availableJunkyardKnights(units({ junkyardKnightCount: 10 }), garrisons, [], [], [])).toBe(6);
+    expect(availableJunkyardKnights(units({ junkyardKnightCount: 10 }), garrisons, [], [], [], [])).toBe(6);
   });
 
   it("also subtracts junkyard knights committed to any pending expedition", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { junkyardKnightCount: 4 })];
     const expeditions: ExpeditionsRecord = [makeExpedition({ junkyardKnightCommitted: 2 })];
-    expect(availableJunkyardKnights(units({ junkyardKnightCount: 10 }), garrisons, expeditions, [], [])).toBe(4);
+    expect(availableJunkyardKnights(units({ junkyardKnightCount: 10 }), garrisons, expeditions, [], [], [])).toBe(4);
   });
 
   it("also subtracts junkyard knights committed to any pending den assault", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { junkyardKnightCount: 4 })];
     const denAssaults: DenAssaultsRecord = [makeDenAssault({ junkyardKnightCommitted: 2 })];
-    expect(availableJunkyardKnights(units({ junkyardKnightCount: 10 }), garrisons, [], denAssaults, [])).toBe(4);
+    expect(availableJunkyardKnights(units({ junkyardKnightCount: 10 }), garrisons, [], denAssaults, [], [])).toBe(4);
   });
 
   it("also subtracts junkyard knights marching home after a recall, not yet arrived", () => {
     const garrisonRecalls: GarrisonRecallsRecord = [makeGarrisonRecall({ junkyardKnightCommitted: 2 })];
-    expect(availableJunkyardKnights(units({ junkyardKnightCount: 10 }), [], [], [], garrisonRecalls)).toBe(8);
+    expect(availableJunkyardKnights(units({ junkyardKnightCount: 10 }), [], [], [], garrisonRecalls, [])).toBe(8);
+  });
+
+  it("also subtracts junkyard knights committed to any pending lab assault", () => {
+    const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { junkyardKnightCount: 4 })];
+    const labAssaults: LabAssaultsRecord = [makeLabAssault({ junkyardKnightCommitted: 2 })];
+    expect(availableJunkyardKnights(units({ junkyardKnightCount: 10 }), garrisons, [], [], [], labAssaults)).toBe(4);
   });
 });
 
@@ -185,24 +215,30 @@ describe("garrisonedCrossBowSniperTotal / availableCrossBowSnipers", () => {
 
   it("subtracts garrisoned cross-bow snipers from the standing army total", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { crossBowSniperCount: 4 })];
-    expect(availableCrossBowSnipers(units({ crossBowSniperCount: 10 }), garrisons, [], [], [])).toBe(6);
+    expect(availableCrossBowSnipers(units({ crossBowSniperCount: 10 }), garrisons, [], [], [], [])).toBe(6);
   });
 
   it("also subtracts cross-bow snipers committed to any pending expedition", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { crossBowSniperCount: 4 })];
     const expeditions: ExpeditionsRecord = [makeExpedition({ crossBowSniperCommitted: 1 })];
-    expect(availableCrossBowSnipers(units({ crossBowSniperCount: 10 }), garrisons, expeditions, [], [])).toBe(5);
+    expect(availableCrossBowSnipers(units({ crossBowSniperCount: 10 }), garrisons, expeditions, [], [], [])).toBe(5);
   });
 
   it("also subtracts cross-bow snipers committed to any pending den assault", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { crossBowSniperCount: 4 })];
     const denAssaults: DenAssaultsRecord = [makeDenAssault({ crossBowSniperCommitted: 1 })];
-    expect(availableCrossBowSnipers(units({ crossBowSniperCount: 10 }), garrisons, [], denAssaults, [])).toBe(5);
+    expect(availableCrossBowSnipers(units({ crossBowSniperCount: 10 }), garrisons, [], denAssaults, [], [])).toBe(5);
   });
 
   it("also subtracts cross-bow snipers marching home after a recall, not yet arrived", () => {
     const garrisonRecalls: GarrisonRecallsRecord = [makeGarrisonRecall({ crossBowSniperCommitted: 1 })];
-    expect(availableCrossBowSnipers(units({ crossBowSniperCount: 10 }), [], [], [], garrisonRecalls)).toBe(9);
+    expect(availableCrossBowSnipers(units({ crossBowSniperCount: 10 }), [], [], [], garrisonRecalls, [])).toBe(9);
+  });
+
+  it("also subtracts cross-bow snipers committed to any pending lab assault", () => {
+    const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { crossBowSniperCount: 4 })];
+    const labAssaults: LabAssaultsRecord = [makeLabAssault({ crossBowSniperCommitted: 1 })];
+    expect(availableCrossBowSnipers(units({ crossBowSniperCount: 10 }), garrisons, [], [], [], labAssaults)).toBe(5);
   });
 });
 

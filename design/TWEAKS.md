@@ -37,7 +37,9 @@ Example — towers (base 300 wood + 150 stone):
 
 **Why:** stops players from spamming one structure type infinitely cheaply. Each additional one is a bigger commitment.
 
-**Exception — walls and goat tracks:** both use a *linear* variant instead, `cost_n = base_cost × (1.0 + 0.1 × (n-1))` (same 10%-per-structure rate, but always against the base cost rather than compounding onto the previous one's already-scaled cost). Formula A's full compounding pushed an 8th wall to ~10x base cost, directly undermining `walls.slot_cost`/`infrastructure_paths.slot_cost` — both added specifically to make dense wall lines and long path chains viable (see Walls and Infrastructure Paths, below) — cheap early defenses and automation matter more than punishing bulk-building either. See `engine/formulas.ts:linearBuildCost`.
+**Exception — walls and docks:** both use a *linear* variant instead, `cost_n = base_cost × (1.0 + 0.1 × (n-1))` (same 10%-per-structure rate, but always against the base cost rather than compounding onto the previous one's already-scaled cost). Formula A's full compounding pushed an 8th wall to ~10x base cost and a 13th dock to ~62,000 wood (CORRECTION, 2026-07-21 playtesting feedback: "60k wood for one dock") — directly undermining `walls.slot_cost` (dense wall lines) and just making docks unaffordable past a handful. See `engine/formulas.ts:linearBuildCost`.
+
+**Exception — goat tracks:** flat cost, no build-count scaling at all — `cost_n = base_cost`, every time. CORRECTION (2026-07-21, playtesting feedback): even the linear variant above still fought `infrastructure_paths.slot_cost`'s whole point (long connected path chains, built in bulk, are meant to be cheap) — see Infrastructure Paths, below.
 
 ### Formula B — "Tier Upgrade Scaling"
 **Used for:** levelling up *one existing structure* (a tower going L1→L2, a wall going wood→rock, a storage skill going up a level, base level, base reinforcement).
@@ -124,7 +126,8 @@ Added during playtesting — not in the original design pass, see `DESIGN.md` §
 
 **Dock:**
 - **Placement:** a water tile bordering land (`engine/terrain.ts:isTransitionTile` true on a water coord), and the water tile itself must be owned **or** scouted — not full ownership like every other structure, since ordinary land-adjacency territory growth never reaches open water on its own.
-- **Build cost:** Formula A, 200 wood base for the first dock.
+- **Build cost:** Linear build-count scaling, not Formula A (200 wood base) — `cost_n = 200 × (1 + 0.1×(n-1))`. CORRECTION (2026-07-21, playtesting feedback: "60k wood for one dock" — Formula A's compounding pushed a 13th dock to ~62,000 wood) — switched to the same linear scaling walls/goat tracks already use, same reasoning as the walls exception above.
+- **Build time:** 3-minute construction timer (`dockBuildDurationMs`, `engine/docks.ts`) — CORRECTION (2026-07-21, playtesting feedback): docks previously had no construction timer at all, unlike every other structure; a dock now yields nothing until this timer elapses, same "under construction" treatment as a tower/wall/barracks.
 - **Yield:** `yield_multiplier_vs_food_tile` (0.7) × the food extraction tile's own small-tier rate — so a dock without a fishing boat produces 70% of a small food tile's yield. Deliberately **not** also halved by the transition-tile rule (Extraction Tiles/Transition Tiles, above) — a dock sits on transition water by definition, so 0.7× is already its full intended rate.
 - **No path connection:** deposits straight into base food storage every tick (capped by the storage skill, same as anywhere else) — paths can't cross water, so there's no "connected vs. unconnected" state the way a land extraction tile has. No tiers either.
 - **No `damaged` state:** immune to horde capture (hordes can't reach water tiles), so it never needs repair.
@@ -143,7 +146,7 @@ Added during playtesting — not in the original design pass, see `DESIGN.md` §
 
 **Wandering Scout (land counterpart, trained at a Barracks):**
 - Capped at `units.wandering_scout.max_per_barracks` (1) per barracks. Costs `scout_cost` (10) regular scouts retired from the stockpile **plus** a resource cost (150 wood + 75 stone) and a 10-minute build timer — added 2026-07-20 balance pass, same overpowered-for-its-cost reasoning as the Scout Skiff (previously scouts-only, no resource price, instant).
-- Same movement rule as the Scout Skiff (one tile per `seconds_per_step` = 10s, excludes its last tile when another option exists), except confined to non-water terrain instead of water. Doesn't move (or scout) until its build timer completes.
+- Same movement rule as the Scout Skiff (one tile per `seconds_per_step`, excludes its last tile when another option exists), except confined to non-water terrain instead of water. Doesn't move (or scout) until its build timer completes. Moves twice as fast as the Scout Skiff — `seconds_per_step` halved from 10s to 5s (2026-07-21 playtest pass: felt static next to the skiff) — every other stat (cost, cap, build timer) is identical between the two.
 - Noise: build 8 (`build_wandering_scout`).
 
 ---
@@ -217,16 +220,20 @@ A tile-based structure (exclusive with extraction tiles, paths, towers, and wall
 - Trained at a barracks for a flat cost: 30 food + 20 wood. No Formula A scaling — this replaces the old design's per-scout cost that scaled with the target tile's level.
 - Stockpiled up to scout capacity.
 - Spending one on an unowned tile reveals it permanently — a new "scouted" fog tier, distinct from both owned and the distance-based hidden/light/heavy tiers introduced in Milestone 2. Scouting doesn't upgrade an already-owned tile's fog tier. Only tiles adjacent to owned territory or an already-scouted tile can be targeted (`engine/territory.ts:isTileScoutable`) — knowledge has to spread outward from your footprint, matching the adjacency rule attack gating uses (Territory Expansion / Tile Assault, Milestone 10), rather than letting scouts jump to arbitrary distant tiles. A scouted tile's own fog-clearing halo (§6/Milestone 10) is roll-off only — heavy/light shading, never a fully-clear plateau — identical to how an owned tile's halo behaves; only the literal owned or scouted tile itself is ever fully clear, so this doesn't become a way to "see" far ahead of your actual claimed ground. The connecting owned/scouted tile must also be **land** — there's no water-capable unit (yet), so a scout can survey the water tile at a shoreline (adjacent to land you know) but can't chain further out hop-by-hop across open water; a water tile can never itself anchor the next scout.
-- Costs food upkeep even while just sitting in the stockpile, unspent: 1 food/min per stockpiled scout.
+- Costs food upkeep even while just sitting in the stockpile, unspent: 7 food/min per stockpiled scout.
 
 **Militia — standing army:**
 - Trained at a barracks for a flat, cheaper cost: 15 food + 10 wood.
 - Not consumed on use — stands indefinitely once trained, up to militia capacity.
-- Upkeep: 0.5 food/min per militia, continuously, for as long as it stands.
+- Upkeep: 3.5 food/min per militia, continuously, for as long as it stands.
 - **Attack:** `militia_count × 2` (attack_per_unit) — this is the assault power used both to claim unowned tiles (Milestone 10) and against zombie dens (Milestone 14), resolving the previously-undefined "assault stats vs den defense" formula.
 - **Defense:** `militia_count × 2` (defense_per_unit) — contributes to base last-stand defense alongside base reinforcement HP (Milestone 12).
 
-**Upkeep and desertion:** every tick, total upkeep (stockpiled scouts + standing militia, summed) is deducted from food. If food can't cover it for that tick's elapsed time, food clamps to 0 and exactly one unit deserts — militia preferred over scouts, since scouts are the cheaper/rarer resource investment to lose. A simple first-pass penalty, not proportional to the shortfall size.
+**Upkeep and desertion:** every tick, total upkeep (stockpiled scouts + standing militia + junkyard knights + cross-bow snipers, summed) is deducted from food. If food can't cover it for that tick's elapsed time, food clamps to 0 and exactly one unit deserts — cheapest-upkeep unit preferred, else a scout. A simple first-pass penalty, not proportional to the shortfall size.
+
+**CORRECTION (2026-07-21 balance pass, playtesting feedback):** food reserves sat permanently full at the original upkeep rates — a single small grassland food tile alone yields ~2.25 food/sec, while even a 20-30 unit standing army cost only ~0.3-0.6 food/sec total upkeep, two orders of magnitude below what one tile produces. `upkeep_food_per_min` raised roughly 10x across all four unit types: scout 1→10, militia 0.5→5, junkyard_knight 0.8→8, cross_bow_sniper 1→10 (`public/tweaks.jsonc`) — a moderate standing army's upkeep is now the same order of magnitude as a food tile or two, not negligible next to it.
+
+**CORRECTION 2 (2026-07-21, same-day follow-up, playtesting feedback: 10x read as too aggressive in play):** walked back to roughly 7x the original rates — scout 10→7, militia 5→3.5, junkyard_knight 8→5.5, cross_bow_sniper 10→7. Still a real ongoing drain, just less punishing than the initial pass. First pass at these numbers, still subject to further tuning.
 
 **Noise:** build noise 20 (`build_barracks`, same weight as a wall or extraction tile). Upgrade noise reuses `upgrade_extraction_tile` (10), same generic "any structure tier-up" value as towers and walls. Training a scout or militia unit makes a small amount of noise too (3 each, `train_scout`/`train_militia`) — a person joining or leaving camp, not construction. Scouting a tile generates no noise at all (it's a stealth reveal, not an action at the target site). First pass, untested.
 
@@ -264,7 +271,7 @@ Automate resource transport from a claimed extraction tile back to base. **Entir
 
 **Tiers:** manual → goat track → stone road → highway.
 
-- **Goat track:** a worn dirt path. Costs **food**, not building materials — you're feeding the people walking it, not paying for construction. Base cost: 100 food. Linear build-count scaling applies per additional goat track built (not Formula A — see the exception note above), `cost_n = 100 × (1 + 0.1×(n-1))`.
+- **Goat track:** a worn dirt path. Costs **food**, not building materials — you're feeding the people walking it, not paying for construction. Flat cost: 100 food, every time — **no build-count scaling at all**, not even the linear variant. CORRECTION (2026-07-21, playtesting feedback): paths are meant to be built in bulk to form long connected chains (`infrastructure_paths.slot_cost` already discounts them to 0.1 of a build slot for exactly this reason) — even 10%-per-tile linear growth undermined that, making a 50-tile network cost far more than 50× the base price.
 - **Stone road:** upgrade from goat track. Costs food + stone (Formula B).
 - **Highway:** upgrade from stone road. Costs food + stone + steel (Formula B).
 
@@ -452,6 +459,14 @@ A converted den becomes a second, independent economic/defensive hub — a real 
 - **Loss condition:** an outpost overrun by a horde does **not** end the game — `revertOutpostToDen` reverts it to a hostile den at `max(1, originalDenLevel - 1)` (a real setback, but not harder to re-clear than the original siege) and it has to be sieged again from scratch. See Horde System, above, for how `HordeHub` generalizes the base's loss-condition check to cover every live outpost too.
 
 ---
+
+## Hidden Lab — Placement & Guardian (Milestone 15)
+
+*First pass, untested — new system (2026-07-21).*
+
+- **Placement:** one fixed tile, deterministic per world seed (`data/lab.ts:createLab`, same spiral-candidate-then-pick shape as `createDens`), never on water, at least `lab.min_distance_from_base` (20) tiles out — farther than any den ever spawns (`dens.min_distance_from_base` is 14), so the lab reads as the map's ultimate destination rather than something found incidentally early on.
+- **Guardian:** a single static defense value (`lab.guardian_defense`, 300) — doesn't scale with anything, unlike a den's level-based defense. Securing it is an all-or-nothing fight exactly like a regular expedition or tile attack (not a den assault's proportional-attrition shape, and no siege/hold period) — win and the whole party comes home, lab secured for good; lose and the whole committed party is gone, guardian unchanged, retry any time.
+- **Win condition:** securing the lab is the *entire* win condition (DESIGN.md §13) — clearing dens is never required. A player who finds and secures the lab without ever touching a den still wins. Den-clearing stays valuable for its own reasons (guaranteed clue below, outposts, economy, army size) but doesn't gate the win screen.
 
 ## Hidden Lab — Rumor/Clue System
 

@@ -2,6 +2,24 @@ import type { ResourceType } from "../data/resources";
 import type { Tweaks } from "../data/tweaksSchema";
 
 /**
+ * A structure counts as functional (yields resources, defends, trains,
+ * claims viewshed, contributes noise, ...) only once it's both been
+ * reclaimed/repaired after horde capture (`damaged`) AND finished its
+ * initial construction timer (`buildStartedAt`) — the exact same "present on
+ * the tile but not doing anything yet" shape either way. Shared by every
+ * engine function that used to gate on `damaged` alone; each of those sites
+ * now checks this instead, so a not-yet-built structure behaves identically
+ * to a damaged one everywhere that mattered before construction timers
+ * existed. Deliberately NOT used by markCapturedStructuresDamaged
+ * (engine/hordes.ts, unrelated to construction) or the damage-repair gate in
+ * App.tsx:handleRepairStructure (checks `damaged` alone — a mid-construction
+ * structure that gets horde-captured still needs repairing, not rebuilding).
+ */
+export function isStructureActive(structure: { damaged: boolean; buildStartedAt?: number | null }): boolean {
+  return !structure.damaged && !structure.buildStartedAt;
+}
+
+/**
  * Formula A — "Build Count Scaling" (TWEAKS.md).
  * Cost of the Nth structure of a kind: cost_1 = base, cost_n = cost_(n-1) * (1 + 0.1*(n-1)).
  */
@@ -122,6 +140,16 @@ export function repairCost(
     cost[res as ResourceType] = (amount ?? 0) * pct;
   }
   return cost;
+}
+
+/**
+ * Flat repair duration for a horde-captured structure (extraction tile,
+ * path, tower, wall, or barracks) — unlike wallRepairDurationMs's
+ * missing-HP scaling, the `damaged` flag this clears is boolean, not
+ * graded, so there's no severity to scale against.
+ */
+export function structureRepairDurationMs(tweaks: Tweaks): number {
+  return tweaks.horde.territory_disconnection.repair_time_minutes * 60 * 1000;
 }
 
 /**

@@ -3,18 +3,19 @@ import type { DenRecord, DensRecord } from "../data/dens";
 import type { ExtractionTile } from "../data/extractionTiles";
 import type { Garrison, GarrisonsRecord } from "../data/garrisons";
 import type { HordeRecord, HordesRecord } from "../data/hordes";
+import type { OutpostsRecord } from "../data/outposts";
 import type { PathTile } from "../data/pathTiles";
 import type { TerritoryRecord } from "../data/territory";
 import type { Tower } from "../data/towers";
 import type { Tweaks } from "../data/tweaksSchema";
 import type { UnitsRecord } from "../data/units";
 import type { Wall } from "../data/walls";
-import { structureHp } from "./formulas";
+import { isStructureActive, structureHp } from "./formulas";
 import { garrisonAt, garrisonAttackPower, garrisonDefense, garrisonWallRangeBonus, isHordeReachableFromGarrison } from "./garrisons";
 import { axialDistance, axialKey, type Axial } from "./hexCoords";
 import { seededRandom } from "./noise";
 import { noiseCap } from "./noiseMeter";
-import { findHordePath } from "./pathfinding";
+import { findNearestHordeTarget } from "./pathfinding";
 import { towerDamage, towerRange, zombiesKilledPerTick } from "./towers";
 
 /** A one-shot-defended point advanceHordes checks a horde's route against — the main base, or any live Outpost (data/outposts.ts). `kind`/`id` are for the caller's benefit only (advanceHordes itself only ever keys off `coord`). */
@@ -72,6 +73,7 @@ export function checkHordeSpawns(
   baseLevel: number,
   seed: number,
   territory: TerritoryRecord,
+  outposts: OutpostsRecord,
   gridSize: number,
   now: number,
   elapsedSeconds: number,
@@ -116,8 +118,10 @@ export function checkHordeSpawns(
     const roll = seededRandom(seed, denRollIndex(den, now));
     if (roll >= spawnProbability) continue;
 
-    const path = findHordePath(tweaks, seed, den.coord, territory.base, gridSize);
-    if (!path) continue;
+    const candidateHubs = [territory.base, ...outposts.map((o) => o.coord)];
+    const nearestTarget = findNearestHordeTarget(tweaks, seed, den.coord, candidateHubs, gridSize);
+    if (!nearestTarget) continue;
+    const { path } = nearestTarget;
 
     const size = horde_size_base + noisePct ** 1.5 * (den_level_base_weight + den_level_influence * denLevelFactor);
 
@@ -171,19 +175,19 @@ function structureCombatDefense(
   key: string,
 ): number {
   const tower = towers.find((t) => axialKey(t.coord) === key);
-  if (tower) return tower.damaged ? 0 : towerDamage(tweaks, tower.level);
+  if (tower) return isStructureActive(tower) ? towerDamage(tweaks, tower.level) : 0;
 
   const wall = walls.find((w) => axialKey(w.coord) === key);
-  if (wall) return wall.damaged ? 0 : wall.durability;
+  if (wall) return isStructureActive(wall) ? wall.durability : 0;
 
   const extractionTile = extractionTiles.find((t) => axialKey(t.coord) === key);
-  if (extractionTile) return extractionTile.damaged ? 0 : structureHp(tweaks, extractionTile.totalInvested);
+  if (extractionTile) return isStructureActive(extractionTile) ? structureHp(tweaks, extractionTile.totalInvested) : 0;
 
   const pathTile = pathTiles.find((t) => axialKey(t.coord) === key);
-  if (pathTile) return pathTile.damaged ? 0 : structureHp(tweaks, pathTile.totalInvested);
+  if (pathTile) return isStructureActive(pathTile) ? structureHp(tweaks, pathTile.totalInvested) : 0;
 
   const barracks = barracksList.find((b) => axialKey(b.coord) === key);
-  if (barracks) return barracks.damaged ? 0 : structureHp(tweaks, barracks.totalInvested);
+  if (barracks) return isStructureActive(barracks) ? structureHp(tweaks, barracks.totalInvested) : 0;
 
   return 0;
 }
@@ -218,7 +222,7 @@ export function hordeTileDefense(
   );
 }
 
-/** Deterministic, no luck — same generic size>=defense shape engine/expeditions.ts:resolveExpeditionWalk reuses for a party fighting the opposite direction. */
+/** Deterministic, no luck — same generic size>=defense shape engine/expeditions.ts:stepCorridorWalk reuses for a party fighting the opposite direction. */
 export function resolveHordeTileFight(hordeSize: number, defense: number): boolean {
   return hordeSize >= defense;
 }
@@ -296,9 +300,9 @@ export function resolveGarrisonAutoAttacks(
     : { garrisons, hordes, units, anyAutoAttack: false };
 }
 
-/** Every non-damaged tower whose range (engine/towers.ts:towerRange) reaches `coord` — exported so the map renderer can highlight towers currently in combat (src/render/HexCanvas.tsx). */
+/** Every active tower (engine/formulas.ts:isStructureActive) whose range (engine/towers.ts:towerRange) reaches `coord` — exported so the map renderer can highlight towers currently in combat (src/render/HexCanvas.tsx). */
 export function towersInRange(tweaks: Tweaks, towers: Tower[], coord: Axial): Tower[] {
-  return towers.filter((t) => !t.damaged && axialDistance(t.coord, coord) <= towerRange(tweaks, t.level));
+  return towers.filter((t) => isStructureActive(t) && axialDistance(t.coord, coord) <= towerRange(tweaks, t.level));
 }
 
 /**
@@ -396,9 +400,12 @@ export function sniperDamagePerSecond(tweaks: Tweaks, garrisons: GarrisonsRecord
  * still ends the game (DESIGN.md §13, unchanged); an outpost's overrun
  * instead reverts it to a hostile den (engine/outposts.ts:revertOutpostToDen)
  * — this function itself has no opinion on which, it just reports which
- * hub(s) were overrun this call, by key. Regular hordes still only ever path
- * toward `territory.base` (checkHordeSpawns/findHordePath, unchanged) — an
- * outpost only ever takes damage here if it happens to sit on that route.
+ * hub(s) were overrun this call, by key. A horde's route is computed once
+ * at spawn time toward whichever hub (base or outpost) is nearest the
+ * spawning den (checkHordeSpawns/findNearestHordeTarget) and fixed for its
+ * whole lifetime — this function just walks that precomputed path and
+ * checks it against every hub in `hubs`, so a different, non-target hub
+ * still takes damage here if it happens to sit on the route.
  */
 export function advanceHordes(
   tweaks: Tweaks,

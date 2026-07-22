@@ -1,8 +1,8 @@
 # Hex World — Player Guide
 
-A small group arrives in unfamiliar territory and settles in. You'll build up an economy, automate resource collection, and fortify your position — because the noise you make draws zombie hordes, and if one ever reaches your base and breaks through, the run ends.
+A small group arrives in unfamiliar territory and settles in. You'll build up an economy, automate resource collection, and fortify your position — because the noise you make draws zombie hordes, and if one ever reaches your base and breaks through, the run ends. Somewhere out past the edge of the known map sits a hidden lab: find it, fight past its guardian, and you win the run outright.
 
-This guide describes the game **as it currently plays**, not as originally envisioned — see the note on the win condition near the bottom.
+This guide describes the game **as it currently plays**.
 
 ---
 
@@ -42,7 +42,7 @@ You begin owning your base tile plus the two full rings around it (19 tiles) out
 
 Five types, in ascending rarity: **food → wood → stone → steel → power**. Rarer resources yield less per tile and generate more noise while being gathered.
 
-Each resource has its own **storage cap** at your base (1000 at level 1, doubling per storage upgrade level — upgraded via a tech-tree skill, no building required).
+Each resource has its own **storage cap** at your base (1000 at level 1, doubling per storage upgrade level — upgraded per-resource from its own panel, no building required; this is separate from the global tech tree described under [Research](#research)).
 
 ---
 
@@ -96,9 +96,11 @@ Barracks (levels 1–4, same one-structure-per-tile rule as everything else) tra
 - **Junkyard Knights** (barracks level 2+) and **Cross-Bow Snipers** (barracks level 3+) — tougher/pricier units with their own attack/defense stats. Snipers additionally deal ranged damage to any horde within range of wherever they're garrisoned.
 - **Wandering Scout** — a persistent unit built by retiring 10 regular scouts from your stockpile (max 1 per barracks). Instead of a single reveal, it wanders your connected land automatically, forever, quietly revealing tiles as it roams. Shown on the map as a walking icon.
 
-You can **garrison** militia/knights/snipers on any owned tile — a garrison automatically attacks any horde on its own tile or a neighboring one, and stacks additively with whatever structure is on that tile.
+You can **garrison** militia/knights/snipers on any owned tile — a garrison automatically attacks any horde on its own tile or a neighboring one, and stacks additively with whatever structure is on that tile. **Recalling** a garrison marches it home along the same route at half the travel time and no provisions cost — it's walking back through ground you already hold, not fighting, so nothing can be lost or tombstoned along the way.
 
-**Expeditions:** dispatch a party of militia/knights/snipers along a route to claim tiles beyond your current border (further than a simple adjacent attack) — you commit provisions and a chosen mix of units, and the party either succeeds (claiming everything along the way) or is lost if the route gets cut off by a horde in transit.
+**Expeditions:** the way you claim any unowned tile, adjacent or distant — dispatch a party of militia/knights/snipers along a route, committing provisions and a chosen mix of units. The party walks the route tile by tile in real time, claiming each tile as it crosses it rather than resolving everything at once on arrival, so a party that runs into trouble partway keeps whatever it had already claimed up to that point. If it's out-fought by a tile's defenders or blocked by a horde on the road, it dies where it stands and leaves a **tombstone** — click it to see what happened (units lost, attack power, cause) before it fades a few minutes later.
+
+Training scouts or militia normally queues them at your barracks over time, but you can also **rush** the queue to finish instantly for a noise spike — useful when you need bodies right now and are willing to accept the extra attention.
 
 Towers also **passively claim territory** just by existing — every tile within a tower's range becomes owned automatically, no assault needed, as if the tower gave you a better vantage point.
 
@@ -113,6 +115,17 @@ Two upgrades, per dock:
 - **Scout Skiff** — a mobile unit (max 1 per dock) that wanders its connected body of water forever, revealing every tile it drifts past — the water equivalent of the Wandering Scout.
 
 Docks can't be captured by hordes (hordes can't cross water), so they're a low-risk, if modest, income source.
+
+---
+
+## Research
+
+A global tech-tree panel, separate from any building or resource's own storage upgrades — only one research can run at a time. Two independent lines, each with two purchasable tiers on top of a free starting tier:
+
+- **Troop Speed** — cuts travel time for expeditions and den/lab assaults (up to 2x faster fully researched).
+- **Game Speed** — unlocks faster fast-forward multipliers for simulating ahead (1x by default; researching this unlocks 3x, then 5x).
+
+Both lines cost resources and take real time to complete, same as any other timed upgrade.
 
 ---
 
@@ -136,15 +149,21 @@ Clearing a den is a two-step process:
 1. **Win the assault.** Beat the den's defense and you immediately claim the den tile plus a small ring around it — enough room to garrison and start building right away.
 2. **Survive the hold.** The den doesn't go down quietly — over the next several minutes it throws escalating last-stand waves at whatever you've built on that ring. Garrison the core tile and get a tower or wall or two up fast; each wave is bigger than the last, so a defense that worked on wave 1 won't necessarily hold by wave 4. Lose a wave and the den reverts to hostile (unchanged level) — you'll need to assault it again from scratch, garrison and all.
 
-Survive the full hold and the den converts into an **Outpost** — a second base. It comes with its own reinforcement HP (starting stronger if you cleared a tougher den — a real reward for a hard siege), and it has its own resource storage, entirely separate from your main stockpile: any extraction tile that connects to the outpost instead of your main base auto-flows resources into the outpost's own storage. There's currently no way to move resources from an outpost back to your main base — it's a self-sufficient second economy, not a resource funnel. Upgrading or repairing an outpost's reinforcement (or its storage) is paid out of its own stockpile, so a well-connected outpost can defend and grow itself.
+Survive the full hold and the den converts into an **Outpost** — a second base. It comes with its own reinforcement HP, starting stronger if you cleared a tougher den — a real reward for a hard siege — and it can be garrisoned and built up just like your main base. Its resources aren't separate, though: an extraction tile connected to an outpost feeds the same shared stockpile as one connected to your main base — an outpost is another entry point into your one economy, not a second one. Reinforcement upgrades and repairs on an outpost still draw from that same shared stockpile.
 
 Losing an outpost to a horde doesn't end the game — it just reverts back to a hostile den (one level weaker than what you originally cleared), ready to be sieged again.
 
 ---
 
-## Current goal
+## The Hidden Lab & winning the game
 
-Clearing dens and building up outposts is a real, playable objective today, but there's **no formal "win" yet** — no hidden win-condition tile to find and secure. The game is currently about how far you can grow your economy, defenses, and outposts, and how long you can keep your base standing against escalating pressure, before either a horde gets through or you decide to stop. Play it as an open-ended survival/builder challenge for now.
+Somewhere out past every zombie den — deliberately farther out than any of them — sits a **hidden lab**, guarded, and finding + securing it is the win condition. There's nothing else to do to win; you don't need to clear every den or build a particular economy size, just reach the lab and beat its guardian.
+
+**Finding it** takes clues — 5 total, each a directional hint relative to your base that narrows the search area, from a rough compass quadrant down to a small cluster of hexes on the last one. Clues surface two ways: a small passive chance every time you use a scout, and a **guaranteed clue every time you successfully clear a den's hold**. Once you've collected all 5, you'll know roughly where to look.
+
+**Securing it** works like assaulting a den — commit a party of militia/knights/snipers. The guardian is by far the toughest fight in the game (its defense is set well above even a max-level den, deliberately — this is meant to demand a real, late-game army), and unlike a den there's no hold period afterward: win the fight and the game ends immediately in victory.
+
+Clearing dens is never *required* to win — a lucky, exploration-heavy game could find and secure the lab without ever sieging one. But den-clearing stays valuable in its own right: a guaranteed clue per clear, a new outpost, and the economy/army growth needed to eventually take on the guardian.
 
 ---
 
@@ -157,3 +176,5 @@ Clearing dens and building up outposts is a real, playable objective today, but 
 - Scouting before attacking a tile shows you its defense value, so you're not committing militia blind.
 - If you're not making noise-triggering moves, hordes need real time to get moving again — recovering the "quiet" state is worth doing between pushes.
 - Before assaulting a den, have your garrison/tower/wall plan ready to execute the moment you win — the last-stand hold starts immediately, and its waves escalate fast.
+- Every den you clear also hands you a guaranteed lab clue, so working toward outposts naturally works toward finding the lab too.
+- Research Troop Speed early if you plan to run a lot of expeditions or den assaults — faster travel means less time exposed on the road.

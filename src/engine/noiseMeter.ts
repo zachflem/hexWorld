@@ -3,6 +3,7 @@ import type { PathTile } from "../data/pathTiles";
 import type { Tower } from "../data/towers";
 import type { Wall } from "../data/walls";
 import type { Tweaks } from "../data/tweaksSchema";
+import { isStructureActive } from "./formulas";
 import { TIER_ORDER } from "./tiers";
 import { WALL_TIER_LEVEL } from "./walls";
 
@@ -19,25 +20,25 @@ export function pathFloorContribution(tweaks: Tweaks, tile: PathTile): number {
   return tweaks.noise.path_noise_floor[tile.tier];
 }
 
-/** Towers/walls are built to watch and hold ground quietly — a tiny per-level/tier floor contribution vs. an active extraction/path tile. A damaged (horde-captured) one contributes nothing, same as everywhere else it goes non-functional. */
+/** Towers/walls are built to watch and hold ground quietly — a tiny per-level/tier floor contribution vs. an active extraction/path tile. A damaged (horde-captured) or still-under-construction one contributes nothing, same as everywhere else it goes non-functional (engine/formulas.ts:isStructureActive). */
 export function towerFloorContribution(tweaks: Tweaks, tower: Tower): number {
-  return tower.damaged ? 0 : tweaks.noise.passive_watch_noise_floor.tower_per_level * tower.level;
+  return isStructureActive(tower) ? tweaks.noise.passive_watch_noise_floor.tower_per_level * tower.level : 0;
 }
 
 export function wallFloorContribution(tweaks: Tweaks, wall: Wall): number {
-  return wall.damaged ? 0 : tweaks.noise.passive_watch_noise_floor.wall_per_tier_level * WALL_TIER_LEVEL[wall.tier];
+  return isStructureActive(wall) ? tweaks.noise.passive_watch_noise_floor.wall_per_tier_level * WALL_TIER_LEVEL[wall.tier] : 0;
 }
 
 /**
- * A non-damaged wall muffles noise leaking from the rest of the base, on top
- * of its own (tiny, positive) presence contribution above — tweaks.jsonc
- * walls.noise_dampening_per_tier. Subtracted from the floor in noiseFloor
- * below; the floor's own noise_floor_minimum clamp still applies afterward,
- * so this can quiet an active base down but never past the game's absolute
- * silent floor.
+ * An active wall (engine/formulas.ts:isStructureActive) muffles noise
+ * leaking from the rest of the base, on top of its own (tiny, positive)
+ * presence contribution above — tweaks.jsonc walls.noise_dampening_per_tier.
+ * Subtracted from the floor in noiseFloor below; the floor's own
+ * noise_floor_minimum clamp still applies afterward, so this can quiet an
+ * active base down but never past the game's absolute silent floor.
  */
 export function wallNoiseDampening(tweaks: Tweaks, wall: Wall): number {
-  return wall.damaged ? 0 : tweaks.walls.noise_dampening_per_tier[wall.tier];
+  return isStructureActive(wall) ? tweaks.walls.noise_dampening_per_tier[wall.tier] : 0;
 }
 
 /** cap(level) = cap_base + cap_per_level * (level - 1) — mirrors buildSlotCap's formula. */

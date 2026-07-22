@@ -11,6 +11,11 @@ export function towerBuildCost(tweaks: Tweaks, n: number): Record<string, number
   return cost;
 }
 
+/** Flat construction duration for a freshly-built (always L1) tower — tweaks.jsonc towers.build_time_minutes. */
+export function towerBuildDurationMs(tweaks: Tweaks): number {
+  return tweaks.towers.build_time_minutes * 60_000;
+}
+
 export function towerRange(tweaks: Tweaks, level: number): number {
   return tweaks.towers.base_range_tiles + tweaks.towers.range_per_level * (level - 1);
 }

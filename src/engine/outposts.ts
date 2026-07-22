@@ -32,6 +32,11 @@ export function outpostReinforcementUpgradeCost(tweaks: Tweaks, targetLevel: num
   return cost;
 }
 
+/** Mirrors engine/base.ts:baseReinforcementUpgradeDurationMs. */
+export function outpostReinforcementUpgradeDurationMs(tweaks: Tweaks, targetLevel: number): number {
+  return tweaks.outposts.reinforcement.upgrade_time_minutes_base * targetLevel * 60 * 1000;
+}
+
 /** Mirrors engine/base.ts:baseRepairCost — Formula B at the current reinforcement level, scaled by the fraction of HP actually missing. */
 export function outpostRepairCost(tweaks: Tweaks, currentHp: number, maxHp: number, reinforcementLevel: number) {
   const missingFraction = Math.min(1, Math.max(0, (maxHp - currentHp) / maxHp));
@@ -40,6 +45,12 @@ export function outpostRepairCost(tweaks: Tweaks, currentHp: number, maxHp: numb
     cost[res] = formulaBCost(amount, reinforcementLevel) * missingFraction;
   }
   return cost;
+}
+
+/** Mirrors engine/base.ts:baseReinforcementRepairDurationMs. */
+export function outpostReinforcementRepairDurationMs(tweaks: Tweaks, currentHp: number, maxHp: number): number {
+  const missingHp = Math.max(0, maxHp - currentHp);
+  return missingHp * tweaks.outposts.reinforcement.seconds_per_missing_hp * 1000;
 }
 
 /**

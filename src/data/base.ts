@@ -14,6 +14,15 @@ export interface BaseRelocationInProgress {
   startedAt: number;
 }
 
+/**
+ * Single in-progress slot for the reinforcement track — mirrors data/walls.ts's
+ * WallActionInProgress (upgrade and repair share one slot, so only one can run
+ * at a time, and a repair mid-upgrade or vice versa is simply blocked).
+ */
+export type BaseReinforcementAction =
+  | { kind: "upgrade"; targetLevel: number; startedAt: number }
+  | { kind: "repair"; startedAt: number };
+
 export interface BaseRecord {
   level: number;
   upgrade: BaseUpgradeInProgress | null;
@@ -27,6 +36,8 @@ export interface BaseRecord {
    * or fully restored whenever reinforcement is upgraded.
    */
   currentHp: number;
+  /** Set once a reinforcement upgrade or repair has been paid for but hasn't completed yet. */
+  reinforcementAction: BaseReinforcementAction | null;
   relocation: BaseRelocationInProgress | null;
 }
 
@@ -38,6 +49,7 @@ export function initialBase(tweaks: Tweaks): BaseRecord {
     upgrade: null,
     reinforcementLevel: 0,
     currentHp: tweaks.base_reinforcement.base_hp,
+    reinforcementAction: null,
     relocation: null,
   };
 }

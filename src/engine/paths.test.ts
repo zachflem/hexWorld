@@ -29,13 +29,10 @@ describe("nextPathTier", () => {
 });
 
 describe("pathBuildCost", () => {
-  it("applies linear (not Formula A) build-count scaling to the goat track's food base cost", () => {
+  it("is a flat cost — no build-count scaling at all, regardless of how many goat tracks already exist", () => {
     const tweaks = loadRealTweaks();
-    expect(pathBuildCost(tweaks, 1).food).toBeCloseTo(100);
-    expect(pathBuildCost(tweaks, 2).food).toBeCloseTo(110); // 100 * 1.1
-    // Diverges from Formula A's compounding by n=8: linear costs 170, Formula
-    // A would've compounded to ~980 (100 * ~9.8x).
-    expect(pathBuildCost(tweaks, 8).food).toBeCloseTo(170);
+    expect(pathBuildCost(tweaks).food).toBeCloseTo(tweaks.infrastructure_paths.goat_track.build_cost_base.food);
+    expect(pathBuildCost(tweaks)).toEqual(pathBuildCost(tweaks));
   });
 });
 
