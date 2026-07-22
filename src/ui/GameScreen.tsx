@@ -71,7 +71,6 @@ import {
 import { remainingMs } from "../engine/timers";
 import {
   extractionFloorContribution,
-  noiseCap,
   pathFloorContribution,
   towerFloorContribution,
   wallFloorContribution,
@@ -161,7 +160,6 @@ import {
 import { ResearchPanel } from "./ResearchPanel";
 import { NotificationTray } from "./hud/NotificationTray";
 import { ToastStack, type ToastRecord } from "./hud/Toast";
-import { StatRow } from "./primitives/StatRow";
 import { Panel } from "./primitives/Panel";
 import { PartyDispatchForm } from "./primitives/PartyDispatchForm";
 import { GlobalHexCluster } from "./menu/GlobalHexCluster";
@@ -2598,16 +2596,7 @@ export function GameScreen({
               title={type}
             />
           ))}
-        </div>
-        <div style={{ width: 130 }}>
-          <StatRow
-            icon={noiseIcon(16)}
-            label="noise"
-            current={noise.value}
-            max={noiseCap(tweaks, base.level)}
-            displayValue={`${Math.floor(noise.value)}db`}
-            barColor="#f2b64d"
-          />
+          <StatChip icon={noiseIcon(18)} value={`${Math.floor(noise.value)}db`} title="noise" />
         </div>
       </header>
       {actionError && (
