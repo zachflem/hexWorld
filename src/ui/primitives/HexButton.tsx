@@ -22,13 +22,18 @@ export const HexButton = forwardRef<
     icon: ReactNode;
     onClick?: () => void;
     size?: number;
-    /** Highlighted state — e.g. the currently-open panel's trigger, or build-mode being active. */
+    /** Highlighted state — e.g. the currently-open panel's trigger, or build-mode being active. Ignored when `highlight` is set. */
     active?: boolean;
+    /** Explicit background color override — takes precedence over `active`. Used for the "an upgrade is available/affordable somewhere under this hex" indicator, which is a specific orange (UPGRADE_AVAILABLE_BADGE_COLOR), not the generic green `active` state. */
+    highlight?: string;
     disabled?: boolean;
     title?: string;
     style?: CSSProperties;
   }
->(function HexButton({ icon, onClick, size = HEX_BUTTON_DEFAULT_SIZE, active = false, disabled = false, title, style }, ref) {
+>(function HexButton(
+  { icon, onClick, size = HEX_BUTTON_DEFAULT_SIZE, active = false, highlight, disabled = false, title, style },
+  ref,
+) {
   return (
     <button
       ref={ref}
@@ -42,7 +47,7 @@ export const HexButton = forwardRef<
         height: size,
         clipPath: HEX_CLIP_PATH,
         border: "none",
-        background: active ? "#2e7d32" : "rgba(20, 20, 22, 0.92)",
+        background: highlight ?? (active ? "#2e7d32" : "rgba(20, 20, 22, 0.92)"),
         color: "white",
         display: "flex",
         alignItems: "center",

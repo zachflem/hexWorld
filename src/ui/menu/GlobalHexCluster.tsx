@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Menu, X } from "lucide-react";
-import { HexButton, HEX_BUTTON_DEFAULT_SIZE } from "../primitives/HexButton";
+import { HexButton } from "../primitives/HexButton";
+import { hexNeighborOffsets } from "../hexGeometry";
 
 export interface HexClusterSlot {
   key: string;
@@ -13,17 +14,11 @@ export interface HexClusterSlot {
 }
 
 /**
- * True hex-grid adjacency offsets for HexButton's pointy-top shape (matches
- * the derivation in HexButton.tsx's own comment) — each is the exact
- * translation to a touching neighbor, not an arbitrary angle. Only the
- * up/upper-left/left directions are used to build the cluster (never
- * right/lower-right/lower-left), so it only ever grows up-and-left from the
- * bottom-right-anchored toggle and can't push itself off-screen.
+ * Only the up/upper-left/left directions are used to build the cluster
+ * (never right/lower-right/lower-left), so it only ever grows up-and-left
+ * from the bottom-right-anchored toggle and can't push itself off-screen.
  */
-const s = HEX_BUTTON_DEFAULT_SIZE;
-const UPPER_LEFT: [number, number] = [-0.5 * s, -0.75 * s];
-const UPPER_RIGHT: [number, number] = [0.5 * s, -0.75 * s];
-const LEFT: [number, number] = [-s, 0];
+const { upperLeft: UPPER_LEFT, upperRight: UPPER_RIGHT, left: LEFT } = hexNeighborOffsets();
 
 function add(a: [number, number], b: [number, number]): [number, number] {
   return [a[0] + b[0], a[1] + b[1]];

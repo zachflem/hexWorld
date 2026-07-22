@@ -14,6 +14,8 @@ import { terrainAt, type TerrainType } from "../engine/terrain";
 import { towerRange } from "../engine/towers";
 import { sniperDamagePerSecond, towerDamagePerSecond, towersInRange } from "../engine/hordes";
 import { garrisonAt, garrisonWallRangeBonus } from "../engine/garrisons";
+import { maxWallDurability } from "../engine/walls";
+import { outpostReinforcementHp } from "../engine/outposts";
 import type { ExtractionTile } from "../data/extractionTiles";
 import type { PathTier, PathTile } from "../data/pathTiles";
 import type { ResourceType } from "../data/resources";
@@ -44,7 +46,8 @@ import {
   onTextureLoad,
 } from "./tileTextures";
 
-const BASE_HEX_SIZE = 24;
+/** Exported so DOM overlays (TileActionRing) can compute the same on-screen hex circumradius (BASE_HEX_SIZE * zoom) the canvas itself draws with, and size themselves to genuinely overlay a tile rather than approximate it. */
+export const BASE_HEX_SIZE = 24;
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 3;
 const CLICK_DRAG_THRESHOLD_PX = 6;
@@ -88,15 +91,15 @@ const PATH_TIER_COLORS: Record<PathTier, string> = {
   highway: "#ffdd55",
 };
 
-/** getPathTileTexture names for each path tier's sprite (tiles/structures/path-{track,stone,highway}.png) — falls back to PATH_TIER_COLORS's flat fill until/unless a given sprite is missing. */
-const PATH_TIER_ICON_NAMES: Record<PathTier, string> = {
+/** getPathTileTexture names for each path tier's sprite (tiles/structures/path-{track,stone,highway}.png) — falls back to PATH_TIER_COLORS's flat fill until/unless a given sprite is missing. Exported so TileActionRing can reuse the same sprite for its build/upgrade-path ring hex. */
+export const PATH_TIER_ICON_NAMES: Record<PathTier, string> = {
   goat_track: "path-track",
   stone_road: "path-stone",
   highway: "path-highway",
 };
 
-/** getStructureIconTexture names for each wall tier's sprite (tiles/structures/wall-{small,medium,large}.png) — falls back to WALL_TIER_COLORS's flat dot until/unless a given sprite is missing. */
-const WALL_TIER_ICON_NAMES: Record<WallTier, string> = {
+/** getStructureIconTexture names for each wall tier's sprite (tiles/structures/wall-{small,medium,large}.png) — falls back to WALL_TIER_COLORS's flat dot until/unless a given sprite is missing. Exported so TileActionRing can reuse the same sprite for its build/upgrade-wall ring hex. */
+export const WALL_TIER_ICON_NAMES: Record<WallTier, string> = {
   wood: "wall-small",
   rock: "wall-medium",
   steel: "wall-large",
@@ -128,7 +131,7 @@ const BUILD_MODE_TINT = "rgba(38, 198, 218, 0.35)";
 const EXPEDITION_TARGET_COLOR = "#e08e0b";
 const RELOCATION_TARGET_COLOR = "#2e86de";
 /** Reuses the existing expedition-target orange for a different purpose: a level badge (drawLevelBadge) colored this way means that structure's next upgrade is unlocked and affordable right now. Deliberately the same constant, not just the same value, so the two meanings stay visibly linked if this color is ever revisited. */
-const UPGRADE_AVAILABLE_BADGE_COLOR = EXPEDITION_TARGET_COLOR;
+export const UPGRADE_AVAILABLE_BADGE_COLOR = EXPEDITION_TARGET_COLOR;
 
 /** Picks readable icon/text ink against an arbitrary player-chosen background color. */
 function contrastingInk(hex: string): string {
@@ -176,6 +179,9 @@ export const HexCanvas = forwardRef<
     relocationDestination: Axial | null;
     /** Base doesn't carry its own level the way Tower/Barracks records do (the coord IS the base's identity here) — passed separately so its level badge can be drawn like every other leveled structure. */
     baseLevel: number;
+    /** Same reasoning as baseLevel — needed to draw the base's HP bar (see drawHealthBar) the same way outposts/walls already can from their own records. */
+    baseCurrentHp: number;
+    baseMaxHp: number;
     /**
      * Coord keys (axialKey) of every upgradeable structure — currently base,
      * Tower, Barracks — whose next upgrade is both unlocked AND affordable
@@ -227,6 +233,8 @@ export const HexCanvas = forwardRef<
     wanderingScouts,
     relocationDestination,
     baseLevel,
+    baseCurrentHp,
+    baseMaxHp,
     upgradeAvailableKeys,
     buildModeEligibleKeys,
     selected,
@@ -457,8 +465,17 @@ export const HexCanvas = forwardRef<
       },
       getTileScreenPosition(coord: Axial) {
         if (pan === null) return null;
+        const canvas = canvasRef.current;
+        if (!canvas) return null;
+        // pan/zoom operate in the canvas's own backing-buffer coordinate
+        // space (0,0 = the canvas element's own top-left corner) — but this
+        // is meant for viewport-fixed DOM overlays (TileActionRing), so it
+        // needs the canvas's own on-page offset added, or an overlay renders
+        // shifted by however far the canvas sits from the viewport origin
+        // (e.g. up and left, since the header above it pushes it down).
+        const rect = canvas.getBoundingClientRect();
         const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
-        return { x: worldPixel.x * zoom + pan.x, y: worldPixel.y * zoom + pan.y };
+        return { x: worldPixel.x * zoom + pan.x + rect.left, y: worldPixel.y * zoom + pan.y + rect.top };
       },
     }),
     [base, zoom, pan],
@@ -525,6 +542,27 @@ export const HexCanvas = forwardRef<
         context.textAlign = "center";
         context.textBaseline = "middle";
         context.fillText(String(level), badgeX, badgeY);
+      };
+
+      // Bottom-right edge bar for anything with an HP/durability-style stat
+      // (base, outpost, wall) — "at a glance" on the map itself rather than
+      // requiring a click, red/orange/green banding matching how players
+      // already read health bars in most games (<30% / 30-60% / 60%+).
+      const drawHealthBar = (screenCenter: { x: number; y: number }, current: number, max: number) => {
+        if (max <= 0) return;
+        const fraction = Math.max(0, Math.min(1, current / max));
+        const barWidth = size * 0.75;
+        const barHeight = Math.max(3, size * 0.16);
+        const barX = screenCenter.x + size * 0.55 - barWidth / 2;
+        const barY = screenCenter.y + size * 0.55 - barHeight / 2;
+        const fillColor = fraction < 0.3 ? "#e74c3c" : fraction < 0.6 ? "#f39c12" : "#2ecc71";
+        context.fillStyle = "rgba(0, 0, 0, 0.6)";
+        context.fillRect(barX, barY, barWidth, barHeight);
+        context.fillStyle = fillColor;
+        context.fillRect(barX, barY, barWidth * fraction, barHeight);
+        context.strokeStyle = "rgba(255, 255, 255, 0.6)";
+        context.lineWidth = 1;
+        context.strokeRect(barX, barY, barWidth, barHeight);
       };
 
       // World-space visible rectangle, then converted to a row range and,
@@ -675,6 +713,7 @@ export const HexCanvas = forwardRef<
               baseLevel,
               upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
             );
+            drawHealthBar(screenCenter, baseCurrentHp, baseMaxHp);
           } else {
             const tower = towersByKey.get(axialKey(coord));
             const wall = wallsByKey.get(axialKey(coord));
@@ -703,6 +742,7 @@ export const HexCanvas = forwardRef<
                 ctx.textBaseline = "middle";
                 ctx.fillText("⌂", screenCenter.x, screenCenter.y);
               }
+              drawHealthBar(screenCenter, outpost.currentHp, outpostReinforcementHp(tweaks, outpost.reinforcementLevel));
             } else if (den) {
               if (den.siege) {
                 ctx.beginPath();
@@ -781,6 +821,7 @@ export const HexCanvas = forwardRef<
                 ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
                 ctx.stroke();
               }
+              drawHealthBar(screenCenter, wall.durability, maxWallDurability(tweaks, wall.tier));
             } else if (tile) {
               const resourceImg = tile.buildStartedAt
                 ? getStructureIconTexture("construction")
@@ -1088,6 +1129,8 @@ export const HexCanvas = forwardRef<
     denAssaultsByKey,
     relocationDestination,
     baseLevel,
+    baseCurrentHp,
+    baseMaxHp,
     upgradeAvailableKeys,
     buildModeEligibleKeys,
     fogByKey,

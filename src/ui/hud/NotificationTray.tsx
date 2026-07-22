@@ -1,4 +1,4 @@
-import { FlaskConical, Footprints, Skull, Undo2 } from "lucide-react";
+import { FlaskConical, Footprints, ShieldAlert, Skull, Undo2 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Axial } from "../../engine/hexCoords";
 import { remainingMs } from "../../engine/timers";
@@ -33,16 +33,28 @@ export function NotificationTray({
   denAssaults,
   labAssaults,
   garrisonRecalls,
+  siegedDens,
+  countdowns,
   now,
 }: {
   expeditions: ExpeditionsRecord;
   denAssaults: DenAssaultsRecord;
   labAssaults: LabAssaultsRecord;
   garrisonRecalls: GarrisonRecallsRecord;
+  /** Coord + hold-countdown for every den currently under siege — computed in GameScreen (engine/denSiegeStatusFor's math), kept to just what a row needs so this component stays presentation-only. */
+  siegedDens: { coord: Axial; holdRemainingMs: number }[];
+  /** Every active build/upgrade/repair timer across every owned structure (GameScreen:activeCountdownRows) — the default home for any user-created action with a countdown, not just what happens to be selected. */
+  countdowns: { key: string; icon: ReactNode; label: string; coord: Axial; remainingMs: number }[];
   now: number;
 }) {
   return (
     <>
+      {siegedDens.map((den) => (
+        <TrayRow key={`siege-${den.coord.q},${den.coord.r}`} icon={<ShieldAlert size={14} />} label="Den siege holding" coord={den.coord} remaining={den.holdRemainingMs} />
+      ))}
+      {countdowns.map((c) => (
+        <TrayRow key={c.key} icon={c.icon} label={c.label} coord={c.coord} remaining={c.remainingMs} />
+      ))}
       {expeditions.map((expedition) => (
         <TrayRow
           key={expedition.id}

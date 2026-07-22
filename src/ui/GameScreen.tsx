@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { axialDistance, axialEquals, axialKey, type Axial } from "../engine/hexCoords";
 import { isBuildableLand, isTransitionTile, terrainAt } from "../engine/terrain";
-import { dockBuildCost, dockBuildDurationMs, dockYieldPerSecond } from "../engine/docks";
+import { dockBuildCost, dockBuildDurationMs } from "../engine/docks";
 import { repairCost, scaledCostMap, structureRepairDurationMs } from "../engine/formulas";
 import { extractionTileBuildDurationMs, nextTier, tierUpgradeCost, tierUpgradeDurationMs } from "../engine/tiers";
 import { storageCapacity, storageUpgradeCost, storageUpgradeDurationMs } from "../engine/storage";
@@ -85,7 +85,7 @@ import {
 } from "../engine/expeditions";
 import { troopSpeedMultiplier } from "../engine/research";
 import type { ResearchId, ResearchRecord } from "../data/research";
-import { denDefense, holdDefenseAt, lastStandWaveSize } from "../engine/dens";
+import { denDefense } from "../engine/dens";
 import {
   maxOutpostReinforcementLevel,
   outpostReinforcementHp,
@@ -99,8 +99,8 @@ import type { Player } from "../data/player";
 import type { ResourceAmounts, ResourceType } from "../data/resources";
 import type { TerritoryRecord } from "../data/territory";
 import type { BaseRecord } from "../data/base";
-import type { ExtractionTier, ExtractionTile } from "../data/extractionTiles";
-import type { PathTier, PathTile } from "../data/pathTiles";
+import type { ExtractionTile } from "../data/extractionTiles";
+import type { PathTile } from "../data/pathTiles";
 import type { Tower } from "../data/towers";
 import type { Wall } from "../data/walls";
 import type { Barracks } from "../data/barracks";
@@ -125,17 +125,20 @@ import type { WanderingScoutsRecord } from "../data/wanderingScouts";
 import type { Tweaks } from "../data/tweaksSchema";
 import type { WorldRecord } from "../data/world";
 import type { BuildResult } from "../App";
-import { HexCanvas, type HexCanvasHandle } from "../render/HexCanvas";
+import {
+  BASE_HEX_SIZE,
+  HexCanvas,
+  PATH_TIER_ICON_NAMES,
+  WALL_TIER_ICON_NAMES,
+  type HexCanvasHandle,
+} from "../render/HexCanvas";
 import { NewGameDialog } from "./NewGameDialog";
 import {
-  TilePopup,
   type BarracksUpgradeOption,
   type BaseUpgradeOption,
   type BuildOption,
   type DenAssaultOption,
-  type DenSiegeStatus,
   type ExpeditionOption,
-  type LabAssaultInProgress,
   type LabAssaultOption,
   type PathBuildOption,
   type PathUpgradeOption,
@@ -149,26 +152,61 @@ import {
   type TowerUpgradeOption,
   type TrainOption,
   type TrainQueueStatus,
-  type UpgradeInProgress,
-  type ReinforcementActionStatus,
   type ReinforcementUpgradeOption,
   type WallActionStatus,
   type WallRepairOption,
   type WallUpgradeOption,
   type WanderingScoutOption,
-} from "./TilePopup";
+} from "./tileOptions";
 import { ResearchPanel } from "./ResearchPanel";
 import { NotificationTray } from "./hud/NotificationTray";
 import { ToastStack, type ToastRecord } from "./hud/Toast";
 import { StatRow } from "./primitives/StatRow";
+import { Panel } from "./primitives/Panel";
+import { PartyDispatchForm } from "./primitives/PartyDispatchForm";
 import { GlobalHexCluster } from "./menu/GlobalHexCluster";
+import { TileActionRing, type RingAction, type TileActionRingHandle } from "./menu/TileActionRing";
+import { formatCost, formatDuration } from "./format";
 import { GarrisonsPanel } from "./panels/GarrisonsPanel";
 import { ScoutingPanel } from "./panels/ScoutingPanel";
 import { MilitaryPanel } from "./panels/MilitaryPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
-import { BarChart3, Binoculars, Flag, Hammer, Settings, Swords, Volume2 } from "lucide-react";
+import {
+  Anchor,
+  Archive,
+  ArrowUpCircle,
+  BarChart3,
+  Binoculars,
+  Eye,
+  Flag,
+  FlaskConical,
+  Footprints,
+  GraduationCap,
+  Hammer,
+  HardHat,
+  Info,
+  Navigation,
+  PackageCheck,
+  Settings,
+  Shield,
+  Ship,
+  Swords,
+  Target,
+  Trash2,
+  Users,
+  Volume2,
+  Wrench,
+} from "lucide-react";
 
 const RESOURCE_ORDER: ResourceType[] = ["food", "wood", "stone", "steel", "power"];
+
+/** Reuses the same painted sprites HexCanvas draws on the map itself — a ring hex for "build/upgrade a tower" shows the actual tower icon, not a generic tool glyph. Sized well above the lucide icons' 18px so the sprite reads clearly inside a ring hex. */
+function structureIcon(name: string, size = 45) {
+  return <img src={`/tiles/structures/${name}.png`} width={size} height={size} alt="" style={{ objectFit: "contain" }} />;
+}
+function resourceIcon(resource: ResourceType, size = 45) {
+  return <img src={`/tiles/resources/${resource}.png`} width={size} height={size} alt="" style={{ objectFit: "contain" }} />;
+}
 
 /** icon + value(+delta) chip — the HUD bar's atom. No progress bar (StatRow is for capped values); resources/scouts/base-level/build-slots are either uncapped or already show their own denominator inline. */
 function StatChip({
@@ -383,6 +421,8 @@ export function GameScreen({
   onNewPlayer: () => void;
 }) {
   const hexCanvasRef = useRef<HexCanvasHandle>(null);
+  /** Positioned imperatively, not via React state — see TileActionRing.tsx's doc comment. Repositioned directly inside handleViewportChange below. */
+  const ringRef = useRef<TileActionRingHandle>(null);
   const [selected, setSelected] = useState<Axial | null>(null);
   const [newGameDialogOpen, setNewGameDialogOpen] = useState(false);
   /** Which of the global hex cluster's five panel slots (flag/binoculars/gear/chart — hammer is a toggle, not a panel) is open, if any. Only one at a time. */
@@ -479,12 +519,6 @@ export function GameScreen({
     };
   }
 
-  function tierUpgradeInProgressFor(tile: ExtractionTile): UpgradeInProgress<ExtractionTier> | null {
-    if (!tile.upgrade) return null;
-    const durationMs = tierUpgradeDurationMs(tweaks, tile.upgrade.targetTier);
-    return { target: tile.upgrade.targetTier, remainingMs: remainingMs(tile.upgrade.startedAt, durationMs, now) };
-  }
-
   function storageUpgradesFor(): StorageUpgradeOption[] {
     return RESOURCE_ORDER.map((resource) => {
       const level = storageLevels[resource];
@@ -518,12 +552,6 @@ export function GameScreen({
     };
   }
 
-  function pathUpgradeInProgressFor(tile: PathTile): UpgradeInProgress<PathTier> | null {
-    if (!tile.upgrade) return null;
-    const durationMs = pathUpgradeDurationMs(tweaks, tile.upgrade.targetTier);
-    return { target: tile.upgrade.targetTier, remainingMs: remainingMs(tile.upgrade.startedAt, durationMs, now) };
-  }
-
   function towerBuildOptionFor(): RepairOption {
     const cost = towerBuildCost(tweaks, towers.length + 1);
     return { cost, affordable: affordable(cost), durationMinutes: towerBuildDurationMs(tweaks) / 60_000 };
@@ -540,12 +568,6 @@ export function GameScreen({
       affordable: affordable(cost),
       durationMinutes: towerUpgradeDurationMs(tweaks, targetLevel) / 60_000,
     };
-  }
-
-  function towerUpgradeInProgressFor(t: Tower): UpgradeInProgress<number> | null {
-    if (!t.upgrade) return null;
-    const durationMs = towerUpgradeDurationMs(tweaks, t.upgrade.targetLevel);
-    return { target: t.upgrade.targetLevel, remainingMs: remainingMs(t.upgrade.startedAt, durationMs, now) };
   }
 
   function wallBuildOptionFor(): RepairOption {
@@ -606,12 +628,6 @@ export function GameScreen({
     return { cost, affordable: affordable(cost) };
   }
 
-  function fishingBoatInProgressFor(d: DockRecord): { remainingMs: number } | null {
-    if (!d.fishingBoatUpgrade) return null;
-    const durationMs = tweaks.docks.fishing_boat.build_time_minutes * 60_000;
-    return { remainingMs: remainingMs(d.fishingBoatUpgrade.startedAt, durationMs, now) };
-  }
-
   /** Null once this dock already has as many skiffs (built or under construction) as tweaks.docks.scout_skiff.max_per_dock allows. */
   function scoutSkiffOptionFor(d: DockRecord): SkiffBuildOption | null {
     const existing = scoutSkiffs.filter((s) => axialKey(s.homeDockCoord) === axialKey(d.coord)).length;
@@ -621,12 +637,6 @@ export function GameScreen({
   }
 
   /** Non-null while this dock's newest scout skiff is still under construction. */
-  function scoutSkiffInProgressFor(d: DockRecord): { remainingMs: number } | null {
-    const skiff = scoutSkiffs.find((s) => axialKey(s.homeDockCoord) === axialKey(d.coord) && s.buildStartedAt !== null);
-    if (!skiff || skiff.buildStartedAt === null) return null;
-    const durationMs = tweaks.docks.scout_skiff.build_time_minutes * 60_000;
-    return { remainingMs: remainingMs(skiff.buildStartedAt, durationMs, now) };
-  }
 
   /** Null once this barracks already has as many wandering scouts (built or under construction) as allowed. */
   function wanderingScoutOptionFor(b: Barracks): WanderingScoutOption | null {
@@ -643,14 +653,6 @@ export function GameScreen({
   }
 
   /** Non-null while this barracks's newest wandering scout is still under construction. */
-  function wanderingScoutInProgressFor(b: Barracks): { remainingMs: number } | null {
-    const scout = wanderingScouts.find(
-      (s) => axialKey(s.homeBarracksCoord) === axialKey(b.coord) && s.buildStartedAt !== null,
-    );
-    if (!scout || scout.buildStartedAt === null) return null;
-    const durationMs = tweaks.units.wandering_scout.build_time_minutes * 60_000;
-    return { remainingMs: remainingMs(scout.buildStartedAt, durationMs, now) };
-  }
 
   function barracksUpgradeOptionFor(b: Barracks): BarracksUpgradeOption | null {
     if (b.damaged || b.upgrade) return null;
@@ -665,11 +667,6 @@ export function GameScreen({
     };
   }
 
-  function barracksUpgradeInProgressFor(b: Barracks): UpgradeInProgress<number> | null {
-    if (!b.upgrade) return null;
-    const durationMs = barracksUpgradeDurationMs(tweaks, b.upgrade.targetLevel);
-    return { target: b.upgrade.targetLevel, remainingMs: remainingMs(b.upgrade.startedAt, durationMs, now) };
-  }
 
   function scoutTrainOptionFor(): TrainOption | null {
     const capacityGap = scoutCapacityFor(tweaks, barracksList) - units.scoutStockpile;
@@ -808,18 +805,6 @@ export function GameScreen({
   }
 
   /** Non-null while a reinforcement upgrade or repair is running on the base — mirrors wallActionStatusFor. */
-  function reinforcementActionStatusFor(): ReinforcementActionStatus | null {
-    const action = base.reinforcementAction;
-    if (!action) return null;
-    if (action.kind === "upgrade") {
-      const durationMs = baseReinforcementUpgradeDurationMs(tweaks, action.targetLevel);
-      return { kind: "upgrade", targetLevel: action.targetLevel, remainingMs: remainingMs(action.startedAt, durationMs, now) };
-    }
-    const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
-    const durationMs = baseReinforcementRepairDurationMs(tweaks, base.currentHp, maxHp);
-    return { kind: "repair", remainingMs: remainingMs(action.startedAt, durationMs, now) };
-  }
-
   /**
    * Outpost equivalent of reinforcementUpgradeOptionFor — same cap
    * (maxOutpostReinforcementLevel(base.level)), paid from the shared
@@ -849,29 +834,6 @@ export function GameScreen({
     const durationMinutes = outpostReinforcementRepairDurationMs(tweaks, outpost.currentHp, maxHp) / 60_000;
     return { cost, affordable: affordable(cost), durationMinutes };
   }
-
-  /** Outpost equivalent of reinforcementActionStatusFor. */
-  function outpostReinforcementActionStatusFor(outpost: OutpostRecord): ReinforcementActionStatus | null {
-    const action = outpost.reinforcementAction;
-    if (!action) return null;
-    if (action.kind === "upgrade") {
-      const durationMs = outpostReinforcementUpgradeDurationMs(tweaks, action.targetLevel);
-      return { kind: "upgrade", targetLevel: action.targetLevel, remainingMs: remainingMs(action.startedAt, durationMs, now) };
-    }
-    const maxHp = outpostReinforcementHp(tweaks, outpost.reinforcementLevel);
-    const durationMs = outpostReinforcementRepairDurationMs(tweaks, outpost.currentHp, maxHp);
-    return { kind: "repair", remainingMs: remainingMs(action.startedAt, durationMs, now) };
-  }
-
-  const baseUpgradeInProgress = base.upgrade
-    ? {
-        targetLevel: base.upgrade.targetLevel,
-        remainingMs: Math.max(
-          0,
-          baseUpgradeDurationMs(tweaks, base.upgrade.targetLevel) - (now - base.upgrade.startedAt),
-        ),
-      }
-    : null;
 
   const baseRelocationInProgress = base.relocation
     ? {
@@ -952,34 +914,6 @@ export function GameScreen({
     };
   }
 
-  /** Null while a den isn't under siege — see engine/dens.ts:resolveHoldPeriod for the outcomes this display is tracking toward. */
-  function denSiegeStatusFor(den: DenRecord): DenSiegeStatus | null {
-    if (!den.siege) return null;
-    const holdDurationMs = tweaks.dens.siege.hold_duration_minutes * 60_000;
-    const waveIntervalMs = tweaks.dens.siege.wave_interval_minutes * 60_000;
-    return {
-      holdRemainingMs: remainingMs(den.siege.startedAt, holdDurationMs, now),
-      nextWaveInMs: remainingMs(den.siege.lastWaveAt, waveIntervalMs, now),
-      nextWaveSize: lastStandWaveSize(tweaks, den.level, den.siege.waveIndex),
-      currentDefense: holdDefenseAt(tweaks, den.coord, towers, walls, garrisons),
-    };
-  }
-
-  /**
-   * Null unless a DenAssaultRecord is currently in transit toward this den
-   * (dispatched but not yet arrived) — the committed party is already
-   * unavailable (engine/garrisons.ts:availableMilitia etc.) the moment it's
-   * sent, so without this the den's own tile popup would look completely
-   * unchanged and give no sign anything is happening until the assault
-   * resolves. Distinct from denSiegeStatus, which only starts once the
-   * assault has already arrived and won.
-   */
-  function denAssaultInProgressFor(den: DenRecord): { etaMs: number } | null {
-    const assault = denAssaults.find((a) => a.denId === den.id);
-    if (!assault) return null;
-    return { etaMs: remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now) };
-  }
-
   /**
    * Mirrors denAssaultOptionFor exactly, for the lab's single static
    * guardian instead of a den's level-scaled defense — same "no route until
@@ -1010,13 +944,6 @@ export function GameScreen({
       etaMs: expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, research)),
       guardianDefense: tweaks.lab.guardian_defense,
     };
-  }
-
-  /** Mirrors denAssaultInProgressFor — null unless a LabAssaultRecord is currently in transit (there's only ever one at a time, handleSecureLab rejects a second dispatch). */
-  function labAssaultInProgress(): LabAssaultInProgress | null {
-    const assault = labAssaults[0];
-    if (!assault) return null;
-    return { etaMs: remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now) };
   }
 
   /** Null unless a garrison recalled from this coord is still marching home — see App.tsx:handleRecallMilitia. */
@@ -1069,6 +996,14 @@ export function GameScreen({
   }
 
   function selectTile(coord: Axial) {
+    // While a tile is already selected (its ring/card open), clicking a
+    // DIFFERENT tile just closes the current selection instead of jumping
+    // straight to the new tile's menu — closing and re-selecting is a
+    // separate, deliberate second click.
+    if (selected && !axialEquals(selected, coord)) {
+      setSelected(null);
+      return;
+    }
     setActionError(null);
     setSelected(coord);
     setMilitiaToSend(1);
@@ -1401,28 +1336,6 @@ export function GameScreen({
     return { cost, affordable: affordable(cost), durationMinutes: structureRepairDurationMs(tweaks) / 60_000 };
   }
 
-  /** Non-null while the selected structure's damage repair timer is running — see repairOptionFor's doc comment. */
-  function repairInProgressFor(
-    structure: { damaged: boolean; damageRepair?: { startedAt: number } | null } | null,
-  ): { remainingMs: number } | null {
-    if (!structure || !structure.damageRepair) return null;
-    return { remainingMs: remainingMs(structure.damageRepair.startedAt, structureRepairDurationMs(tweaks), now) };
-  }
-
-  /**
-   * Non-null while a freshly-built structure hasn't finished its
-   * construction timer yet — `durationMs` is caller-supplied since each of
-   * the 5 structure kinds pays its own flat build_time_minutes (unlike
-   * repairInProgressFor's duration, which is the same flat value for all 5).
-   */
-  function constructionInProgressFor(
-    buildStartedAt: number | null | undefined,
-    durationMs: number,
-  ): { remainingMs: number } | null {
-    if (!buildStartedAt) return null;
-    return { remainingMs: remainingMs(buildStartedAt, durationMs, now) };
-  }
-
   const selectedTile = selected ? tileAt(selected) : null;
   const selectedPath = selected ? pathAt(selected) : null;
   const selectedTower = selected ? towerAt(selected) : null;
@@ -1577,6 +1490,1088 @@ export function GameScreen({
     return eligible;
   }, [buildModeActive, resources, extractionTiles, pathTiles, towers, walls, barracksList, docks, territory.owned, territory.base, world.seed, tweaks]);
 
+  /**
+   * Repositions the action ring by calling its imperative handle directly —
+   * deliberately not a React state update. `HexCanvas` calls this from
+   * inside its draw effect (via a ref, not a dependency), so routing it
+   * through `setState` here would re-render all of GameScreen's ~30
+   * `selectedX` derivations on every pan/zoom frame. See TileActionRing.tsx.
+   *
+   * Passes a coord->screen-position resolver (the same getTileScreenPosition
+   * HexCanvas already exposes) plus the current on-screen hex circumradius
+   * (BASE_HEX_SIZE * zoom) — TileActionRing looks up whichever hexes are
+   * currently mounted (at whatever sub-ring depth) and repositions each via
+   * its own registered coordinate. Matches the map's own geometry exactly,
+   * not an approximated UI size, so the ring's hexes genuinely overlay the
+   * tiles they sit on at any zoom level.
+   */
+  function handleViewportChange(viewport: { pan: { x: number; y: number }; zoom: number }) {
+    ringRef.current?.repositionAll(
+      (coord) => hexCanvasRef.current?.getTileScreenPosition(coord) ?? null,
+      BASE_HEX_SIZE * viewport.zoom,
+    );
+  }
+
+  /**
+   * The structural "commit an action" buttons for the currently selected
+   * tile — mirrors TilePopup's own JSX conditionals branch for branch (same
+   * gates, same *OptionFor helpers, same handlers) so the ring can never
+   * show something the popup wouldn't, or vice versa. Multi-choice actions
+   * (which resource to extract, which storage to upgrade) collapse into one
+   * hex with a `subActions` sub-ring rather than eating multiple root slots.
+   *
+   * Called by ringActionsFor below, which appends the universal
+   * owned-tile-regardless-of-structure actions (Collect, Garrison, Demolish)
+   * on top of whatever this returns.
+   */
+  function structuralActionsFor(): RingAction[] {
+    if (!selected) return [];
+    const actions: RingAction[] = [];
+
+    // Den and lab are checked first — `isOwned` can be false for either (a
+    // den/lab isn't "owned territory" until cleared/secured), so they'd
+    // otherwise fall through to the unowned-tile branch below.
+    if (selectedDen) {
+      const option = denAssaultOptionFor(selectedDen);
+      if (option) {
+        const buttonLabel = selectedDen.siege ? "Send reinforcements" : "Assault den";
+        actions.push({
+          key: "assault-den",
+          icon: <Swords size={18} />,
+          title: `${buttonLabel} — defense ${option.denDefense.toFixed(0)}, ETA ${Math.ceil(option.etaMs / 60_000)}m`,
+          disabled: !option.affordable,
+          formContent: dispatchFormContent(
+            option,
+            <p>Defense: {option.denDefense.toFixed(0)}</p>,
+            buttonLabel,
+            handleAssaultDen,
+          ),
+        });
+      }
+      return actions;
+    }
+
+    if (selectedIsLab) {
+      const option = labAssaultOptionFor();
+      if (option) {
+        actions.push({
+          key: "secure-lab",
+          icon: <FlaskConical size={18} />,
+          title: `Secure the lab — guardian defense ${option.guardianDefense.toFixed(0)}`,
+          disabled: !option.affordable,
+          formContent: dispatchFormContent(
+            option,
+            <p>Guardian defense: {option.guardianDefense.toFixed(0)}</p>,
+            "Secure lab",
+            handleSecureLab,
+          ),
+        });
+      }
+      return actions;
+    }
+
+    // Relocate-here applies to any empty, dry-land, scouted-or-owned tile —
+    // computed once up front rather than duplicated into every branch below,
+    // since relocationOptionFor already returns null everywhere it doesn't apply.
+    if (!selectedIsBase) {
+      const relocation = relocationOptionFor(selected);
+      if (relocation) {
+        actions.push({
+          key: "relocate",
+          icon: <Navigation size={18} />,
+          title: `Relocate base here — ${formatCost(relocation.cost)}, ${Math.ceil(relocation.durationMs / 60_000)}m`,
+          disabled: !relocation.affordable,
+          onClick: handleRelocateBase,
+        });
+      }
+    }
+
+    if (selectedOutpost) {
+      const upgrade = outpostReinforcementUpgradeOptionFor(selectedOutpost);
+      if (upgrade) {
+        actions.push({
+          key: "outpost-upgrade",
+          icon: structureIcon("outpost"),
+          title: `Upgrade reinforcement to ${Math.floor(upgrade.hp)} HP — ${formatCost(upgrade.cost)}`,
+          disabled: !upgrade.affordable,
+          upgradeAvailable: upgrade.affordable,
+          onClick: handleUpgradeOutpostReinforcement,
+        });
+      }
+      const repair = outpostRepairOptionFor(selectedOutpost);
+      if (repair) {
+        actions.push({
+          key: "outpost-repair",
+          icon: <Wrench size={18} />,
+          title: `Repair outpost — ${formatCost(repair.cost)}`,
+          disabled: !repair.affordable,
+          onClick: handleRepairOutpost,
+        });
+      }
+      return actions;
+    }
+
+    if (selectedIsBase) {
+      const baseUpgrade = baseUpgradeOptionFor();
+      if (baseUpgrade) {
+        actions.push({
+          key: "base-upgrade",
+          icon: structureIcon("base"),
+          title: `Upgrade base to L${baseUpgrade.targetLevel} — ${formatCost(baseUpgrade.cost)}`,
+          disabled: !baseUpgrade.affordable,
+          upgradeAvailable: baseUpgrade.affordable,
+          onClick: handleUpgradeBase,
+        });
+      }
+      const reinforce = reinforcementUpgradeOptionFor();
+      if (reinforce) {
+        actions.push({
+          key: "base-reinforce",
+          icon: <ArrowUpCircle size={18} />,
+          title: `Upgrade reinforcement to ${Math.floor(reinforce.hp)} HP — ${formatCost(reinforce.cost)}`,
+          disabled: !reinforce.affordable,
+          upgradeAvailable: reinforce.affordable,
+          onClick: handleUpgradeReinforcement,
+        });
+      }
+      const repair = baseRepairOptionFor();
+      if (repair) {
+        actions.push({
+          key: "base-repair",
+          icon: <Wrench size={18} />,
+          title: `Repair base — ${formatCost(repair.cost)}`,
+          disabled: !repair.affordable || baseAdjacentHordeOccupied,
+          onClick: handleRepairBase,
+        });
+      }
+      const storageOptions = storageUpgradesFor().filter((o) => o.inProgress === null);
+      if (storageOptions.length > 0) {
+        actions.push({
+          key: "storage-upgrade",
+          icon: <Archive size={18} />,
+          title: "Upgrade storage",
+          upgradeAvailable: storageOptions.some((o) => o.affordable),
+          subActions: storageOptions.map((o) => ({
+            key: o.resource,
+            icon: resourceIcon(o.resource),
+            title: `${o.resource} → L${o.level} (${formatCost(o.cost)})`,
+            disabled: !o.affordable,
+            upgradeAvailable: o.affordable,
+            onClick: () => handleUpgradeStorage(o.resource),
+          })),
+        });
+      }
+      return actions;
+    }
+
+    if (selectedDock) {
+      const fishingBoat = fishingBoatOptionFor(selectedDock);
+      if (fishingBoat) {
+        actions.push({
+          key: "fishing-boat",
+          icon: <Anchor size={18} />,
+          title: `Build fishing boat — ${formatCost(fishingBoat.cost)}`,
+          disabled: !fishingBoat.affordable,
+          onClick: handleBuildFishingBoat,
+        });
+      }
+      const scoutSkiff = scoutSkiffOptionFor(selectedDock);
+      if (scoutSkiff) {
+        actions.push({
+          key: "scout-skiff",
+          icon: <Ship size={18} />,
+          title: `Build scout skiff — ${formatCost(scoutSkiff.cost)}, ${scoutSkiff.durationMinutes}m`,
+          disabled: !scoutSkiff.affordable,
+          onClick: handleBuildScoutSkiff,
+        });
+      }
+      return actions;
+    }
+
+    if (selectedTile) {
+      if (selectedTile.damaged) {
+        const repair = repairOptionFor(selectedStructure);
+        if (repair) {
+          actions.push({
+            key: "tile-repair",
+            icon: <Wrench size={18} />,
+            title: `Repair extraction tile — ${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            disabled: !repair.affordable || selectedHordeOccupied,
+            onClick: handleRepairStructure,
+          });
+        }
+      } else {
+        const upgrade = tierUpgradeFor(selectedTile);
+        if (upgrade) {
+          actions.push({
+            key: "tile-upgrade",
+            icon: resourceIcon(selectedTile.resource),
+            title: `Upgrade to ${upgrade.targetTier} — ${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            disabled: !upgrade.affordable,
+            upgradeAvailable: upgrade.affordable,
+            onClick: handleUpgradeTier,
+          });
+        }
+      }
+      return actions;
+    }
+
+    if (selectedPath) {
+      if (selectedPath.damaged) {
+        const repair = repairOptionFor(selectedStructure);
+        if (repair) {
+          actions.push({
+            key: "path-repair",
+            icon: <Wrench size={18} />,
+            title: `Repair path — ${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            disabled: !repair.affordable || selectedHordeOccupied,
+            onClick: handleRepairStructure,
+          });
+        }
+      } else {
+        const upgrade = pathUpgradeOptionFor(selectedPath);
+        if (upgrade) {
+          actions.push({
+            key: "path-upgrade",
+            icon: structureIcon(PATH_TIER_ICON_NAMES[selectedPath.tier]),
+            title: `Upgrade to ${upgrade.targetTier} — ${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            disabled: !upgrade.affordable,
+            upgradeAvailable: upgrade.affordable,
+            onClick: handleUpgradePath,
+          });
+        }
+      }
+      return actions;
+    }
+
+    if (selectedTower) {
+      if (selectedTower.damaged) {
+        const repair = repairOptionFor(selectedStructure);
+        if (repair) {
+          actions.push({
+            key: "tower-repair",
+            icon: <Wrench size={18} />,
+            title: `Repair tower — ${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            disabled: !repair.affordable || selectedHordeOccupied,
+            onClick: handleRepairStructure,
+          });
+        }
+      } else {
+        const upgrade = towerUpgradeOptionFor(selectedTower);
+        if (upgrade) {
+          actions.push({
+            key: "tower-upgrade",
+            icon: structureIcon("tower"),
+            title: `Upgrade to L${upgrade.targetLevel} — ${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            disabled: !upgrade.affordable,
+            upgradeAvailable: upgrade.affordable,
+            onClick: handleUpgradeTower,
+          });
+        }
+      }
+      return actions;
+    }
+
+    if (selectedWall) {
+      // Unlike tile/path/tower/barracks, a wall's upgrade and repair options
+      // aren't damaged-XOR-not — both can be independently available at
+      // once (below-max durability AND tier-upgradeable), gated by one
+      // shared in-progress status rather than each other.
+      if (!wallActionStatusFor(selectedWall)) {
+        const upgrade = wallUpgradeOptionFor(selectedWall);
+        if (upgrade) {
+          actions.push({
+            key: "wall-upgrade",
+            icon: structureIcon(WALL_TIER_ICON_NAMES[selectedWall.tier]),
+            title: `Upgrade to ${upgrade.targetTier} — ${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            disabled: !upgrade.affordable,
+            upgradeAvailable: upgrade.affordable,
+            onClick: handleUpgradeWall,
+          });
+        }
+        const repair = wallRepairOptionFor(selectedWall);
+        if (repair) {
+          actions.push({
+            key: "wall-repair",
+            icon: <Wrench size={18} />,
+            title: `Repair wall — ${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            disabled: !repair.affordable,
+            onClick: handleRepairWall,
+          });
+        }
+      }
+      return actions;
+    }
+
+    if (selectedBarracks) {
+      if (selectedBarracks.damaged) {
+        const repair = repairOptionFor(selectedStructure);
+        if (repair) {
+          actions.push({
+            key: "barracks-repair",
+            icon: <Wrench size={18} />,
+            title: `Repair barracks — ${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            disabled: !repair.affordable || selectedHordeOccupied,
+            onClick: handleRepairStructure,
+          });
+        }
+      } else {
+        const upgrade = barracksUpgradeOptionFor(selectedBarracks);
+        if (upgrade) {
+          actions.push({
+            key: "barracks-upgrade",
+            icon: structureIcon("barracks"),
+            title: `Upgrade to L${upgrade.targetLevel} — ${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            disabled: !upgrade.affordable,
+            upgradeAvailable: upgrade.affordable,
+            onClick: handleUpgradeBarracks,
+          });
+        }
+      }
+      const wanderingScout = wanderingScoutOptionFor(selectedBarracks);
+      if (wanderingScout) {
+        actions.push({
+          key: "wandering-scout",
+          icon: <Footprints size={18} />,
+          title: `Build wandering scout — retires ${wanderingScout.scoutCost} scouts, ${formatCost(wanderingScout.cost)}, ${wanderingScout.durationMinutes}m`,
+          disabled: !wanderingScout.affordable || wanderingScout.scoutCost > units.scoutStockpile,
+          onClick: handleBuildWanderingScout,
+        });
+      }
+
+      const trainSubActions: RingAction[] = [];
+      if (!selectedBarracks.damaged) {
+        trainSubActions.push({
+          key: "train-scouts",
+          icon: <Footprints size={18} />,
+          title: "Train scouts",
+          formContent: trainFormContent({
+            label: "scouts",
+            queueStatus: scoutQueueStatus,
+            option: scoutTrainOptionFor(),
+            toTrain: scoutsToTrain,
+            onChangeToTrain: setScoutsToTrain,
+            onTrain: handleTrainScouts,
+            onMax: handleMaxScouts,
+            onRush: handleRushTrainScouts,
+          }),
+        });
+        trainSubActions.push({
+          key: "train-militia",
+          icon: <Swords size={18} />,
+          title: "Train militia",
+          formContent: trainFormContent({
+            label: "militia",
+            queueStatus: militiaQueueStatus,
+            option: militiaTrainOptionFor(),
+            toTrain: militiaToTrain,
+            onChangeToTrain: setMilitiaToTrain,
+            onTrain: handleTrainMilitia,
+            onMax: handleMaxMilitia,
+            onRush: handleRushTrainMilitia,
+          }),
+        });
+        const knightOption = junkyardKnightTrainOptionFor(selectedBarracks.level);
+        if (knightOption) {
+          trainSubActions.push({
+            key: "train-knights",
+            icon: <Shield size={18} />,
+            title: "Train junkyard knights",
+            formContent: trainFormContent({
+              label: "junkyard knights",
+              queueStatus: junkyardKnightQueueStatus,
+              option: knightOption,
+              toTrain: junkyardKnightToTrain,
+              onChangeToTrain: setJunkyardKnightToTrain,
+              onTrain: handleTrainJunkyardKnight,
+              onMax: handleMaxJunkyardKnight,
+            }),
+          });
+        }
+        const sniperOption = crossBowSniperTrainOptionFor(selectedBarracks.level);
+        if (sniperOption) {
+          trainSubActions.push({
+            key: "train-snipers",
+            icon: <Target size={18} />,
+            title: "Train cross-bow snipers",
+            formContent: trainFormContent({
+              label: "cross-bow snipers",
+              queueStatus: crossBowSniperQueueStatus,
+              option: sniperOption,
+              toTrain: crossBowSniperToTrain,
+              onChangeToTrain: setCrossBowSniperToTrain,
+              onTrain: handleTrainCrossBowSniper,
+              onMax: handleMaxCrossBowSniper,
+            }),
+          });
+        }
+      }
+      if (trainSubActions.length > 0) {
+        actions.push({ key: "train", icon: <GraduationCap size={18} />, title: "Train units", subActions: trainSubActions });
+      }
+
+      return actions;
+    }
+
+    // Dock build (water-bordering-land, owned-or-scouted) — disjoint from
+    // the empty-buildable-land branch below (isBuildableLand excludes water).
+    const dockBuildGate =
+      (isOwned(selected) || isScouted(selected)) &&
+      selectedEmpty &&
+      !selectedIsBase &&
+      terrainAt(world.seed, selected) === "water" &&
+      isTransitionTile(world.seed, selected);
+    if (dockBuildGate) {
+      const dock = dockBuildOptionFor();
+      actions.push({
+        key: "build-dock",
+        icon: structureIcon("dock"),
+        title: `Build dock — ${formatCost(dock.cost)}`,
+        disabled: !dock.affordable,
+        onClick: handleBuildDock,
+      });
+      return actions;
+    }
+
+    // Empty, buildable, owned land — every structure category is
+    // independently available here (they're not mutually exclusive choices
+    // at the "what can go here" stage, see GameScreen's selectedEmpty gate),
+    // grouped under two root-level category hexes — Civil (resource
+    // extraction, paths) and Military (tower, wall, barracks) — rather than
+    // one flat "Build" wrapper or 5 separate root slots.
+    const emptyBuildableGate = isOwned(selected) && selectedEmpty && !selectedIsBase && isBuildableLand(world.seed, selected);
+    if (emptyBuildableGate) {
+      // The 5 resource choices sit directly on the Civil level (no separate
+      // "Build extraction tile" nesting hex) alongside Build path — all 6
+      // neighbor slots stay available for real actions, with Back living
+      // outside the ring (see TileActionRing's module doc comment).
+      const civilSubActions: RingAction[] = buildOptionsFor().map((o) => ({
+        key: o.resource,
+        icon: resourceIcon(o.resource),
+        title: `${o.resource} — ${formatCost(o.cost)}, ${o.durationMinutes}m`,
+        disabled: !o.affordable,
+        onClick: () => handleBuild(o.resource),
+      }));
+      const path = pathBuildOptionFor();
+      civilSubActions.push({
+        key: "build-path",
+        icon: structureIcon(PATH_TIER_ICON_NAMES.goat_track),
+        title: `Build goat track — ${formatCost(path.cost)}, ${path.durationMinutes}m`,
+        disabled: !path.affordable,
+        onClick: handleBuildPath,
+      });
+
+      const militarySubActions: RingAction[] = [];
+      const tower = towerBuildOptionFor();
+      militarySubActions.push({
+        key: "build-tower",
+        icon: structureIcon("tower"),
+        title: `Build tower — ${formatCost(tower.cost)}, ${tower.durationMinutes}m`,
+        disabled: !tower.affordable,
+        onClick: handleBuildTower,
+      });
+      const wall = wallBuildOptionFor();
+      militarySubActions.push({
+        key: "build-wall",
+        icon: structureIcon(WALL_TIER_ICON_NAMES.wood),
+        title: `Build wall — ${formatCost(wall.cost)}, ${wall.durationMinutes}m`,
+        disabled: !wall.affordable,
+        onClick: handleBuildWall,
+      });
+      const barracks = barracksBuildOptionFor();
+      militarySubActions.push({
+        key: "build-barracks",
+        icon: structureIcon("barracks"),
+        title: `Build barracks — ${formatCost(barracks.cost)}, ${barracks.durationMinutes}m`,
+        disabled: !barracks.affordable,
+        onClick: handleBuildBarracks,
+      });
+
+      actions.push({
+        key: "build-civil",
+        icon: <HardHat size={18} />,
+        title: "Civil",
+        subActions: civilSubActions,
+      });
+      actions.push({
+        key: "build-military",
+        icon: <Swords size={18} />,
+        title: "Military",
+        subActions: militarySubActions,
+      });
+      return actions;
+    }
+
+    // Nothing built here, not (yet) ours: scout it, or send an expedition
+    // to claim it if it's already scouted.
+    if (!isOwned(selected)) {
+      if (!isScouted(selected)) {
+        const canScout =
+          units.scoutStockpile > 0 && isTileScoutable(world.seed, selected, territory.owned, scoutedTiles);
+        if (canScout) {
+          actions.push({ key: "scout", icon: <Eye size={18} />, title: "Scout this tile", onClick: handleScoutTile });
+        }
+      } else {
+        const expedition = expeditionRouteOptionFor(selected);
+        if (expedition) {
+          actions.push({
+            key: "expedition",
+            icon: <Swords size={18} />,
+            title: `Send expedition — ${formatCost(expedition.provisionsCost)}, ETA ${Math.ceil(expedition.etaMs / 60_000)}m`,
+            disabled: !expedition.affordable,
+            formContent: dispatchFormContent(expedition, undefined, "Send expedition", handleDispatchExpedition),
+          });
+        }
+      }
+    }
+
+    return actions;
+  }
+
+  /** A barracks training hex's popover content — qty input + Max (+ Rush, scout/militia only) — reuses the exact same state/handlers TilePopup's training rows already use. Shows a queue-progress readout instead of the form while a training queue is already running for this unit type. */
+  function trainFormContent(params: {
+    label: string;
+    queueStatus: TrainQueueStatus | null;
+    option: TrainOption | SimpleTrainOption | null;
+    toTrain: number;
+    onChangeToTrain: (n: number) => void;
+    onTrain: () => void;
+    onMax: () => void;
+    onRush?: () => void;
+  }): ReactNode {
+    if (params.queueStatus) {
+      return (
+        <Panel style={{ fontSize: "0.8rem", minWidth: 200 }}>
+          Training {params.label}: {params.queueStatus.remaining} left, next in {Math.ceil(params.queueStatus.msUntilNextMs / 60_000)}m
+        </Panel>
+      );
+    }
+    if (!params.option) return null;
+    const disabled = !params.option.affordable || params.toTrain <= 0;
+    return (
+      <Panel style={{ display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.8rem", minWidth: 220 }}>
+        <strong>Train {params.label}</strong>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+          <input
+            type="number"
+            min={0}
+            max={params.option.maxQuantity}
+            value={params.toTrain}
+            onChange={(e) => params.onChangeToTrain(Number(e.target.value))}
+            style={{ width: 50 }}
+            aria-label={`${params.label} to train`}
+          />
+          <button type="button" onClick={params.onMax}>
+            Max
+          </button>
+        </div>
+        <span>{formatCost(params.option.totalCost)}</span>
+        <button type="button" disabled={disabled} onClick={params.onTrain}>
+          Train
+        </button>
+        {params.onRush && (
+          <button type="button" disabled={disabled} onClick={params.onRush}>
+            Rush (instant, noisy)
+          </button>
+        )}
+      </Panel>
+    );
+  }
+
+  /** One row of the garrison form: qty input + Max + Go, shown only when at least one such unit is available to station. */
+  function garrisonUnitRow(
+    label: string,
+    available: number,
+    toGarrison: number,
+    onChangeToGarrison: (n: number) => void,
+    onMax: () => void,
+    onGo: () => void,
+  ): ReactNode {
+    if (available <= 0) return null;
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+        <input
+          type="number"
+          min={0}
+          max={available}
+          value={toGarrison}
+          onChange={(e) => onChangeToGarrison(Number(e.target.value))}
+          style={{ width: 50 }}
+          aria-label={`${label} to garrison`}
+        />
+        <span>
+          {label} ({available} free)
+        </span>
+        <button type="button" onClick={onMax}>
+          Max
+        </button>
+        <button type="button" disabled={selectedHordeOccupied} onClick={onGo}>
+          Go
+        </button>
+      </div>
+    );
+  }
+
+  /**
+   * Shared popover content for expedition/den-assault/lab-secure — reuses
+   * the `PartyDispatchForm` primitive built in Phase 0 for exactly this
+   * (previously orphaned: TilePopup never got to Phase 5/6 before the ring
+   * replaced it, and the ring's first pass wired these three straight to
+   * `onClick` with whatever `militiaToSend` defaulted to, so the player's
+   * quantity inputs had no UI to reach them at all — this closes that gap).
+   */
+  function dispatchFormContent(option: ExpeditionOption, extraInfo: ReactNode | undefined, buttonLabel: string, onCommit: () => void): ReactNode {
+    const availMilitia = availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
+    const availKnight = availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
+    const availSniper = availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
+    return (
+      <Panel style={{ minWidth: 230 }}>
+        <PartyDispatchForm
+          extraInfo={extraInfo}
+          distanceTiles={option.distanceTiles}
+          pathCost={option.pathCost}
+          provisionsCost={option.provisionsCost}
+          etaMs={option.etaMs}
+          affordable={option.affordable}
+          militia={{ available: availMilitia, toSend: militiaToSend, onChange: setMilitiaToSend }}
+          junkyardKnight={{ available: availKnight, toSend: junkyardKnightToSend, onChange: setJunkyardKnightToSend }}
+          crossBowSniper={{ available: availSniper, toSend: crossBowSniperToSend, onChange: setCrossBowSniperToSend }}
+          buttonLabel={buttonLabel}
+          onCommit={onCommit}
+        />
+      </Panel>
+    );
+  }
+
+  /** Garrison hex's popover content — same qty-input-plus-Go pattern the old TilePopup used, reusing its exact state/handlers (militiaToGarrison etc.) rather than duplicating them. */
+  function garrisonFormContent(): ReactNode {
+    if (!selected) return null;
+    const availMilitia = availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
+    const availKnight = availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
+    const availSniper = availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
+    const stationedTotal = selectedGarrison
+      ? selectedGarrison.militiaCount + selectedGarrison.junkyardKnightCount + selectedGarrison.crossBowSniperCount
+      : 0;
+    const recalling = recallInProgressFor(selected) !== null;
+    return (
+      <Panel style={{ display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.8rem", minWidth: 230 }}>
+        <strong>Garrison{stationedTotal > 0 ? ` — ${stationedTotal} stationed` : ""}</strong>
+        {garrisonUnitRow("militia", availMilitia, militiaToGarrison, setMilitiaToGarrison, handleMaxGarrison, handleGarrisonMilitia)}
+        {garrisonUnitRow(
+          "knights",
+          availKnight,
+          junkyardKnightToGarrison,
+          setJunkyardKnightToGarrison,
+          handleMaxGarrisonJunkyardKnight,
+          handleGarrisonJunkyardKnight,
+        )}
+        {garrisonUnitRow(
+          "snipers",
+          availSniper,
+          crossBowSniperToGarrison,
+          setCrossBowSniperToGarrison,
+          handleMaxGarrisonCrossBowSniper,
+          handleGarrisonCrossBowSniper,
+        )}
+        {recalling ? (
+          <span>Recalling…</span>
+        ) : (
+          stationedTotal > 0 && (
+            <button type="button" onClick={handleRecallMilitia}>
+              Recall
+            </button>
+          )
+        )}
+      </Panel>
+    );
+  }
+
+  /**
+   * Every user-created action with a countdown — build/upgrade/repair for
+   * each of the 5 structure kinds plus dock/fishing-boat/scout-skiff/
+   * wandering-scout builds, base level/reinforcement upgrades, outpost
+   * reinforcement, and base relocation — surfaced as mini cards in the
+   * notification tray (top-right), the same home expeditions/assaults/
+   * garrison recalls/den sieges already use. This is the default home for
+   * any timed action from here on, not just a selected-tile display: it
+   * scans every owned structure, not only whichever tile happens to be
+   * selected, since these used to be visible per-tile via TilePopup but
+   * nothing else shows them now that it's gone.
+   */
+  function activeCountdownRows(): { key: string; icon: ReactNode; label: string; coord: Axial; remainingMs: number }[] {
+    const rows: { key: string; icon: ReactNode; label: string; coord: Axial; remainingMs: number }[] = [];
+    const buildIcon = <Hammer size={14} />;
+    const upgradeIcon = <ArrowUpCircle size={14} />;
+    const repairIcon = <Wrench size={14} />;
+
+    for (const tile of extractionTiles) {
+      const key = axialKey(tile.coord);
+      if (tile.buildStartedAt) {
+        rows.push({
+          key: `tile-build-${key}`,
+          icon: buildIcon,
+          label: `Building ${tile.resource} tile`,
+          coord: tile.coord,
+          remainingMs: remainingMs(tile.buildStartedAt, extractionTileBuildDurationMs(tweaks), now),
+        });
+      }
+      if (tile.upgrade) {
+        rows.push({
+          key: `tile-upgrade-${key}`,
+          icon: upgradeIcon,
+          label: `Upgrading ${tile.resource} tile to ${tile.upgrade.targetTier}`,
+          coord: tile.coord,
+          remainingMs: remainingMs(tile.upgrade.startedAt, tierUpgradeDurationMs(tweaks, tile.upgrade.targetTier), now),
+        });
+      }
+      if (tile.damageRepair) {
+        rows.push({
+          key: `tile-repair-${key}`,
+          icon: repairIcon,
+          label: `Repairing ${tile.resource} tile`,
+          coord: tile.coord,
+          remainingMs: remainingMs(tile.damageRepair.startedAt, structureRepairDurationMs(tweaks), now),
+        });
+      }
+    }
+
+    for (const path of pathTiles) {
+      const key = axialKey(path.coord);
+      if (path.buildStartedAt) {
+        rows.push({
+          key: `path-build-${key}`,
+          icon: buildIcon,
+          label: "Building path",
+          coord: path.coord,
+          remainingMs: remainingMs(path.buildStartedAt, pathBuildDurationMs(tweaks), now),
+        });
+      }
+      if (path.upgrade) {
+        rows.push({
+          key: `path-upgrade-${key}`,
+          icon: upgradeIcon,
+          label: `Upgrading path to ${path.upgrade.targetTier}`,
+          coord: path.coord,
+          remainingMs: remainingMs(path.upgrade.startedAt, pathUpgradeDurationMs(tweaks, path.upgrade.targetTier), now),
+        });
+      }
+      if (path.damageRepair) {
+        rows.push({
+          key: `path-repair-${key}`,
+          icon: repairIcon,
+          label: "Repairing path",
+          coord: path.coord,
+          remainingMs: remainingMs(path.damageRepair.startedAt, structureRepairDurationMs(tweaks), now),
+        });
+      }
+    }
+
+    for (const tower of towers) {
+      const key = axialKey(tower.coord);
+      if (tower.buildStartedAt) {
+        rows.push({
+          key: `tower-build-${key}`,
+          icon: buildIcon,
+          label: "Building tower",
+          coord: tower.coord,
+          remainingMs: remainingMs(tower.buildStartedAt, towerBuildDurationMs(tweaks), now),
+        });
+      }
+      if (tower.upgrade) {
+        rows.push({
+          key: `tower-upgrade-${key}`,
+          icon: upgradeIcon,
+          label: `Upgrading tower to L${tower.upgrade.targetLevel}`,
+          coord: tower.coord,
+          remainingMs: remainingMs(tower.upgrade.startedAt, towerUpgradeDurationMs(tweaks, tower.upgrade.targetLevel), now),
+        });
+      }
+      if (tower.damageRepair) {
+        rows.push({
+          key: `tower-repair-${key}`,
+          icon: repairIcon,
+          label: "Repairing tower",
+          coord: tower.coord,
+          remainingMs: remainingMs(tower.damageRepair.startedAt, structureRepairDurationMs(tweaks), now),
+        });
+      }
+    }
+
+    for (const wall of walls) {
+      const key = axialKey(wall.coord);
+      if (wall.buildStartedAt) {
+        rows.push({
+          key: `wall-build-${key}`,
+          icon: buildIcon,
+          label: "Building wall",
+          coord: wall.coord,
+          remainingMs: remainingMs(wall.buildStartedAt, wallBuildDurationMs(tweaks), now),
+        });
+      }
+      const wallStatus = wallActionStatusFor(wall);
+      if (wallStatus) {
+        rows.push({
+          key: `wall-action-${key}`,
+          icon: wallStatus.kind === "upgrade" ? upgradeIcon : repairIcon,
+          label: wallStatus.kind === "upgrade" ? `Upgrading wall to ${wallStatus.targetTier}` : "Repairing wall",
+          coord: wall.coord,
+          remainingMs: wallStatus.remainingMs,
+        });
+      }
+      if (wall.damageRepair) {
+        rows.push({
+          key: `wall-damage-repair-${key}`,
+          icon: repairIcon,
+          label: "Repairing wall (horde damage)",
+          coord: wall.coord,
+          remainingMs: remainingMs(wall.damageRepair.startedAt, structureRepairDurationMs(tweaks), now),
+        });
+      }
+    }
+
+    for (const b of barracksList) {
+      const key = axialKey(b.coord);
+      if (b.buildStartedAt) {
+        rows.push({
+          key: `barracks-build-${key}`,
+          icon: buildIcon,
+          label: "Building barracks",
+          coord: b.coord,
+          remainingMs: remainingMs(b.buildStartedAt, barracksBuildDurationMs(tweaks), now),
+        });
+      }
+      if (b.upgrade) {
+        rows.push({
+          key: `barracks-upgrade-${key}`,
+          icon: upgradeIcon,
+          label: `Upgrading barracks to L${b.upgrade.targetLevel}`,
+          coord: b.coord,
+          remainingMs: remainingMs(b.upgrade.startedAt, barracksUpgradeDurationMs(tweaks, b.upgrade.targetLevel), now),
+        });
+      }
+      if (b.damageRepair) {
+        rows.push({
+          key: `barracks-repair-${key}`,
+          icon: repairIcon,
+          label: "Repairing barracks",
+          coord: b.coord,
+          remainingMs: remainingMs(b.damageRepair.startedAt, structureRepairDurationMs(tweaks), now),
+        });
+      }
+    }
+
+    for (const dock of docks) {
+      const key = axialKey(dock.coord);
+      if (dock.buildStartedAt) {
+        rows.push({
+          key: `dock-build-${key}`,
+          icon: buildIcon,
+          label: "Building dock",
+          coord: dock.coord,
+          remainingMs: remainingMs(dock.buildStartedAt, dockBuildDurationMs(tweaks), now),
+        });
+      }
+      if (dock.fishingBoatUpgrade) {
+        rows.push({
+          key: `dock-boat-${key}`,
+          icon: buildIcon,
+          label: "Building fishing boat",
+          coord: dock.coord,
+          remainingMs: remainingMs(dock.fishingBoatUpgrade.startedAt, tweaks.docks.fishing_boat.build_time_minutes * 60_000, now),
+        });
+      }
+    }
+
+    for (const skiff of scoutSkiffs) {
+      if (skiff.buildStartedAt) {
+        rows.push({
+          key: `skiff-${skiff.id}`,
+          icon: buildIcon,
+          label: "Building scout skiff",
+          coord: skiff.homeDockCoord,
+          remainingMs: remainingMs(skiff.buildStartedAt, tweaks.docks.scout_skiff.build_time_minutes * 60_000, now),
+        });
+      }
+    }
+
+    for (const scout of wanderingScouts) {
+      if (scout.buildStartedAt) {
+        rows.push({
+          key: `wscout-${scout.id}`,
+          icon: buildIcon,
+          label: "Training wandering scout",
+          coord: scout.homeBarracksCoord,
+          remainingMs: remainingMs(scout.buildStartedAt, tweaks.units.wandering_scout.build_time_minutes * 60_000, now),
+        });
+      }
+    }
+
+    if (base.upgrade) {
+      rows.push({
+        key: "base-upgrade",
+        icon: upgradeIcon,
+        label: `Upgrading base to L${base.upgrade.targetLevel}`,
+        coord: territory.base,
+        remainingMs: remainingMs(base.upgrade.startedAt, baseUpgradeDurationMs(tweaks, base.upgrade.targetLevel), now),
+      });
+    }
+    if (base.reinforcementAction) {
+      const action = base.reinforcementAction;
+      if (action.kind === "upgrade") {
+        rows.push({
+          key: "base-reinforce",
+          icon: upgradeIcon,
+          label: `Upgrading base reinforcement to L${action.targetLevel}`,
+          coord: territory.base,
+          remainingMs: remainingMs(action.startedAt, baseReinforcementUpgradeDurationMs(tweaks, action.targetLevel), now),
+        });
+      } else {
+        const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
+        rows.push({
+          key: "base-reinforce-repair",
+          icon: repairIcon,
+          label: "Repairing base reinforcement",
+          coord: territory.base,
+          remainingMs: remainingMs(action.startedAt, baseReinforcementRepairDurationMs(tweaks, base.currentHp, maxHp), now),
+        });
+      }
+    }
+
+    for (const outpost of outposts) {
+      if (!outpost.reinforcementAction) continue;
+      const action = outpost.reinforcementAction;
+      if (action.kind === "upgrade") {
+        rows.push({
+          key: `outpost-reinforce-${outpost.id}`,
+          icon: upgradeIcon,
+          label: `Upgrading outpost reinforcement to L${action.targetLevel}`,
+          coord: outpost.coord,
+          remainingMs: remainingMs(action.startedAt, outpostReinforcementUpgradeDurationMs(tweaks, action.targetLevel), now),
+        });
+      } else {
+        const maxHp = outpostReinforcementHp(tweaks, outpost.reinforcementLevel);
+        rows.push({
+          key: `outpost-reinforce-repair-${outpost.id}`,
+          icon: repairIcon,
+          label: "Repairing outpost reinforcement",
+          coord: outpost.coord,
+          remainingMs: remainingMs(action.startedAt, outpostReinforcementRepairDurationMs(tweaks, outpost.currentHp, maxHp), now),
+        });
+      }
+    }
+
+    if (baseRelocationInProgress) {
+      rows.push({
+        key: "base-relocation",
+        icon: <Navigation size={14} />,
+        label: "Relocating base",
+        coord: baseRelocationInProgress.destination,
+        remainingMs: baseRelocationInProgress.remainingMs,
+      });
+    }
+
+    return rows;
+  }
+
+  /**
+   * The passive status info that doesn't have a "first glance" home
+   * elsewhere on the map/HUD (unlike tombstones, HP/durability bars, and the
+   * siege countdown, which do) — auto-flow/connected status for extraction
+   * tiles, noise floor contribution, and tower range/damage. Returns null
+   * when the selected tile has none of these, so the ring's Info hex only
+   * appears when there's something to show. Countdown-style status (base
+   * relocation, every build/upgrade/repair timer) lives in the notification
+   * tray instead — see activeCountdownRows below.
+   */
+  function infoDialogContent(): ReactNode | null {
+    if (!selected) return null;
+    const rows: ReactNode[] = [];
+    if (selectedTile) {
+      rows.push(
+        <div key="flow">{selectedConnected ? "Connected — auto-flowing to base" : "Not connected — manual collection only"}</div>,
+      );
+    }
+    if (selectedNoiseFloorContribution !== null) {
+      rows.push(<div key="noise">Noise floor: +{selectedNoiseFloorContribution.toFixed(1)}db</div>);
+    }
+    if (selectedTower) {
+      rows.push(
+        <div key="tower-stats">
+          Range {towerRange(tweaks, selectedTower.level)}, damage {towerDamage(tweaks, selectedTower.level).toFixed(1)}
+        </div>,
+      );
+    }
+    if (selectedTombstone) {
+      rows.push(<div key="tombstone">Tombstone — fades in {formatDuration(Math.max(0, selectedTombstone.expiresAt - now))}</div>);
+    }
+    if (rows.length === 0) return null;
+    return (
+      <Panel style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.8rem", minWidth: 220, maxWidth: 320 }}>
+        <strong>Info</strong>
+        {rows}
+      </Panel>
+    );
+  }
+
+  /**
+   * The full ring for the selected tile: structural actions (above) plus
+   * the universal, structure-independent actions available on any owned
+   * tile — Collect, Garrison (a form, not a discrete choice — quantities
+   * aren't a fixed list), and Demolish. These were originally scoped to stay
+   * in the tile info card, but the card is being retired in favor of the
+   * ring covering everything; folding them in here as its own layer keeps
+   * structuralActionsFor's tile-type branching (already mirrored 1:1 against
+   * TilePopup) untouched.
+   */
+  function ringActionsFor(): RingAction[] {
+    if (!selected) return [];
+    const actions = structuralActionsFor();
+
+    // Unlike Collect/Garrison/Demolish below, Info isn't owned-tile-only — a
+    // tombstone can sit on unowned ground, so this is pushed before the
+    // isOwned gate rather than after it.
+    const info = infoDialogContent();
+    if (info) {
+      actions.push({ key: "info", icon: <Info size={18} />, title: "Info", dialogContent: info });
+    }
+
+    if (!isOwned(selected)) return actions;
+
+    if (selectedTile && !selectedTile.damaged && selectedTile.stockpile > 0) {
+      actions.push({
+        key: "collect",
+        icon: <PackageCheck size={18} />,
+        title: `Collect (${Math.floor(selectedTile.stockpile)})`,
+        onClick: handleCollect,
+      });
+    }
+    if (selectedDock && !selectedDock.buildStartedAt && selectedDock.stockpile > 0) {
+      actions.push({
+        key: "collect-dock",
+        icon: <PackageCheck size={18} />,
+        title: `Collect (${Math.floor(selectedDock.stockpile)})`,
+        onClick: handleCollectDock,
+      });
+    }
+
+    const canGarrisonHere =
+      !!selectedGarrison ||
+      availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults) > 0 ||
+      availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults) > 0 ||
+      availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults) > 0;
+    if (canGarrisonHere) {
+      actions.push({ key: "garrison", icon: <Users size={18} />, title: "Garrison", formContent: garrisonFormContent() });
+    }
+
+    const canDemolishHere = !selectedIsBase && (!!selectedStructure || !!selectedDock);
+    if (canDemolishHere) {
+      actions.push({ key: "demolish", icon: <Trash2 size={18} />, title: "Demolish", onClick: handleDemolish });
+    }
+
+    return actions;
+  }
+  const ringActions = ringActionsFor();
+
   return (
     <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column" }}>
       <header
@@ -1612,6 +2607,26 @@ export function GameScreen({
           />
         </div>
       </header>
+      {actionError && (
+        <div
+          onClick={() => setActionError(null)}
+          style={{
+            position: "fixed",
+            top: "3.5rem",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 60,
+            background: "rgba(20, 20, 22, 0.92)",
+            color: "#ff8080",
+            borderRadius: 8,
+            padding: "0.75rem 1rem",
+            fontSize: "0.85rem",
+            cursor: "pointer",
+          }}
+        >
+          {actionError}
+        </div>
+      )}
       <div style={{ flex: "1 1 auto", minHeight: 0 }}>
         <HexCanvas
           ref={hexCanvasRef}
@@ -1620,6 +2635,8 @@ export function GameScreen({
           tweaks={tweaks}
           base={territory.base}
           baseLevel={base.level}
+          baseCurrentHp={base.currentHp}
+          baseMaxHp={baseReinforcementHp(tweaks, base.reinforcementLevel)}
           upgradeAvailableKeys={upgradeAvailableKeys}
           buildModeEligibleKeys={buildModeEligibleKeys}
           owned={territory.owned}
@@ -1644,278 +2661,11 @@ export function GameScreen({
           selected={selected}
           playerColor={player.color}
           onTileClick={selectTile}
+          onViewportChange={handleViewportChange}
         />
       </div>
-      {selected && (
-        <TilePopup
-          coord={selected}
-          owned={isOwned(selected)}
-          terrain={isOwned(selected) || isScouted(selected) ? terrainAt(world.seed, selected) : null}
-          isScouted={isScouted(selected)}
-          isBase={selectedIsBase}
-          existingTile={selectedTile}
-          noiseFloorContribution={selectedNoiseFloorContribution}
-          stockpileCap={tweaks.storage.capacity_base_per_resource}
-          connected={selectedConnected}
-          buildOptions={
-            isOwned(selected) && selectedEmpty && !selectedIsBase && isBuildableLand(world.seed, selected)
-              ? buildOptionsFor()
-              : null
-          }
-          tierUpgrade={selectedTile && isOwned(selected) ? tierUpgradeFor(selectedTile) : null}
-          tierUpgradeInProgress={selectedTile ? tierUpgradeInProgressFor(selectedTile) : null}
-          storageUpgrades={selectedIsBase ? storageUpgradesFor() : null}
-          pathTile={selectedPath}
-          pathBuildOption={
-            isOwned(selected) && selectedEmpty && !selectedIsBase && isBuildableLand(world.seed, selected)
-              ? pathBuildOptionFor()
-              : null
-          }
-          pathUpgradeOption={selectedPath && isOwned(selected) ? pathUpgradeOptionFor(selectedPath) : null}
-          pathUpgradeInProgress={selectedPath ? pathUpgradeInProgressFor(selectedPath) : null}
-          tower={selectedTower}
-          towerStats={
-            selectedTower
-              ? { range: towerRange(tweaks, selectedTower.level), damage: towerDamage(tweaks, selectedTower.level) }
-              : null
-          }
-          towerBuildOption={
-            isOwned(selected) && selectedEmpty && !selectedIsBase && isBuildableLand(world.seed, selected)
-              ? towerBuildOptionFor()
-              : null
-          }
-          towerUpgradeOption={selectedTower && isOwned(selected) ? towerUpgradeOptionFor(selectedTower) : null}
-          towerUpgradeInProgress={selectedTower ? towerUpgradeInProgressFor(selectedTower) : null}
-          wall={selectedWall}
-          wallMaxDurability={selectedWall ? maxWallDurability(tweaks, selectedWall.tier) : null}
-          wallBuildOption={
-            isOwned(selected) && selectedEmpty && !selectedIsBase && isBuildableLand(world.seed, selected)
-              ? wallBuildOptionFor()
-              : null
-          }
-          wallUpgradeOption={selectedWall && isOwned(selected) ? wallUpgradeOptionFor(selectedWall) : null}
-          wallRepairOption={selectedWall && isOwned(selected) ? wallRepairOptionFor(selectedWall) : null}
-          wallActionStatus={selectedWall ? wallActionStatusFor(selectedWall) : null}
-          barracks={selectedBarracks}
-          barracksBuildOption={
-            isOwned(selected) && selectedEmpty && !selectedIsBase && isBuildableLand(world.seed, selected)
-              ? barracksBuildOptionFor()
-              : null
-          }
-          barracksUpgradeOption={
-            selectedBarracks && isOwned(selected) ? barracksUpgradeOptionFor(selectedBarracks) : null
-          }
-          barracksUpgradeInProgress={selectedBarracks ? barracksUpgradeInProgressFor(selectedBarracks) : null}
-          dock={selectedDock}
-          dockYieldPerSecond={selectedDock ? dockYieldPerSecond(tweaks, selectedDock) : null}
-          dockBuildOption={
-            (isOwned(selected) || isScouted(selected)) &&
-            selectedEmpty &&
-            !selectedIsBase &&
-            terrainAt(world.seed, selected) === "water" &&
-            isTransitionTile(world.seed, selected)
-              ? dockBuildOptionFor()
-              : null
-          }
-          fishingBoatOption={selectedDock ? fishingBoatOptionFor(selectedDock) : null}
-          fishingBoatInProgress={selectedDock ? fishingBoatInProgressFor(selectedDock) : null}
-          scoutSkiffOption={selectedDock ? scoutSkiffOptionFor(selectedDock) : null}
-          scoutSkiffInProgress={selectedDock ? scoutSkiffInProgressFor(selectedDock) : null}
-          scoutSkiffCount={
-            selectedDock
-              ? scoutSkiffs.filter((s) => axialKey(s.homeDockCoord) === axialKey(selectedDock.coord) && s.buildStartedAt === null)
-                  .length
-              : 0
-          }
-          wanderingScoutOption={selectedBarracks ? wanderingScoutOptionFor(selectedBarracks) : null}
-          wanderingScoutInProgress={selectedBarracks ? wanderingScoutInProgressFor(selectedBarracks) : null}
-          wanderingScoutCount={
-            selectedBarracks
-              ? wanderingScouts.filter(
-                  (s) => axialKey(s.homeBarracksCoord) === axialKey(selectedBarracks.coord) && s.buildStartedAt === null,
-                ).length
-              : 0
-          }
-          scoutStockpile={units.scoutStockpile}
-          scoutCapacity={scoutCapacityFor(tweaks, barracksList)}
-          militiaCount={units.militiaCount}
-          militiaCapacity={militiaCapacityFor(tweaks, barracksList)}
-          junkyardKnightCount={units.junkyardKnightCount}
-          junkyardKnightCapacity={junkyardKnightCapacityFor(tweaks, barracksList)}
-          crossBowSniperCount={units.crossBowSniperCount}
-          crossBowSniperCapacity={crossBowSniperCapacityFor(tweaks, barracksList)}
-          scoutTrainOption={
-            selectedBarracks && isOwned(selected) && !selectedBarracks.damaged ? scoutTrainOptionFor() : null
-          }
-          militiaTrainOption={
-            selectedBarracks && isOwned(selected) && !selectedBarracks.damaged ? militiaTrainOptionFor() : null
-          }
-          junkyardKnightTrainOption={
-            selectedBarracks && isOwned(selected) && !selectedBarracks.damaged
-              ? junkyardKnightTrainOptionFor(selectedBarracks.level)
-              : null
-          }
-          crossBowSniperTrainOption={
-            selectedBarracks && isOwned(selected) && !selectedBarracks.damaged
-              ? crossBowSniperTrainOptionFor(selectedBarracks.level)
-              : null
-          }
-          scoutQueueStatus={selectedBarracks ? scoutQueueStatus : null}
-          militiaQueueStatus={selectedBarracks ? militiaQueueStatus : null}
-          junkyardKnightQueueStatus={selectedBarracks ? junkyardKnightQueueStatus : null}
-          crossBowSniperQueueStatus={selectedBarracks ? crossBowSniperQueueStatus : null}
-          scoutsToTrain={scoutsToTrain}
-          militiaToTrain={militiaToTrain}
-          junkyardKnightToTrain={junkyardKnightToTrain}
-          crossBowSniperToTrain={crossBowSniperToTrain}
-          scoutTileOption={
-            !isOwned(selected) &&
-            !isScouted(selected) &&
-            units.scoutStockpile > 0 &&
-            isTileScoutable(world.seed, selected, territory.owned, scoutedTiles)
-          }
-          // Checked against the actual demolishable structure types
-          // (App.tsx:handleDemolish's own union), not selectedEmpty's
-          // inverse — selectedEmpty is false for a den/outpost tile too
-          // (deliberately, so build options hide there), which used to make
-          // canDemolish true over a den with nothing handleDemolish
-          // recognizes, showing a Demolish button that always failed.
-          canDemolish={isOwned(selected) && !selectedIsBase && (!!selectedStructure || !!selectedDock)}
-          repairOption={repairOptionFor(selectedStructure)}
-          repairBlockedByHorde={selectedHordeOccupied}
-          repairInProgress={repairInProgressFor(selectedStructure)}
-          constructionInProgress={
-            selectedTile
-              ? constructionInProgressFor(selectedTile.buildStartedAt, extractionTileBuildDurationMs(tweaks))
-              : selectedPath
-                ? constructionInProgressFor(selectedPath.buildStartedAt, pathBuildDurationMs(tweaks))
-                : selectedTower
-                  ? constructionInProgressFor(selectedTower.buildStartedAt, towerBuildDurationMs(tweaks))
-                  : selectedWall
-                    ? constructionInProgressFor(selectedWall.buildStartedAt, wallBuildDurationMs(tweaks))
-                    : selectedBarracks
-                      ? constructionInProgressFor(selectedBarracks.buildStartedAt, barracksBuildDurationMs(tweaks))
-                      : selectedDock
-                        ? constructionInProgressFor(selectedDock.buildStartedAt, dockBuildDurationMs(tweaks))
-                        : null
-          }
-          baseLevel={base.level}
-          baseUpgradeOption={selectedIsBase ? baseUpgradeOptionFor() : null}
-          baseUpgradeInProgress={selectedIsBase ? baseUpgradeInProgress : null}
-          baseCurrentHp={base.currentHp}
-          baseMaxHp={baseReinforcementHp(tweaks, base.reinforcementLevel)}
-          reinforcementUpgradeOption={selectedIsBase ? reinforcementUpgradeOptionFor() : null}
-          baseRepairOption={selectedIsBase ? baseRepairOptionFor() : null}
-          baseRepairBlockedByHorde={baseAdjacentHordeOccupied}
-          reinforcementActionStatus={selectedIsBase ? reinforcementActionStatusFor() : null}
-          relocationOption={!selectedIsBase ? relocationOptionFor(selected) : null}
-          canRelocateBase={canRelocateBase(tweaks, base.level)}
-          baseRelocationInProgress={selectedIsBase ? baseRelocationInProgress : null}
-          expeditionOption={
-            !isOwned(selected) && isScouted(selected) && !selectedDen && !selectedIsLab
-              ? expeditionRouteOptionFor(selected)
-              : null
-          }
-          den={selectedDen}
-          denAssaultOption={selectedDen ? denAssaultOptionFor(selectedDen) : null}
-          denSiegeStatus={selectedDen ? denSiegeStatusFor(selectedDen) : null}
-          denAssaultInProgress={selectedDen ? denAssaultInProgressFor(selectedDen) : null}
-          lab={selectedIsLab ? lab : null}
-          labAssaultOption={selectedIsLab ? labAssaultOptionFor() : null}
-          labAssaultInProgress={selectedIsLab ? labAssaultInProgress() : null}
-          outpost={selectedOutpost}
-          outpostMaxHp={selectedOutpost ? outpostReinforcementHp(tweaks, selectedOutpost.reinforcementLevel) : null}
-          outpostReinforcementUpgradeOption={
-            selectedOutpost ? outpostReinforcementUpgradeOptionFor(selectedOutpost) : null
-          }
-          outpostRepairOption={selectedOutpost ? outpostRepairOptionFor(selectedOutpost) : null}
-          outpostReinforcementActionStatus={
-            selectedOutpost ? outpostReinforcementActionStatusFor(selectedOutpost) : null
-          }
-          outpostRepairBlockedByHorde={
-            selectedOutpost
-              ? hordes.some((h) => axialDistance(h.path[h.pathIndex], selectedOutpost.coord) <= 1)
-              : false
-          }
-          tombstone={selectedTombstone}
-          tombstoneExpiresInMs={selectedTombstone ? Math.max(0, selectedTombstone.expiresAt - now) : null}
-          militiaToSend={militiaToSend}
-          junkyardKnightToSend={junkyardKnightToSend}
-          crossBowSniperToSend={crossBowSniperToSend}
-          availableMilitiaForExpeditionCount={availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)}
-          availableJunkyardKnightForExpeditionCount={availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)}
-          availableCrossBowSniperForExpeditionCount={availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)}
-          garrisonMilitiaCount={selectedGarrison?.militiaCount ?? 0}
-          recallInProgress={selected ? recallInProgressFor(selected) : null}
-          availableMilitiaCount={availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)}
-          militiaToGarrison={militiaToGarrison}
-          garrisonJunkyardKnightCount={selectedGarrison?.junkyardKnightCount ?? 0}
-          availableJunkyardKnightCount={availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)}
-          junkyardKnightToGarrison={junkyardKnightToGarrison}
-          garrisonCrossBowSniperCount={selectedGarrison?.crossBowSniperCount ?? 0}
-          availableCrossBowSniperCount={availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)}
-          crossBowSniperToGarrison={crossBowSniperToGarrison}
-          garrisonBlockedByHorde={selectedHordeOccupied}
-          buildError={actionError}
-          onBuild={handleBuild}
-          onUpgradeTier={handleUpgradeTier}
-          onUpgradeStorage={handleUpgradeStorage}
-          onCollect={handleCollect}
-          onBuildPath={handleBuildPath}
-          onUpgradePath={handleUpgradePath}
-          onBuildTower={handleBuildTower}
-          onUpgradeTower={handleUpgradeTower}
-          onBuildWall={handleBuildWall}
-          onUpgradeWall={handleUpgradeWall}
-          onRepairWall={handleRepairWall}
-          onRepair={handleRepairStructure}
-          onDemolish={handleDemolish}
-          onBuildBarracks={handleBuildBarracks}
-          onUpgradeBarracks={handleUpgradeBarracks}
-          onBuildDock={handleBuildDock}
-          onBuildFishingBoat={handleBuildFishingBoat}
-          onBuildScoutSkiff={handleBuildScoutSkiff}
-          onCollectDock={handleCollectDock}
-          onBuildWanderingScout={handleBuildWanderingScout}
-          onTrainScouts={handleTrainScouts}
-          onTrainMilitia={handleTrainMilitia}
-          onTrainJunkyardKnight={handleTrainJunkyardKnight}
-          onTrainCrossBowSniper={handleTrainCrossBowSniper}
-          onMaxScouts={handleMaxScouts}
-          onMaxMilitia={handleMaxMilitia}
-          onMaxJunkyardKnight={handleMaxJunkyardKnight}
-          onMaxCrossBowSniper={handleMaxCrossBowSniper}
-          onRushTrainScouts={handleRushTrainScouts}
-          onRushTrainMilitia={handleRushTrainMilitia}
-          onScoutTile={handleScoutTile}
-          onUpgradeBase={handleUpgradeBase}
-          onUpgradeReinforcement={handleUpgradeReinforcement}
-          onRepairBase={handleRepairBase}
-          onUpgradeOutpostReinforcement={handleUpgradeOutpostReinforcement}
-          onRepairOutpost={handleRepairOutpost}
-          onRelocateBase={handleRelocateBase}
-          onDispatchExpedition={handleDispatchExpedition}
-          onAssaultDen={handleAssaultDen}
-          onSecureLab={handleSecureLab}
-          onGarrisonMilitia={handleGarrisonMilitia}
-          onMaxGarrison={handleMaxGarrison}
-          onGarrisonJunkyardKnight={handleGarrisonJunkyardKnight}
-          onMaxGarrisonJunkyardKnight={handleMaxGarrisonJunkyardKnight}
-          onGarrisonCrossBowSniper={handleGarrisonCrossBowSniper}
-          onMaxGarrisonCrossBowSniper={handleMaxGarrisonCrossBowSniper}
-          onRecallMilitia={handleRecallMilitia}
-          onChangeMilitiaToSend={setMilitiaToSend}
-          onChangeJunkyardKnightToSend={setJunkyardKnightToSend}
-          onChangeCrossBowSniperToSend={setCrossBowSniperToSend}
-          onChangeScoutsToTrain={setScoutsToTrain}
-          onChangeMilitiaToTrain={setMilitiaToTrain}
-          onChangeJunkyardKnightToTrain={setJunkyardKnightToTrain}
-          onChangeCrossBowSniperToTrain={setCrossBowSniperToTrain}
-          onChangeMilitiaToGarrison={setMilitiaToGarrison}
-          onChangeJunkyardKnightToGarrison={setJunkyardKnightToGarrison}
-          onChangeCrossBowSniperToGarrison={setCrossBowSniperToGarrison}
-          onClose={() => setSelected(null)}
-        />
+      {selected && ringActions.length > 0 && (
+        <TileActionRing key={axialKey(selected)} ref={ringRef} rootCoord={selected} actions={ringActions} />
       )}
       <div ref={clusterAndPanelsRef}>
       <GlobalHexCluster
@@ -2028,6 +2778,13 @@ export function GameScreen({
           denAssaults={denAssaults}
           labAssaults={labAssaults}
           garrisonRecalls={garrisonRecalls}
+          siegedDens={dens
+            .filter((d) => d.siege)
+            .map((d) => ({
+              coord: d.coord,
+              holdRemainingMs: remainingMs(d.siege!.startedAt, tweaks.dens.siege.hold_duration_minutes * 60_000, now),
+            }))}
+          countdowns={activeCountdownRows()}
           now={now}
         />
       </div>

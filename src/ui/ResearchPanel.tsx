@@ -5,7 +5,7 @@ import type { Tweaks } from "../data/tweaksSchema";
 import { isResearchAvailable, researchCost, researchDurationMs } from "../engine/research";
 import { remainingMs } from "../engine/timers";
 import type { BuildResult } from "../App";
-import { formatDuration } from "./TilePopup";
+import { formatDuration } from "./format";
 import { Panel } from "./primitives/Panel";
 
 function formatCost(cost: Partial<Record<ResourceType, number>>): string {
