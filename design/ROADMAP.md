@@ -193,7 +193,7 @@ Playtesting backlog gathered 2026-07-22. Ordered by the user's stated priority: 
 ### UX
 - **Map size choice during onboarding** — 48×48 / 96×96 / 128×128. (#10) Should scale overall game pace, and needs den count (and any other density-based placement) to scale with it too, not just a straight grid resize.
 - **Quick-collect icon directly on a resource building** — skip opening the ring menu just to collect. (#11)
-- **Early game pacing is too slow.** (#12) Increase resource collection [amount/rate — TBD which] and shave 1 minute off every build/upgrade timer.
+- **Early game pacing is too slow.** (#12) — ✅ Resolved (2026-07-23): small-tier extraction yields raised ~50% (food 15→22, wood 12→18, stone 6→9, steel/power 3→5, `public/tweaks.jsonc`), and every flat build/upgrade timer in the file (extraction tiles, docks/fishing boat/scout skiff, towers, walls, barracks/wandering scout, infrastructure paths, storage, base level, base reinforcement, outpost reinforcement, research tiers) shaved down by 1 minute.
 - **Toast notifications should auto-collapse.** (#14) Show fully for 5 real-time seconds, then slide out to just the action icon; clicking the icon re-expands it. The player should always be able to see, at a glance, how many upgrades/expeditions/etc. are currently in flight even after the toasts collapse.
 
 ### Questions *(need design discussion before an implementation plan)*

@@ -69,15 +69,15 @@
       "tier_multiplier": 1.5
     },
 
-    "tier_upgrade_time_minutes_base": 4,
-    "_tier_upgrade_time_note": "tierUpgradeDurationMs(targetTier) = tier_upgrade_time_minutes_base * target_level (small=1, mid=2, large=3) — so mid=8min, large=12min. Upgrade no longer applies instantly; cost is still deducted upfront, the tier change lands when the timer completes (engine/tick.ts / App.tsx runTick). First pass, untested.",
+    "tier_upgrade_time_minutes_base": 3,
+    "_tier_upgrade_time_note": "tierUpgradeDurationMs(targetTier) = tier_upgrade_time_minutes_base * target_level (small=1, mid=2, large=3) — so mid=6min, large=9min. Upgrade no longer applies instantly; cost is still deducted upfront, the tier change lands when the timer completes (engine/tick.ts / App.tsx runTick). CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12, playtesting feedback: early game pacing too slow) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
 
-    "build_time_minutes": 2,
-    "_build_time_note": "extractionTileBuildDurationMs (engine/tiers.ts) — flat, same for every resource type. Construction no longer completes instantly on payment: the tile sits on its slot as non-functional (engine/formulas.ts:isStructureActive) until this timer elapses. Shorter than tier_upgrade_time_minutes_base since laying a fresh small-tier tile is simpler than upgrading an operating one. First pass, untested.",
+    "build_time_minutes": 1,
+    "_build_time_note": "extractionTileBuildDurationMs (engine/tiers.ts) — flat, same for every resource type. Construction no longer completes instantly on payment: the tile sits on its slot as non-functional (engine/formulas.ts:isStructureActive) until this timer elapses. Shorter than tier_upgrade_time_minutes_base since laying a fresh small-tier tile is simpler than upgrading an operating one. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 2, shaving 1 minute off like every other build/upgrade timer in this file.",
 
     "food": {
-      "small_yield_per_tick": 15,
-      // mid = 15 * 1.5 = 22.5 | large = 15 * 2.25 = 33.75
+      "small_yield_per_tick": 22,
+      // mid = 22 * 1.5 = 33 | large = 22 * 2.25 = 49.5
       "build_cost_base": { "wood": 150 },
       "build_cost_scaling": "FORMULA_A (per additional tile built)",
       "tier_upgrade_cost_base": { "wood": 150 }, // consumed at small->mid; mid->large adds stone (see tech_progression)
@@ -88,7 +88,7 @@
     },
 
     "wood": {
-      "small_yield_per_tick": 12,
+      "small_yield_per_tick": 18,
       "build_cost_base": { "wood": 150 }, // wood tiles pay their own build cost in wood
       "build_cost_scaling": "FORMULA_A",
       "tier_upgrade_cost_base": { "wood": 150 },
@@ -99,7 +99,7 @@
     },
 
     "stone": {
-      "small_yield_per_tick": 6,
+      "small_yield_per_tick": 9,
       "build_cost_base": { "stone": 195 }, // 150 * 1.3
       "build_cost_scaling": "FORMULA_A",
       "tier_upgrade_cost_base": { "stone": 195 },
@@ -110,7 +110,7 @@
     },
 
     "steel": {
-      "small_yield_per_tick": 3,
+      "small_yield_per_tick": 5,
       "build_cost_base": { "wood": 400, "stone": 300 },
       "_build_cost_note": "Fixed from an earlier pass where this cost 254 steel — self-referential and literally unbuildable, since starting steel is (correctly) 0 and there's no other way to earn steel before a steel tile exists. Now costs wood+stone instead, matching the wood->stone->steel->power tech chain. Tier upgrades stay self-referential (steel:254) since by then the tile is already producing steel to reinvest. First pass, untested.",
       "build_cost_scaling": "FORMULA_A",
@@ -122,7 +122,7 @@
     },
 
     "power": {
-      "small_yield_per_tick": 3,
+      "small_yield_per_tick": 5,
       "build_cost_base": { "wood": 500, "stone": 400, "steel": 200 },
       "_build_cost_note": "Fixed from an earlier pass where this cost 330 power — self-referential and unbuildable (starting power is 0). Now costs wood+stone+steel, requiring an established steel operation first. Tier upgrades stay self-referential (power:330). First pass, untested.",
       "build_cost_scaling": "FORMULA_A",
@@ -177,22 +177,22 @@
   "docks": {
     "build_cost_base": { "wood": 200 },
     "build_cost_scaling": "LINEAR (per additional dock built) — cost_n = base * (1 + 0.1*(n-1)), NOT Formula A's compounding. CORRECTION (2026-07-21, playtesting feedback: \"60k wood for one dock\" — Formula A's full compounding pushed a 13th dock to ~62,000 wood; switched to the same linear scaling walls/goat tracks already use). See TWEAKS.md.",
-    "build_time_minutes": 3,
-    "_build_time_note": "dockBuildDurationMs (engine/docks.ts) — CORRECTION (2026-07-21, playtesting feedback): docks previously had no construction timer at all, unlike every other structure. A dock yields nothing until this timer elapses.",
+    "build_time_minutes": 2,
+    "_build_time_note": "dockBuildDurationMs (engine/docks.ts) — CORRECTION (2026-07-21, playtesting feedback): docks previously had no construction timer at all, unlike every other structure. A dock yields nothing until this timer elapses. CORRECTION 2 (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 3, shaving 1 minute off like every other build/upgrade timer in this file.",
     "yield_multiplier_vs_food_tile": 0.7,
     "_yield_note": "dockYieldPerSecond (engine/docks.ts) = extraction_tiles.food.small_yield_per_tick/game.tick_interval_seconds * this multiplier * (fishing_boat.yield_bonus_multiplier if built). Deliberately NOT also multiplied by transition_tiles.yield_multiplier — a dock sits on transition water by definition, so 0.7 already IS its full intended rate, not a rate to be halved again.",
 
     "fishing_boat": {
       "cost": { "wood": 150, "steel": 20 },
       "yield_bonus_multiplier": 1.5,
-      "build_time_minutes": 4
+      "build_time_minutes": 3
     },
 
     "scout_skiff": {
       "cost": { "wood": 240, "food": 80 },
       "max_per_dock": 1,
       "seconds_per_step": 10,
-      "build_time_minutes": 10
+      "build_time_minutes": 9
     },
     "_scout_skiff_note": "CORRECTION (2026-07-20 balance pass, playtesting feedback: scout skiffs were reasonably overpowered for their cost — unlimited free map reveal from a single cheap, instant build). Cost doubled from wood:120/food:40, and it now takes build_time_minutes to construct (previously instant, unlike the fishing boat) before it launches and starts wandering its connected body of water at one tile per seconds_per_step, revealing every tile it visits (same mechanism as manual land scouting) — engine/scoutSkiffs.ts."
   },
@@ -203,8 +203,8 @@
   "towers": {
     "build_cost_base": { "wood": 300, "stone": 150 },
     "build_cost_scaling": "FORMULA_A (per additional tower built)",
-    "build_time_minutes": 3,
-    "_build_time_note": "towerBuildDurationMs (engine/towers.ts) — flat, always L1. Construction no longer completes instantly on payment: the tower sits on its tile as non-functional (engine/formulas.ts:isStructureActive — no defense, no viewshed claim, no noise contribution) until this timer elapses. First pass, untested.",
+    "build_time_minutes": 2,
+    "_build_time_note": "towerBuildDurationMs (engine/towers.ts) — flat, always L1. Construction no longer completes instantly on payment: the tower sits on its tile as non-functional (engine/formulas.ts:isStructureActive — no defense, no viewshed claim, no noise contribution) until this timer elapses. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 3, shaving 1 minute off like every other build/upgrade timer in this file.",
 
     "base_range_tiles": 2,           // L1 range
     "range_per_level": 1,            // +1 tile per level
@@ -220,8 +220,8 @@
       "L2_to_L3": ["wood", "stone", "steel"],
       "L3_to_L4": ["wood", "stone", "steel", "power"]
     },
-    "upgrade_time_minutes_base": 4,
-    "_upgrade_time_note": "towerUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=8min, L3=12min, L4=16min. First pass, untested.",
+    "upgrade_time_minutes_base": 3,
+    "_upgrade_time_note": "towerUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=6min, L3=9min, L4=12min. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
 
     "garrison_damage_bonus_per_militia": 2,
     "_garrison_damage_bonus_note": "Militia garrisoned on a tower's own tile add their attack power straight onto that tower's damage (engine/hordes.ts:towerDamagePerSecond, engine/towers.ts:zombiesKilledPerTick) — additive, before the horde-size percentage scaling, not a separate attack. Mirrors units.militia.attack_per_unit (2) but kept as its own tunable in case tower-assist and solo-militia-attack ever need to diverge. First pass, untested."
@@ -235,8 +235,8 @@
 
     "build_cost_base": { "wood": 200 }, // wood wall entry cost
     "build_cost_scaling": "LINEAR (per additional wall built) — cost_n = base * (1 + 0.1*(n-1)), NOT Formula A's compounding; see TWEAKS.md",
-    "build_time_minutes": 2,
-    "_build_time_note": "wallBuildDurationMs (engine/walls.ts) — flat, always wood tier. Construction no longer completes instantly on payment: the wall sits on its tile as non-functional (engine/formulas.ts:isStructureActive) until this timer elapses. First pass, untested.",
+    "build_time_minutes": 1,
+    "_build_time_note": "wallBuildDurationMs (engine/walls.ts) — flat, always wood tier. Construction no longer completes instantly on payment: the wall sits on its tile as non-functional (engine/formulas.ts:isStructureActive) until this timer elapses. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 2, shaving 1 minute off like every other build/upgrade timer in this file.",
 
     "durability_hits_to_break": {
       "wood": 3,
@@ -271,8 +271,8 @@
       "wood_to_rock": ["wood", "stone"],
       "rock_to_steel": ["wood", "stone", "steel"]
     },
-    "tier_upgrade_time_minutes_base": 4,
-    "_tier_upgrade_time_note": "wallUpgradeDurationMs(targetTier) = tier_upgrade_time_minutes_base * target_level (wood=1, rock=2, steel=3) — rock=8min, steel=12min. First pass, untested.",
+    "tier_upgrade_time_minutes_base": 3,
+    "_tier_upgrade_time_note": "wallUpgradeDurationMs(targetTier) = tier_upgrade_time_minutes_base * target_level (wood=1, rock=2, steel=3) — rock=6min, steel=9min. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
 
     "repair": {
       "allowed_during_combat": false, // peacetime only
@@ -290,8 +290,8 @@
     "_status": "first pass, untested — new system, no prior design reference to reconcile against.",
     "build_cost_base": { "wood": 250, "stone": 150 },
     "build_cost_scaling": "FORMULA_A (per additional barracks built)",
-    "build_time_minutes": 3,
-    "_build_time_note": "barracksBuildDurationMs (engine/barracks.ts) — flat, always L1. Construction no longer completes instantly on payment: the barracks sits on its tile as non-functional (engine/formulas.ts:isStructureActive — no training capacity, no expedition origin) until this timer elapses. First pass, untested.",
+    "build_time_minutes": 2,
+    "_build_time_note": "barracksBuildDurationMs (engine/barracks.ts) — flat, always L1. Construction no longer completes instantly on payment: the barracks sits on its tile as non-functional (engine/formulas.ts:isStructureActive — no training capacity, no expedition origin) until this timer elapses. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 3, shaving 1 minute off like every other build/upgrade timer in this file.",
     "upgrade_cost_base": { "wood": 150, "stone": 75 },
     "upgrade_cost_scaling": "FORMULA_B",
     "upgrade_tech_progression": {
@@ -299,8 +299,8 @@
       "L2_to_L3": ["wood", "stone", "steel"],
       "L3_to_L4": ["wood", "stone", "steel", "power"]
     },
-    "upgrade_time_minutes_base": 4,
-    "_upgrade_time_note": "barracksUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=8min, L3=12min, L4=16min. First pass, untested.",
+    "upgrade_time_minutes_base": 3,
+    "_upgrade_time_note": "barracksUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=6min, L3=9min, L4=12min. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
     "militia_capacity_per_level": 10,
     "scout_capacity_per_level": 3,
     "junkyard_knight_capacity_per_level": 6,
@@ -352,7 +352,7 @@
       "cost": { "wood": 150, "stone": 75 },
       "max_per_barracks": 1,
       "seconds_per_step": 5,
-      "build_time_minutes": 10,
+      "build_time_minutes": 9,
       "_note": "Land counterpart of the water-bound scout skiff (docks.scout_skiff) — built at a Barracks by retiring scout_cost regular scouts from the stockpile, ON TOP OF a flat resource cost (previously scouts-only, no resource price at all). Wanders randomly across connected land at one tile per seconds_per_step, revealing every tile it visits (engine/wanderingScouts.ts), same mechanism as manual land scouting. Capped at max_per_barracks per barracks. CORRECTION (2026-07-20 balance pass, playtesting feedback: reasonably overpowered for its cost, same issue as scout_skiff) — added the resource `cost` (mid-tier, on par with a barracks/tower upgrade) and build_time_minutes (previously instant). CORRECTION 2 (2026-07-21 playtest pass: felt static/rooted next to the skiff, which 'feels good... just out and about') — seconds_per_step halved from 10 to 5, so the land scout now moves twice as fast as the water-bound skiff (docks.scout_skiff.seconds_per_step, unchanged at 10); every other stat (cost, cap, build timer) stays identical, so speed is the deliberate asymmetry between the two."
     },
     "_desertion_note": "If food can't cover total upkeep for a tick's elapsed time, food is clamped at 0 and exactly one unit deserts (lowest-upkeep-priority standing unit preferred, else a scout) — a simple first-pass penalty, not proportional to the shortfall size.",
@@ -374,8 +374,8 @@
     "tiers": ["manual", "goat_track", "stone_road", "highway"],
     "_note": "manual = no path tile needed, player-initiated collection, free, no automation",
 
-    "upgrade_time_minutes_base": 4,
-    "_upgrade_time_note": "pathUpgradeDurationMs(targetTier) = upgrade_time_minutes_base * target_level (goat_track=1, stone_road=2, highway=3) — stone_road=8min, highway=12min. Building the initial goat_track is unaffected (a build, not an upgrade). First pass, untested.",
+    "upgrade_time_minutes_base": 3,
+    "_upgrade_time_note": "pathUpgradeDurationMs(targetTier) = upgrade_time_minutes_base * target_level (goat_track=1, stone_road=2, highway=3) — stone_road=6min, highway=9min. Building the initial goat_track is unaffected (a build, not an upgrade). CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
 
     "slot_cost": 0.1,
     "_slot_cost_note": "New system (2026-07-20), playtesting feedback: same reasoning as walls.slot_cost — engine/formulas.ts:totalStructureCount now weights every path tile by this (10 path tiles = 1 slot) instead of full cost, regardless of tier (a path tile is upgraded in place, not rebuilt, so tier doesn't change how many tiles exist). First pass, untested.",
@@ -383,8 +383,8 @@
     "goat_track": {
       "build_cost_base": { "food": 100 }, // sustains the walkers, not materials
       "build_cost_scaling": "FLAT — every goat track costs build_cost_base regardless of how many you've built. CORRECTION (2026-07-21, playtesting feedback): even the linear per-additional-tile growth this used to have fought infrastructure_paths.slot_cost's whole point (long connected chains built in bulk); see TWEAKS.md",
-      "build_time_minutes": 2,
-      "_build_time_note": "pathBuildDurationMs (engine/paths.ts) — construction of the initial goat_track is now timed too (distinct from upgrade_time_minutes_base above, which only covers goat_track->stone_road->highway). Non-functional (engine/formulas.ts:isStructureActive) until this timer elapses. First pass, untested.",
+      "build_time_minutes": 1,
+      "_build_time_note": "pathBuildDurationMs (engine/paths.ts) — construction of the initial goat_track is now timed too (distinct from upgrade_time_minutes_base above, which only covers goat_track->stone_road->highway). Non-functional (engine/formulas.ts:isStructureActive) until this timer elapses. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 2, shaving 1 minute off like every other build/upgrade timer in this file.",
       "noise_build": 10
     },
 
@@ -424,8 +424,8 @@
     "_tile_stockpile_note": "Also reused as the flat, storage-skill-independent cap on an extraction tile's own local stockpile (DESIGN.md §8's 'resource tile's own stockpile cap') — unconnected/uncollected tiles stop producing once they hold this much.",
 
     "upgrade_cost_scaling": "FORMULA_B",
-    "upgrade_time_minutes_base": 4,
-    "_upgrade_time_note": "storageUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=8min, L3=12min, same shape as base/barracks/tower upgrade timers. Upgrade no longer applies instantly; cost is still deducted upfront, the level change lands when the timer completes (App.tsx runTick).",
+    "upgrade_time_minutes_base": 3,
+    "_upgrade_time_note": "storageUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=6min, L3=9min, same shape as base/barracks/tower upgrade timers. Upgrade no longer applies instantly; cost is still deducted upfront, the level change lands when the timer completes (App.tsx runTick). CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
     "upgrade_cost_base": {
       "food":  { "wood": 500 },
       "wood":  { "wood": 750, "stone": 500 },
@@ -442,9 +442,9 @@
     "cost_base": { "food": 500, "wood": 300, "stone": 200 },
     "cost_scaling": "FORMULA_B",
 
-    "first_upgrade_time_minutes": 10,
+    "first_upgrade_time_minutes": 9,
     "time_growth_per_level_pct": 20,
-    "time_scaling": "time(targetLevel) = first_upgrade_time_minutes * (1 + time_growth_per_level_pct/100) ^ (targetLevel - 2), targetLevel >= 2 — so L1->L2 = 10min exactly, L2->L3 = 12min, L3->L4 = 14.4min, L4->L5 = 17.3min, compounding +20%/level from there. CORRECTION (2026-07-20 balance pass, playtesting feedback): replaces the old recursive FORMULA_B-style scaling (time(L) = time(L-1) * (1 + 0.1*L)), which made even the very first base upgrade take 86 minutes — longer than a whole session on its own. Base upgrades are still deliberately the most time-intensive progression track in the game (every other timer tops out at 16min per step), just not runaway-absurd about it.",
+    "time_scaling": "time(targetLevel) = first_upgrade_time_minutes * (1 + time_growth_per_level_pct/100) ^ (targetLevel - 2), targetLevel >= 2 — so L1->L2 = 9min exactly, L2->L3 = 10.8min, L3->L4 = ~13min, L4->L5 = ~15.6min, compounding +20%/level from there. CORRECTION (2026-07-20 balance pass, playtesting feedback): replaces the old recursive FORMULA_B-style scaling (time(L) = time(L-1) * (1 + 0.1*L)), which made even the very first base upgrade take 86 minutes — longer than a whole session on its own. Base upgrades are still deliberately the most time-intensive progression track in the game (every other timer tops out at 12-16min per step), just not runaway-absurd about it. CORRECTION 2 (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 10, shaving 1 minute off like every other build/upgrade timer in this file.",
     "timer_runs_while_offline": true,
 
     "attack_radius_cap_base": 10,
@@ -467,8 +467,8 @@
     "cost_base": { "wood": 200, "stone": 100 },
     "cost_scaling": "FORMULA_B",
 
-    "upgrade_time_minutes_base": 4,
-    "_upgrade_time_note": "baseReinforcementUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L1=4min, L2=8min, same shape as barracksUpgradeDurationMs/towerUpgradeDurationMs. No longer instant on purchase: cost is deducted upfront, the HP/level change lands when the timer completes (App.tsx runTick).",
+    "upgrade_time_minutes_base": 3,
+    "_upgrade_time_note": "baseReinforcementUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L1=3min, L2=6min, same shape as barracksUpgradeDurationMs/towerUpgradeDurationMs. No longer instant on purchase: cost is deducted upfront, the HP/level change lands when the timer completes (App.tsx runTick). CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
     "seconds_per_missing_hp": 3,
     "_repair_time_note": "baseReinforcementRepairDurationMs = missingHp * seconds_per_missing_hp, mirroring wallRepairDurationMs's severity scaling — repairing from 0/100 HP takes 5min. No longer instant on payment."
   },
@@ -515,24 +515,24 @@
       "tier_2": {
         "multiplier": 1.5,
         "cost": { "wood": 300, "stone": 200 },
-        "duration_minutes": 6
+        "duration_minutes": 5
       },
       "tier_3": {
         "multiplier": 2.0,
         "cost": { "wood": 500, "stone": 350, "steel": 150 },
-        "duration_minutes": 12
+        "duration_minutes": 11
       }
     },
     "game_speed": {
       "tier_2": {
         "rate": 3,
         "cost": { "wood": 400, "stone": 250 },
-        "duration_minutes": 8
+        "duration_minutes": 7
       },
       "tier_3": {
         "rate": 5,
         "cost": { "wood": 650, "stone": 450, "steel": 200 },
-        "duration_minutes": 15
+        "duration_minutes": 14
       }
     }
   },
@@ -654,9 +654,9 @@
       "hp_gain_per_level": 15,
       "cost_base": { "wood": 150, "stone": 75 },
       "_note": "Weaker/cheaper than base_reinforcement (100 base_hp, 25/level, 200 wood + 100 stone) on purpose — an outpost is a real but more exposed foothold, not a clone of the fortified main base. createOutpostFromDen (data/outposts.ts) grants a starting reinforcementLevel of (den.level - 1) — clearing a level-2 den hands over roughly base_hp+1*hp_gain_per_level=80 HP; a level-10 den (once dens can reach that high) would hand over base_hp+9*hp_gain_per_level=200 HP — a direct reward for the difficulty of the siege overcome, deliberately uncapped by the base-level ceiling that gates further upgrades (engine/outposts.ts:maxOutpostReinforcementLevel).",
-      "upgrade_time_minutes_base": 3,
+      "upgrade_time_minutes_base": 2,
       "seconds_per_missing_hp": 2,
-      "_time_note": "Faster than base_reinforcement's timers (4min base, 3s/missing HP) on purpose, same weaker/cheaper-but-quicker relationship as the cost — mirrors engine/base.ts:baseReinforcementUpgradeDurationMs/baseReinforcementRepairDurationMs."
+      "_time_note": "Faster than base_reinforcement's timers (3min base, 3s/missing HP) on purpose, same weaker/cheaper-but-quicker relationship as the cost — mirrors engine/base.ts:baseReinforcementUpgradeDurationMs/baseReinforcementRepairDurationMs. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 3, shaving 1 minute off like every other build/upgrade timer in this file."
     }
   },
 
