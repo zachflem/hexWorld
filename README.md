@@ -1,32 +1,34 @@
-# React + TypeScript + Vite
+# Hex World
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+An offline-first, single-player hex strategy survival game. Claim territory, build up an economy, and defend your base against procedurally-spawned zombie hordes — all running entirely in your browser, no server required.
 
-Currently, two official plugins are available:
+## Concept
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+You start with a small foothold on a procedurally generated hex map. From there, the loop is **expand → build → defend**:
 
-## React Compiler
+- Scout and claim territory, then put extraction tiles (food, wood, stone, steel, power) to work gathering resources.
+- Build paths to automate collection, and upgrade your economy as it grows.
+- Every action you take generates noise — the louder you are, the more likely a zombie horde spawns and comes looking for you.
+- Fortify choke points with walls and towers, and field militia and other units to defend your territory (or go on the offensive).
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The goal: track down and secure a hidden research lab hidden somewhere on the map, guided by rumors and clues gathered along the way. Clearing zombie dens along the way nets useful rewards and outposts, but isn't required to win — just good preparation for it.
 
-## Expanding the Oxlint configuration
+## Tech Stack
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+- **React 19 + TypeScript**, built with **Vite**
+- **PWA** (installable, fully offline) via `vite-plugin-pwa`
+- **IndexedDB** for local save data (via `idb`)
+- Deployed as a static site to **Cloudflare Pages**
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+## Running Locally
+
+```bash
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Other useful scripts: `npm run build`, `npm test`, `npm run lint`.
+
+## Docs
+
+Design notes, the full mechanics reference, the build roadmap, and the player guide all live in [`/design`](./design).
