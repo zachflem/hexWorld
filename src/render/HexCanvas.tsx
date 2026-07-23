@@ -59,7 +59,7 @@ const MAX_ZOOM = 3;
  * why short taps worked there while Android needed a long-press (finger
  * planted still enough to stay under threshold).
  */
-const CLICK_DRAG_THRESHOLD_PX = 14;
+const CLICK_DRAG_THRESHOLD_PX = 18;
 
 const TERRAIN_COLORS: Record<TerrainType, string> = {
   water: "#2f6f9f",
