@@ -16,3 +16,10 @@ Non-obvious notes:
 - The dev server binds to localhost only; it is not exposed on the network by default (would need `--host`).
 - Runtime game balance/tuning is loaded from per-profile `public/profiles/{slug}/tweaks.jsonc` (validated with Zod via `src/data/tweaksLoader.ts`), not from code — edit those files to change tuning.
 - Because saves live in IndexedDB, clearing browser site data resets game progress.
+
+## Roadmap & workflow
+
+- **What to work on:** [design/ROADMAP.md](design/ROADMAP.md) — start with `[URGENT]` items in **Bugs & testing feedback**, then incomplete milestones.
+- **Git branches:** [design/WORKFLOW.md](design/WORKFLOW.md) — ask the user which **personal branch** they use; merge finished work to **`dev`**.
+- **Implementation plans:** when a feature promotes to a Milestone (or you are commissioned to plan one), write structured detail to `design/MilestoneN.md` — schemas, file layouts, verification steps. Keep the ROADMAP milestone entry brief (checklist + testable outcome + link). See [design/Milestone22.md](design/Milestone22.md) for an example.
+- **Proposed features** in ROADMAP may have short descriptions only; do not expand them into full specs in ROADMAP — promote to a Milestone first.

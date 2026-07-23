@@ -31,6 +31,6 @@ Other useful scripts: `npm run build`, `npm test`, `npm run lint`.
 
 ## Docs
 
-Design notes, the full mechanics reference, the build roadmap, and the player guide all live in [`/design`](./design).
+Design notes, the full mechanics reference, the build roadmap (backlog + milestones), and the player guide all live in [`/design`](./design). The roadmap leads with playtesting feedback and links to agent detail files (`design/MilestoneN.md`) for complex features.
 
 Git branching (personal `goblin` / `krunchee` branches → `dev` → `main`) is documented in [`design/WORKFLOW.md`](./design/WORKFLOW.md).

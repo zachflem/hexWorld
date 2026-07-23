@@ -1,232 +1,422 @@
 # Hex World — ROADMAP.md
 
-Technical build order for the offline-first PWA described in `DESIGN.md`. Milestones are sequenced so each one produces something testable before moving on — no milestone should require the next one to exist to be verified.
+## Table of contents
 
-Reference `DESIGN.md` for *what* each system does and *why*; reference `tweaks.jsonc` / `TWEAKS.md` for exact numbers. This document is concerned only with *build order*.
-
----
-
-## Milestone 0 — Project Scaffold — ✅ Complete
-- Vite + React PWA setup (service worker, manifest, offline shell caching)
-- IndexedDB wrapper module (get/set/delete, schema versioning)
-- Load `tweaks.jsonc` at boot (strip comments, parse, validate against expected shape)
-- Basic routing: onboarding screen → game screen
-- **Testable outcome:** app installs as a PWA, works fully offline, loads config without a network call
-
-## Milestone 1 — Onboarding & Player Identity — ✅ Complete
-- Name entry, RGB color picker
-- Persist player record to IndexedDB (auto-save — covers refresh/crash recovery within a session, not the primary save mechanism)
-- **Testable outcome:** create a player, refresh the page, player state survives
-
-## Milestone 2 — Hex Grid Rendering — ✅ Complete
-- Procedural seed → deterministic terrain generation (grassland/forest/mountain/shore/water)
-- Hex coordinate system (axial or cube coords — pick one and document it in `DESIGN.md` once decided)
-- Render 128×128 grid, viewport culling (don't render off-screen hexes), pan/zoom
-- Fog of war rendering: owned tiles fully visible, stepped opacity for unclaimed rings, hidden beyond
-- **Testable outcome:** same seed always produces the same visible map; fog shading matches §6 of DESIGN.md
-
-## Milestone 3 — Starting Territory & Spawn — ✅ Complete
-- On player creation: claim base tile + rings 1–2 (19 tiles), no claiming action, just ownership
-- Assign starting resource amounts from `tweaks.jsonc`
-- Tile click → popup shell (empty for now, wired up in later milestones)
-- **Testable outcome:** new player owns 19 tiles outright, correct starting resources shown
-
-## Milestone 4 — Resource Economy Core — ✅ Complete
-- Extraction tile data model: type, tier, level, owner
-- Real-time tick engine (10s server-equivalent tick, 1s internal accumulation precision, works correctly across app close/reopen using stored timestamps — critical for offline-first)
-- Build extraction tile (small tier only first) via tile popup, cost deducted, build slot cap enforced
-- Passive yield accumulation, storage cap enforcement per resource type
-- **Testable outcome:** build a food tile, close the app, reopen an hour later, correct accumulated resources appear (capped at storage limit)
-
-## Milestone 5 — Extraction Tiers & Upgrades — ✅ Complete
-- Tier upgrade path (small → mid → large) using Formula B + tech progression from `tweaks.jsonc`
-- Storage skill upgrades (tech-tree, no building)
-- Transition tile detection (border-adjacency check at generation time) + half-yield rule + cryptic scout flavor text
-- **Testable outcome:** upgrade a tile through all tiers, costs and yields match `TWEAKS.md` reference tables
-
-## Milestone 6 — Manual Collection & Infrastructure Paths — ✅ Complete
-- Manual collection action (scout-and-return, no path required)
-- Path tile build/upgrade (goat track → stone road → highway), terrain restrictions, mountain throughput penalty
-- Auto-flow tick: connected resource tiles push to base storage each tick without player action
-- **Testable outcome:** a claimed, path-connected resource tile fills base storage without any manual clicks; a disconnected one doesn't
-
-## Milestone 7 — Noise System — ✅ Complete
-- Noise accumulator per player: passive gathering noise, one-time action noise, idle decay
-- Noise display (even if just a debug number initially — real UI comes later)
-- **Testable outcome:** noise rises with actions/gathering, decays when idle, matches formulas in `TWEAKS.md`
-
-## Milestone 8 — Towers & Walls — ✅ Complete
-- Tower build/upgrade (range, damage scaling per `tweaks.jsonc`)
-- Wall build/upgrade (wood → rock → steel), durability tracking
-- Repair mechanic (peacetime-only gate, cumulative tiered cost, noise on repair)
-- Demolish (fixed 60% refund of total spend, confirmation dialog)
-- **Testable outcome:** place a tower and wall, verify range/damage math against reference values, demolish and confirm refund amount
-
-## Milestone 9 — Barracks & Units — ✅ Complete
-- Barracks structure (tile-based, exclusive with other structures, levels 1–4 like towers, each level raising unit capacity — multiple barracks stack their capacity contribution)
-- Scout units: trained at a barracks for a flat resource cost, stockpiled up to capacity, one-time use
-- Scouting action: spend a scout unit on an unowned tile to reveal it permanently — the first real implementation of on-demand fog reveal (fog rendering has been distance-only since Milestone 2); introduces a new "scouted" fog tier distinct from both owned and hidden
-- Militia units: trained at a barracks for a flat (cheap) resource cost, standing army (not consumed on use), ongoing food upkeep per tick; desert if upkeep can't be paid
-- Militia attack stat: militia count × per-unit value — this becomes the assault power used against zombie dens (Milestone 14), resolving what was previously an undefined "assault stats vs den defense" formula
-- Militia defense stat: militia count × per-unit value — contributes to base last-stand defense alongside base reinforcement HP (Milestone 12)
-- **Testable outcome:** build a barracks, train scouts and militia, spend a scout unit to reveal a hidden tile, verify militia upkeep drains food each tick and desertion triggers when food runs out
-- **Resolved (was a known regression):** scouting a tile persists to `scoutedTiles` and now visibly renders the "scouted" fog tier — the render dependency chain was already correct, and Milestone 10's fog rework (scouted tiles now also clear fog in a stepped radius around themselves, `engine/fog.ts:computeFogTiers`) touched the same code path, so this was confirmed fixed as part of that work
-
-## Milestone 10 — Territory Expansion & Tile Assault — ✅ Complete
-- Base level upgrades, implemented for the first time (previously hardcoded to level 1 everywhere, including `buildSlotCap`) — cost/timer per `TWEAKS.md`, timer persists correctly across offline gaps, pulled forward into this milestone since ring-unlock has nothing to gate without it
-- Tile defense value for unowned tiles (baseline formula in `tweaks.jsonc`, distinct from zombie den defense — pending a balance pass)
-- Attack/claim action: send militia at an unowned tile — scouted or unscouted — from the tile popup, choosing how many militia to commit (not an all-in gamble with the whole standing army)
-- Deterministic combat resolution (militia attack power vs. tile defense, same no-luck principle as DESIGN.md §10): win claims the tile as owned territory, no militia lost; lose consumes exactly the committed militia and leaves the tile unowned
-- Scouting a tile surfaces its defense value before attacking (extends Milestone 9's scouting reveal — resolves the "attack blind" gap)
-- Attack gating requires **both** adjacency to owned territory (one of the 6 hex neighbors of a currently-owned tile) **and** being within the base-level attack radius ceiling (`tweaks.jsonc` `base_upgrades.attack_radius_cap_base`/`attack_radius_cap_per_level`) — the ceiling is deliberately generous and fast-growing so adjacency, not distance, is normally what governs play. (An earlier pass used the ring alone as the sole gate — a leftover artifact from a prior plan that was never reconciled with DESIGN.md §6 — corrected here after playtesting surfaced the mismatch.)
-- **Testable outcome:** upgrade the base and watch a new ring become attackable; attack and win against an unowned tile inside an unlocked ring — it becomes owned, fog/connectivity update accordingly; attack and lose — the tile stays unowned and the spent militia are gone
-- **Superseded, undocumented at the time:** this milestone's single-tile "attack an adjacent unowned tile" action was later generalized into the **expedition** system (`engine/expeditions.ts`, `App.tsx:handleDispatchExpedition`, `GameScreen.expeditionRouteOptionFor`) — a party can now walk a multi-tile route and claim everything along it in one commitment, not just one adjacent hop, using `findBestExpeditionRoute`/`resolveExpeditionWalk` in place of the single-check `isTileAttackable`/`attackOptionFor`/`handleAttackTile` this milestone originally named (those three no longer exist in the codebase). This change shipped without its own roadmap entry — noted here after a docs-vs-code review surfaced the drift (2026-07-20).
-
-## Milestone 11 — Horde Spawning & Pathfinding — ✅ Complete
-- Horde spawn check loop (per den, using noise + proximity formula)
-- Horde size formula, spawn cooldown
-- Pathfinding: shortest path to noise source, terrain weighting (prefer grassland/forest, avoid mountain, water impassable)
-- Tile-by-tile advance and combat resolution against whatever occupies the destination tile — reuses the tile-fight resolution built in Milestone 10
-- **Testable outcome:** trigger high noise near a den, observe a horde spawn and path realistically toward the base, engaging tiles along the way
-
-## Milestone 12 — Tower/Wall Combat Resolution — ✅ Complete
-- Tower attrition against horde per tick (damage formula from `tweaks.jsonc`)
-- Wall durability damage per tick, wall break → horde continues
-- Base reinforcement HP (plus militia defense stat from Milestone 9) — horde reaching base tile depletes it, 0 HP = loss condition
-- **Testable outcome:** a defended chokepoint measurably slows/stops a horde; an undefended one doesn't; base HP hitting 0 ends the session correctly
-
-## Milestone 13 — Territory Disconnection — ✅ Complete
-- Connectivity check (base → owned tile reachability) triggered after any horde tile capture
-- Disconnected section: resources lost immediately, buildings flagged "damaged"
-- Reclaim flow: retake the severing tile, repair damaged buildings at reduced cost
-- **Testable outcome:** force a horde to cut a path through owned territory, confirm the correct section is flagged disconnected and resources are zeroed, not the whole map
-
-## Milestone 14 — Zombie Dens, Siege & Outposts — ✅ Complete
-- Den placement at map generation (random level within distance-based cap tiers)
-- **Scope change from the original plan:** den level growth over time was dropped during implementation — there's no in-fiction reason for a den to independently escalate on a clock (see DESIGN.md §13), so a den's level is fixed permanently at world-gen instead.
-- Assault flow (`engine/dens.ts:resolveDenAssault`, `App.tsx:handleAssaultDen` — mirrors the expedition system from the superseded Milestone 6, using militia attack power from Milestone 9 and the tile-fight resolution from Milestone 10) → hold period with escalating last-stand defender waves (`resolveHoldPeriod`/`lastStandWaveSize`), defended by whatever the player actively builds/garrisons on the surrounding ring during the hold (`holdDefenseAt`) → success/failure branching
-- Den → **Outpost** conversion on success (`engine/outposts.ts`, `data/outposts.ts`) — extended scope from the original plan: a converted den becomes a second, independent economic/defensive hub with its own reinforcement HP (starting strength scaled to the cleared den's level) and its own self-contained resource storage (connected extraction tiles auto-flow into it exactly like base, but the pool never merges with base's — see DESIGN.md §13/§15 for why that's deliberately one-way for now). Losing an outpost to a horde reverts it to a hostile den (one level down) rather than ending the game — `engine/hordes.ts`'s `HordeHub` generalizes the horde-combat/loss-condition check that used to be base-only into a list covering the base plus every live outpost.
-- **Testable outcome:** clear a den start-to-finish including surviving the hold period while building defenses on the ring; fail a hold and confirm it reverts correctly; confirm a converted outpost's connected tiles auto-flow into its own storage without touching base's, and that losing the outpost to a horde reverts it to a den instead of ending the game
-
-## Milestone 15 — Hidden Lab & Win Condition — ⚠️ Mostly complete
-- Lab tile placement (fixed, hidden from normal scouting)
-- Rumor/clue surfacing via scouting/watchtowers: passive chance per scout action/watchtower tick (scaled by intel level) plus a guaranteed clue per den clear; 5 total clues, each a directional hint narrowing to a small hex cluster (see DESIGN.md §13)
-- Static guardian defense at the lab tile
-- Win-state check: securing the lab, alone, wins the game
-- **Corrected scope (2026-07-21):** the original draft of this milestone (and an early pass of DESIGN.md §13) gated the win screen on "all dens cleared + lab secured." That was never the intent — a player who finds and secures the lab without ever touching a den still wins outright. Den-clearing stays valuable in its own right (a guaranteed clue per clear, outposts, economy, army size) but was never meant to be a win requirement, and DESIGN.md §13 has been corrected to match.
-- **Gap found during a 2026-07-22 status review:** "passive chance per scout action/watchtower tick" only half-shipped — `rollScoutClue` (per-scout-action roll) and the guaranteed den-clear bonus are both wired up, but the watchtower-tick half never got engine code. `tweaks.jsonc`'s `lab_clues.passive_surfacing.per_watchtower_tick_base_chance`/`watchtower_intel_tier_multiplier` exist in the schema but nothing reads them — clues currently only come from scouting and den clears.
-- **Testable outcome:** on a small test map, locate and secure the lab without clearing any den and confirm the win screen triggers anyway; separately, confirm clearing a den still awards its guaranteed clue and converts to an outpost as normal.
-
-## Milestone 16 — UI Polish Pass — ⚠️ Partially complete, remainder superseded by Milestone 20
-- 8-hex persistent stat display (bottom-right), replacing debug numbers from earlier milestones — **superseded:** shipped instead as the icon-led HUD resource/noise chip bar (Milestone 20)
-- Tile popup refinement (intel display scaling with watchtower level, hover previews, cost-before-commit everywhere) — **superseded:** the tile popup itself was retired and replaced by the hex-ring action menu (Milestone 20); "hover previews" specifically was delivered later, via the desktop hover tooltip (Milestone 20), not the popup; "intel display scaling with watchtower level" was never built — see the Milestone 15 gap note
-- Slide-out settings/help/notifications panel — ✅ done (SettingsPanel + NotificationTray, Milestone 20)
-- Watchtower range/intel/alert system (if not already threaded through earlier combat milestones) — ❌ not done: towers have combat range/damage, but there's no separate intel/alert role, no horde-spawn/approach notifications, and the `watchtower_intel_tier_multiplier` tweak is unused (see Milestone 15)
-- Add `screenshots` entries to the PWA manifest (one `form_factor: "wide"` for desktop, one without for mobile) to unlock Chrome's richer install UI — deferred from M0 since there was no real UI worth screenshotting yet — ❌ not done
-- Visual/art pass on the hex map: real textures for the 5 terrain types (grassland/forest/mountain/shore/water) and the transition-tile blend between them, replacing the flat placeholder fill colors from M2; proper icons for extraction tiles per resource (food/wood/stone/steel/power) and the base/home marker, replacing the placeholder colored dots and ⌂ glyph from M3-M5 — ✅ done (path tile textures followed later, Milestone 20)
-- **Testable outcome:** a first-time player can understand their state and options without external explanation
-
-## Milestone 17 — Offline Resilience & Save Files — ⚠️ Partially complete
-- Stress-test long offline gaps (base upgrade timers, den siege hold periods/last-stand waves, resource accumulation across base and every live outpost, horde spawn checks, militia upkeep/desertion — all must resolve correctly on next load, not just "catch up" naively in a way that breaks balance) — ✅ done
-- IndexedDB corruption/recovery handling for the active auto-saved session — ✅ done
-- **Save-to-file:** serialize full game state to a downloadable JSON file, old-school style — ❌ not done
-- **Load-from-file:** file picker, parse and load a save file into the active session, replacing current state — ❌ not done
-- Defensive parsing only (validate structure so a malformed or hand-edited file doesn't crash the game) — no integrity checks, no anti-tamper. Single-player game; if someone wants to edit their save, that's entirely fine.
-- **Testable outcome:** close the app for a simulated multi-hour gap, reopen, and every time-based system reflects the correct elapsed state; save to file, load that file on a fresh browser profile, confirm state matches exactly — offline-gap half confirmed, save/load-to-file half blocked on the two ❌ items above
+- [About this project](#about-this-project)
+- [Roadmap maintenance](#roadmap-maintenance)
+- [Bugs & testing feedback](#bugs--testing-feedback)
+  - [Bugs](#bugs)
+  - [UI](#ui)
+  - [UX](#ux)
+  - [Recently resolved](#recently-resolved)
+- [Questions & thoughts](#questions--thoughts)
+- [Proposed features](#proposed-features)
+- [Milestones](#milestones)
+  - [Incomplete milestones](#incomplete-milestones)
+  - [Completed milestones](#completed-milestones)
 
 ---
 
-## Milestone 18 — Base Relocation — ✅ Complete *(shipped out of sequence, during playtesting — not in the original DESIGN.md)*
+## About this project
 
-- Move the base to any other known (owned or scouted), empty, dry-land tile — gated behind `base_relocation.min_base_level` (3).
-- Cost and countdown duration both scale linearly with straight-line distance to the destination (`engine/base.ts:baseRelocationCost`/`baseRelocationDurationMs`) — not a pathfound route, since relocation doesn't march anyone through hostile ground, it's a countdown then a teleport. The countdown is the anti-abuse mechanism: without it, relocation could be used to instantly dodge an oncoming horde.
-- Countdown persists across offline gaps, same virtual-clock-threshold pattern as a base-level upgrade (`engine/base.ts:isBaseRelocationComplete`).
-- On completion: `territory.base` moves to the destination; the destination joins `territory.owned` if it wasn't already. Base level, reinforcement HP, and any in-progress base-level upgrade are untouched.
-- **Testable outcome:** at base level 3+, relocate to a scouted-but-unowned tile a few hexes away; watch the countdown run (including across a simulated offline gap), then confirm the base moved, the old tile's structures/territory are otherwise unaffected, and the new tile is owned.
+Hex World is an offline-first, single-player hex strategy survival PWA. You claim territory, build an economy, and defend against zombie hordes drawn by noise — all in the browser, no server. Sessions are designed as 30–90 minute skirmishes: find and secure a hidden lab to win, or lose your base and the run ends.
+
+This document tracks **what to build next** (playtesting backlog first), **open design questions**, **proposed features**, and **milestone history**. For systems and fiction see [DESIGN.md](DESIGN.md); for balance numbers see [TWEAKS.md](TWEAKS.md); for player-facing help see [PLAYER_GUIDE.md](PLAYER_GUIDE.md); for git branches see [WORKFLOW.md](WORKFLOW.md).
 
 ---
 
-## Milestone 19 — Docks & Water Units — ✅ Complete *(shipped out of sequence, during playtesting — not originally planned)*
+## Roadmap maintenance
 
-DESIGN.md §15 had listed water-based resources as explicitly out of scope; this milestone reverses that call after hands-on play surfaced the water half of the map as dead space. See `DESIGN.md` §16 for the system description and `TWEAKS.md` for the tuning reference.
+### Priority order
 
-- **Dock:** a food-generating building, the one exception to "nothing builds on water" — placed on a water tile bordering land, gated on owned-**or**-scouted (not full ownership, since normal land-adjacency territory growth never reaches open water) rather than requiring ownership like every other structure. Deposits straight to base storage each tick; no path connection (paths can't cross water either), no tiers, immune to horde capture.
-- **Fishing Boat:** a per-dock, one-time yield upgrade (+50%), timer-gated like a tier upgrade.
-- **Scout Skiff:** a mobile unit, one per dock, wandering its connected body of water forever and revealing every tile it crosses.
-- **Wandering Scout:** the land counterpart, one per barracks, built by retiring regular scouts from the stockpile (not a resource cost) rather than through a new training queue.
-- Also fixed alongside this work: Walls/Towers/Barracks could previously be built on water (a placement-validation gap `handleBuildExtractionTile`/`handleBuildPath` never had); horde spawn pacing was reworked (a hard "silent below 30dB" spawn gate, plus a base-level spawn-probability multiplier so a fresh base isn't immediately overwhelmed); and the "start a new game" flow was consolidated from three separate native-dialog menu entries into one modal offering replay-current-seed / new-seed / new-player.
-- **Testable outcome:** build a dock on qualifying water, watch food accrue without a path; add a fishing boat and confirm the yield bump; build a scout skiff and a wandering scout and watch fog clear along their independent, unscripted routes over time.
+1. `[URGENT]` bugs in [Bugs & testing feedback](#bugs--testing-feedback)
+2. Other bugs, UI, UX, and balance feedback in the same section
+3. [Incomplete milestones](#incomplete-milestones)
+4. [Proposed features](#proposed-features)
+5. [Questions & thoughts](#questions--thoughts) (ideas and deferred items)
+
+### Item lifecycle
+
+| Stage | Where | Detail level | Detail file? |
+|-------|-------|--------------|--------------|
+| **Ideas** | Questions § Ideas | Raw brainstorm | No |
+| **Open questions** | Questions § Open | Problem statement; options unset | No |
+| **Deferred** | Questions § Deferred | Consciously out of scope for now | No |
+| **Proposed features** | Proposed Features § | Short description — intent, player-facing goal, rough scope; `#Pn` ID, refs, next step. No structured implementation detail. | No |
+| **Milestone** | Milestones § | Checklist + testable outcome (concise) | Yes when non-trivial — `design/MilestoneN.md` |
+| **Completed milestone** | Milestones § (collapsible) | Summary + testable outcome | Link to detail file if exists |
+
+**Promotion rules (humans and agents):**
+
+1. **Ideas → Open questions** when a design decision is needed before any implementation.
+2. **Open questions → Proposed** when direction is agreed but scope/timing is not — add `#Pn` entry with a short plain-English description.
+3. **Proposed → Milestone** when there is a clear checklist and testable outcome — assign next number (**24**), move or mark item *Promoted to M24*, add checklist in Milestones.
+4. **Structured detail stays out of ROADMAP** (even in Proposed): file layouts, schemas, page sequences, step-by-step agent instructions, verification scripts, code snippets → `design/MilestoneN.md`, created when the feature **promotes to a Milestone** or when an agent is explicitly commissioned to plan one. Do not let proposed entries grow into pseudo-milestone docs; promote instead.
+
+### Other rules
+
+| Topic | Rule |
+|-------|------|
+| **Backlog format** | `- **Title.** (#id) Description. **Refs:** … Status: Open / In progress / Resolved (YYYY-MM-DD)` |
+| **Bug IDs** | `#1`–`#14` preserved ([TWEAKS.md](TWEAKS.md) references `#12`) |
+| **Proposed IDs** | `#P1`, `#P2`, … (P = proposed) |
+| **`[URGENT]`** | Prefix when play is blocked or game state is misleading |
+| **Balance fixes** | Backlog → `public/profiles/{slug}/tweaks.jsonc` → note in [TWEAKS.md](TWEAKS.md) → Resolved |
+| **Milestone DoD** | Mark ✅ only when every checklist item is done and verified; run `npm test` + `npm run build` |
+| **Detail files** | Agent-generated plans with schemas, layouts, verification → [Milestone22.md](Milestone22.md) is the template; ROADMAP entry stays brief + link |
+| **Collapsible blocks** | Use `<details>` / `<summary>` for completed milestones, recently resolved, deferred, and ideas (see completed section below) |
+| **Agent git workflow** | See [WORKFLOW.md](WORKFLOW.md). Ask the user which **personal branch** they use; do not assume `goblin` or `krunchee`. Merge finished work to **`dev`**. |
+
+*Last updated: 2026-07-23*
 
 ---
 
-## Milestone 20 — UI Enrichment — ✅ Complete *(shipped out of sequence, during playtesting — supersedes part of Milestone 16's original UI-polish scope)*
+## Bugs & testing feedback
 
-The tile-popup-centric UI from Milestone 16 stopped scaling as more structure types and per-tile actions piled on, and read poorly at small/mobile sizes. This milestone replaced it wholesale with a hex-native UI (the map itself is hexes; the menu became hexes too) plus real textures and legible iconography in place of reused in-world sprites.
-
-- **Phase 0-2 — Foundations, HUD re-skin, notifications** (`f303a83`): shared primitives (`Panel`, `Badge`, `StatRow`, `HexButton`, `InProgressRow`, `PartyDispatchForm`), the lucide-react icon set, and `HexCanvas` viewport plumbing (`getTileScreenPosition`/`onViewportChange`) laying the groundwork for an imperatively-positioned per-tile overlay. HUD bar rebuilt as icon-led resource chips with live per-resource deltas (`engine/resourceRates.ts`, mirrors `accrueResources` exactly). The base gained a map level-badge like every other leveled structure (previously the only one without one). Notification tray re-skinned into compact rows (adding lab assaults, previously missing entirely) plus a new one-off toast system (base upgrade complete, den cleared, lab clue found).
-- **Phase 3 — Global hex cluster** (`374fdaa`): a collapsed-by-default honeycomb menu (bottom-right) that blooms into six panel slots — Garrisons, Scouting (incl. lab clue history), Military, Research, a build-mode toggle that teal-highlights owned/empty/buildable tiles with an affordable structure option, and Settings — using true hex-neighbor adjacency math so it tessellates cleanly. Replaces the old hamburger dropdown entirely.
-- **Phase 4 — Hex-ring action menu** (`b5440d9`): `TilePopup` retired entirely in favor of a per-tile hex-ring menu anchored to the selected tile's own map neighbors — recursive drill-down categories (Civil/Military build choices, storage upgrades, unit training), an Info hex for passive status (auto-flow, noise floor, tower stats), and forms for garrison/expedition/den-assault/lab-secure quantities. Every build/upgrade/repair timer and base relocation moved into the notification tray as a countdown card instead of living in a per-tile popup.
-- **Real path tile textures** (`b50a63a`): path tiers render their actual sprite instead of a flat tier-color fill, same full-hex-replacement convention as terrain and resource textures.
-- **Marker icons for resources & noise** (`e5a957f`, `37c01b2`): the resource-type icon used in the HUD bar and every build/upgrade ring hex (extraction tiles, storage upgrades) switched from the full-size in-world sprites — illegible once shrunk to chip/ring-hex size — to purpose-built marker icons (`public/tiles/markers/`). The noise HUD indicator was simplified from a fixed-width progress bar to an icon+value chip matching the resource chips, fixing mobile layout scaling.
-- **Desktop hover tooltip** (`c54dd08`): hovering any structure with a mouse shows a small floating card — type/icon, current status (under construction/damaged/repairing/upgrading/operational), and whatever stats apply (yield + connectivity for extraction tiles, range/DPS for towers, durability for walls, HP for base/outposts, defense for dens/the lab). Positioned imperatively off the same coord→screen-position resolver the action ring uses, so it tracks pan/zoom without a full re-render. Mouse-only — no touch equivalent — so the ring menu's Info hex stays in place as the touch-friendly fallback.
-- **Testable outcome:** select any tile and drive its full action set through the ring menu with no popup in sight; open the honeycomb cluster and reach every panel (Garrisons/Scouting/Military/Research/build-mode/Settings); hover a structure on desktop and see status/stats that match its actual state.
-
----
-
-## Milestone 21 — Stability & UX Backlog — 🚧 Not started
-
-Playtesting backlog gathered 2026-07-22. Ordered by the user's stated priority: bugs first (they block correct play), then general UI improvements, then UX tweaks, then open design questions that need discussion before they can even become an implementation plan. Original list numbers kept in parentheses for reference in future conversations.
+Playtesting findings from Milestone 21 and ongoing sessions. **Priority for development.**
 
 ### Bugs
-- **Barracks keeps training with no other barracks available, even while damaged.** (#1) A damaged barracks should stop producing/training the same way a damaged extraction tile stops yielding (`isStructureActive`) — the training queue needs the same gate.
-- **Unit training is selectable the instant a barracks build starts**, before its build timer completes. (#3) Should stay locked until `buildStartedAt` clears, same as every other build-in-progress structure.
-- **Only one build/upgrade action should be allowed per structure at a time.** (#4) e.g. the base's reinforcement-HP track and its level upgrade don't currently block each other and can run concurrently — they should share one in-progress slot, the way `Wall.action`/`BaseReinforcementAction` already force upgrade-and-repair to share a slot elsewhere.
-- **Training needs to be one queue per barracks**, not shared capacity across all of them. (#5) Training two different unit types at the same time should require two separate barracks, not one barracks running two queues at once.
-- **Scout skiffs get stuck at their home dock and never wander off.** (#6) Reproduced with a 5x speed multiplier active, stuck for a simulated realtime hour+.
-- **Resource buildings accumulate stockpile during their own build timer.** (#8) An extraction tile shouldn't yield anything until `buildStartedAt` clears — currently yield appears to start immediately on build start instead of on completion.
-- **Recalled garrison units can't be sent on an expedition afterward** (they can still be re-garrisoned). (#9) Repro: commit militia to garrison a tile against a nearby horde, recall them with zero losses, then try to dispatch an expedition. Possibly connected to a separate already-known "only one militia unit ever actually gets sent" bug — worth investigating together rather than separately.
+
+- **[URGENT] Barracks keeps training while damaged.** (#1) A damaged barracks should stop producing/training the same way a damaged extraction tile stops yielding. **Refs:** [`src/data/barracks.ts`](../src/data/barracks.ts), [`src/engine/barracks.ts`](../src/engine/barracks.ts), `isStructureActive` pattern in [`src/data/extractionTiles.ts`](../src/data/extractionTiles.ts). Status: Open.
+- **Unit training selectable during barracks build timer.** (#3) Should stay locked until `buildStartedAt` clears. **Refs:** [`src/data/barracks.ts`](../src/data/barracks.ts), [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx). Status: Open.
+- **Only one build/upgrade action per structure at a time.** (#4) Base reinforcement-HP track and level upgrade can run concurrently; they should share one in-progress slot (like walls). **Refs:** [`src/engine/base.ts`](../src/engine/base.ts), [`src/data/walls.ts`](../src/data/walls.ts). Status: Open.
+- **Training needs to be one queue per barracks.** (#5) Two unit types at once should require two barracks. **Refs:** [`src/engine/barracks.ts`](../src/engine/barracks.ts). Status: Open.
+- **[URGENT] Scout skiffs stuck at home dock.** (#6) Never wander off; reproduced at 5× speed for 1+ simulated hour. **Refs:** [`src/engine/scoutSkiffs.ts`](../src/engine/scoutSkiffs.ts), [`src/data/scoutSkiffs.ts`](../src/data/scoutSkiffs.ts). Status: Open.
+- **[URGENT] Extraction tiles yield during build timer.** (#8) Should yield nothing until `buildStartedAt` clears. **Refs:** [`src/engine/tick.ts`](../src/engine/tick.ts), [`src/data/extractionTiles.ts`](../src/data/extractionTiles.ts). Status: Open.
+- **[URGENT] Recalled garrison cannot join expeditions.** (#9) After recall with zero losses, expedition dispatch fails; re-garrison still works. Possibly related to militia dispatch count bug. **Refs:** [`src/App.tsx`](../src/App.tsx), [`src/engine/expeditions.ts`](../src/engine/expeditions.ts), [`src/engine/garrisons.ts`](../src/engine/garrisons.ts). Status: Open.
 
 ### UI
-- **Building sprite vertical alignment.** (#7) Move building icons up so they sit more centered on their hex, and let taller sprites spill over the top of the cell as needed instead of being squashed to fit.
-- **Extraction tiles never get the orange "upgrade available" badge** other upgradeable structures get. (#13) Also add a stockpile-state color cue on the tile icon: green at 75% local stockpile, red at 100% — a visual nudge to manually collect a tile that isn't auto-flowing before it caps out and starts wasting yield.
+
+- **Building sprite vertical alignment.** (#7) Center icons on hex; allow tall sprites to spill upward instead of squashing. **Refs:** [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx), [`public/profiles/default/assets/`](../public/profiles/default/assets/). Status: Open.
+- **Extraction tiles missing upgrade badge and stockpile cue.** (#13) Orange upgrade badge like other structures; green at 75% local stockpile, red at 100%. **Refs:** [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx), ring menu badge patterns. Status: Open.
 
 ### UX
-- **Map size choice during onboarding** — 48×48 / 96×96 / 128×128. (#10) Should scale overall game pace, and needs den count (and any other density-based placement) to scale with it too, not just a straight grid resize.
-- **Quick-collect icon directly on a resource building** — skip opening the ring menu just to collect. (#11)
-- **Early game pacing is too slow.** (#12) — ✅ Resolved (2026-07-23): small-tier extraction yields raised ~50% (food 15→22, wood 12→18, stone 6→9, steel/power 3→5, `public/tweaks.jsonc`), and every flat build/upgrade timer in the file (extraction tiles, docks/fishing boat/scout skiff, towers, walls, barracks/wandering scout, infrastructure paths, storage, base level, base reinforcement, outpost reinforcement, research tiers) shaved down by 1 minute.
-- **Toast notifications should auto-collapse.** (#14) Show fully for 5 real-time seconds, then slide out to just the action icon; clicking the icon re-expands it. The player should always be able to see, at a glance, how many upgrades/expeditions/etc. are currently in flight even after the toasts collapse.
 
-### Questions *(need design discussion before an implementation plan)*
-- **Should extraction tiles be able to run dry?** (#2) e.g. a finite pool sized by tile tier/level that depletes with production and stops yielding once exhausted, instead of yielding forever. DESIGN.md doesn't currently model finite resources — needs a design pass (interaction with tier upgrades, storage, and the existing "connected tiles auto-flow forever" assumption) before this becomes buildable work.
+- **Map size choice during onboarding.** (#10) 48×48 / 96×96 / 128×128; den count and pacing must scale, not just grid resize. **Refs:** [DESIGN.md §3](DESIGN.md), [`src/ui/onboarding/OnboardingScreen.tsx`](../src/ui/onboarding/OnboardingScreen.tsx). Status: Open — see also [#P2](#map-size-selection-p2).
+- **Quick-collect on resource buildings.** (#11) Skip ring menu for manual collection. **Refs:** [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx), hex-ring action menu. Status: Open.
+- **Toast notifications should auto-collapse.** (#14) Full toast 5s, then collapse to action icon; click to re-expand. **Refs:** toast/notification UI in [`src/ui/`](../src/ui/). Status: Open.
 
----
+<details>
+<summary><strong>Recently resolved</strong></summary>
 
-## Milestone 22 — Onboarding Overhaul: The Field Manual — ✅ Complete
+- **Early game pacing too slow.** (#12) Resolved 2026-07-23 — small-tier extraction yields raised ~50%; every flat build/upgrade timer shaved 1 minute. **Refs:** [`public/profiles/default/tweaks.jsonc`](../public/profiles/default/tweaks.jsonc), [TWEAKS.md](TWEAKS.md) (Milestone 21 UX #12).
 
-The bare form from Milestone 1 (name/colour/seed, no framing, no lore delivery) gets replaced with a short paged sequence themed as a found field manual — aged paper, not the glowing-terminal look, since the player hasn't built any power infrastructure yet when the run begins. Full implementation plan and design detail: `design/Milestone22.md`.
-
-- **Testable outcome:** a brand-new player clicks/keys through cover → form → story pages → send-off and lands in the game with the name/colour/seed/difficulty they chose; an existing save shows a continue-or-new-game prompt (notebook-styled) before onboarding; the manual reads correctly in both light and dark mode. Registration hides difficulty and seed behind **Show Advanced Options** (collapsed by default); recent seeds (last 5) appear there for replay.
+</details>
 
 ---
 
-## Milestone 23 — Difficulty Profiles & Asset Packs — ✅ Complete
+## Questions & thoughts
 
-Shipped on the `goblin` branch (2026-07-23). Players pick a difficulty during onboarding (advanced options) or via `play.{domain}/{slug}`. Each profile is a bundled folder under `public/profiles/{slug}/` with its own `tweaks.jsonc` and optional partial sprite overrides in `assets/`. The default sprite pack lives at `public/profiles/default/assets/` (formerly top-level `/tiles/`). A continue prompt asks whether to resume a local save or start fresh. Zip upload for new profiles is deferred to a future admin tweaks GUI.
+### Open questions
 
-- **Testable outcome:** visit `/hard`, complete onboarding with advanced options expanded, confirm balance and any custom sprites load with fallback to default art; reload with an existing save and confirm the continue prompt appears; `profiles/index.json` lists all shipped difficulties.
+- **Should extraction tiles run dry?** (#2) Finite pool per tier that depletes and stops yielding, vs yielding forever. Needs design pass on tier upgrades, storage, and auto-flow assumptions. **Refs:** [DESIGN.md §7](DESIGN.md), [TWEAKS.md § Extraction Tiles](TWEAKS.md).
+
+<details>
+<summary><strong>Deferred / out of scope</strong></summary>
+
+- **Multiplayer / PvP** — retired concept. **Refs:** [DESIGN.md §15](DESIGN.md).
+- **Environmental map events** — not planned for current build.
+- **Auto-repair skill for walls** — mentioned as future possibility in [DESIGN.md §15](DESIGN.md).
+
+*(Admin tweaks GUI, water transport, and similar items with clearer direction live under [Proposed features](#proposed-features) instead.)*
+
+</details>
+
+<details>
+<summary><strong>Ideas</strong></summary>
+
+*(Empty — add raw brainstorms here: art directions, mechanic sketches, UX sparks.)*
+
+</details>
 
 ---
 
-## Explicitly Deferred (post-Milestone 17, not part of this roadmap)
+## Proposed features
 
-- Admin tweaks GUI (visual balance editor, zip profile import/export for deploy)
-- Water-based transport of resources (a dock's own output still deposits directly, not via a path network — see Milestone 18)
-- Environmental map events
-- Auto-repair skill for walls
-- Any multiplayer/PvP layer (retired concept — see `DESIGN.md` §15)
+Features past the Ideas/Questions stage but not yet scheduled as a Milestone. **Short descriptions only** — structured specs belong in `design/MilestoneN.md` after promotion.
+
+### Admin tweaks GUI (#P1)
+
+In-browser visual editor for balance values; zip import/export of profile folders for deploy. Large scope — likely its own milestone when scheduled. **Refs:** [DESIGN.md §15](DESIGN.md), [TWEAKS.md § Difficulty profiles](TWEAKS.md). **Next step:** design pass on editor scope and security model.
+
+### Map size selection (#P2)
+
+Onboarding choice among 48×48 / 96×96 / 128×128; den count and overall pacing must scale with grid size, not just resize the map. **Refs:** UX [#10](#map-size-choice-during-onboarding-10), onboarding future-slot in [Milestone22.md](Milestone22.md), world-gen. **Next step:** design pass on density formulas.
+
+### Watchtower intel & alerts (#P3)
+
+Towers gain a distinct intel/alert role: passive lab-clue rolls on tick and horde-approach notifications. Tweak keys exist in schema but have no engine reader. **Refs:** [DESIGN.md §11](DESIGN.md), [Milestone 15 gap](#milestone-15--hidden-lab--win-condition--️-partial), `lab_clues.passive_surfacing.*` in tweaks. **Next step:** promote to milestone or extend M15/M16.
+
+### Trade caravan (#P4)
+
+Tech-tree upgrade path for manual outpost ↔ base resource transfer (manual → bike couriers → electric van), hooking into outposts' separate storage pools. **Refs:** [DESIGN.md §15](DESIGN.md), [TWEAKS.md § Outposts](TWEAKS.md). **Next step:** design tier costs and UI entry point.
+
+### Touch structure stats (#P5)
+
+Mobile-friendly equivalent of the M20 desktop hover tooltip; Info hex is a partial fallback today. **Refs:** [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx), Milestone 20. **Next step:** UX sketch for touch/long-press vs persistent panel.
+
+### Water resource transport (#P6)
+
+Path-style automation across water bodies, beyond each dock depositing directly to base storage. **Refs:** [DESIGN.md §15](DESIGN.md), [TWEAKS.md § Infrastructure Paths](TWEAKS.md). **Next step:** reconcile with dock model in [DESIGN.md §16](DESIGN.md).
+
+### PWA install screenshots (#P7)
+
+Add manifest `screenshots` entries (wide + mobile) for Chrome's richer install prompt. **Refs:** [Milestone 16](#milestone-16--ui-polish-pass--️-partial), `vite.config.ts` PWA plugin. **Next step:** capture screenshots and add to manifest.
+
+### Extra difficulty profiles (#P8)
+
+Additional sibling packs (e.g. casual, speedrun) under `public/profiles/`, same layout as default/hard. **Refs:** [`public/profiles/index.json`](../public/profiles/index.json), Milestone 23. **Next step:** balance pass + optional partial art overrides.
+
+### Per-tick horde tile combat (#P9)
+
+Hordes attrition against walls/towers over time on a tile, replacing the current one-shot resolution for tile fights. **Refs:** [TWEAKS.md § Horde System](TWEAKS.md). **Next step:** design pass on combat loop vs performance.
+
+### Terrain tile defense (#P10)
+
+Terrain type multiplies tile claim difficulty (e.g. mountains harder than grassland), on top of distance-based defense. **Refs:** [TWEAKS.md § Territory Expansion](TWEAKS.md), [DESIGN.md §6](DESIGN.md). **Next step:** tuning table in tweaks.
 
 ---
 
-## Suggested Working Rhythm
+## Milestones
 
-Given the skirmish-length session design, playtesting can start meaningfully around **Milestone 12** (once towers/walls/hordes are all interacting) — that's the first point where the core tension of the game (noise → hordes → defense) is actually playable end-to-end, even without dens/lab/win-condition yet. Worth doing a balance pass on `tweaks.jsonc` at that point before continuing, since everything from Milestone 14 onward builds on top of that core loop feeling right.
+Milestones are sequenced build chunks, each with a **testable outcome**. Mark ✅ only when every item is complete **and** verified (`npm test`, `npm run build`, manual check where needed). Complex agent plans → `design/MilestoneN.md`.
+
+### Incomplete milestones
+
+#### Milestone 15 — Hidden Lab & Win Condition — ⚠️ Partial
+
+Lab placement, scout-action clue rolls, den-clear guaranteed clues, guardian fight, and lab-only win condition are shipped. Win does not require clearing dens.
+
+- ❌ Watchtower-tick passive clue surfacing — `lab_clues.passive_surfacing.per_watchtower_tick_base_chance` / `watchtower_intel_tier_multiplier` in schema, no engine reader
+- ✅ Scout-action passive clues (`rollScoutClue`)
+- ✅ Guaranteed clue per den clear
+- ✅ Secure lab alone triggers win
+
+**Testable outcome:** locate and secure the lab without clearing any den → win screen; clearing a den still awards its clue and converts to outpost.
+
+**Refs:** [`src/data/lab.ts`](../src/data/lab.ts), [DESIGN.md §13](DESIGN.md).
+
+#### Milestone 16 — UI Polish Pass — ⚠️ Partial
+
+Much of original scope superseded by Milestone 20 (hex-ring menu, HUD chips, textures, desktop hover tooltip).
+
+- ✅ Icon-led HUD, settings/notifications panel, terrain/resource art (via M20)
+- ❌ Watchtower intel/alert role (separate from combat range) — see [#P3](#watchtower-intel--alerts-p3)
+- ❌ PWA manifest `screenshots` for rich install UI — see [#P7](#pwa-install-screenshots-p7)
+
+**Testable outcome:** first-time player understands state and options without external explanation.
+
+#### Milestone 17 — Offline Resilience & Save Files — ⚠️ Partial
+
+- ✅ Long offline gaps resolve correctly (timers, hordes, upkeep, outposts)
+- ✅ IndexedDB corruption/recovery for auto-save session
+- ❌ Save-to-file (download JSON)
+- ❌ Load-from-file (file picker, defensive parse, no anti-tamper)
+
+**Testable outcome:** multi-hour offline gap reflects correct elapsed state; save file loads on fresh browser profile with matching state.
+
+**Refs:** [`src/data/gamePersistence.ts`](../src/data/gamePersistence.ts), [DESIGN.md §17](DESIGN.md).
+
+---
+
+### Completed milestones
+
+<details>
+<summary><strong>Completed milestones (M0–M23, oldest → newest)</strong></summary>
+
+<details>
+<summary><strong>Milestone 0 — Project Scaffold — ✅ Complete</strong></summary>
+
+Vite + React PWA, IndexedDB wrapper, tweaks load at boot, onboarding → game routing.
+
+**Testable outcome:** app installs as PWA, works offline, loads config without network.
+
+</details>
+
+<details>
+<summary><strong>Milestone 1 — Onboarding & Player Identity — ✅ Complete</strong></summary>
+
+Name, colour picker, player persisted to IndexedDB.
+
+**Testable outcome:** create player, refresh, state survives.
+
+</details>
+
+<details>
+<summary><strong>Milestone 2 — Hex Grid Rendering — ✅ Complete</strong></summary>
+
+Procedural terrain, axial hex coords, 128×128 render with culling, pan/zoom, fog of war.
+
+**Testable outcome:** same seed → same map; fog matches DESIGN.md §6.
+
+</details>
+
+<details>
+<summary><strong>Milestone 3 — Starting Territory & Spawn — ✅ Complete</strong></summary>
+
+Base + 19 starting tiles, starting resources from tweaks, tile click popup shell.
+
+**Testable outcome:** new player owns 19 tiles, correct starting resources.
+
+</details>
+
+<details>
+<summary><strong>Milestone 4 — Resource Economy Core — ✅ Complete</strong></summary>
+
+Extraction tile model, real-time tick engine (offline-safe), build + passive yield, storage caps.
+
+**Testable outcome:** build food tile, close app 1 hour, reopen with correct accumulated resources (capped).
+
+</details>
+
+<details>
+<summary><strong>Milestone 5 — Extraction Tiers & Upgrades — ✅ Complete</strong></summary>
+
+Small→mid→large tiers, storage skill upgrades, transition tiles at half yield.
+
+**Testable outcome:** upgrade through all tiers; costs/yields match TWEAKS.md.
+
+</details>
+
+<details>
+<summary><strong>Milestone 6 — Manual Collection & Infrastructure Paths — ✅ Complete</strong></summary>
+
+Manual collection, path build/upgrade, auto-flow to base when connected.
+
+**Testable outcome:** path-connected tile fills base storage without clicks; disconnected tile does not.
+
+</details>
+
+<details>
+<summary><strong>Milestone 7 — Noise System — ✅ Complete</strong></summary>
+
+Passive + action noise, floor convergence, display.
+
+**Testable outcome:** noise rises with actions, decays toward floor; matches TWEAKS.md.
+
+</details>
+
+<details>
+<summary><strong>Milestone 8 — Towers & Walls — ✅ Complete</strong></summary>
+
+Tower/wall build and upgrade, repair (peacetime), demolish with 60% refund.
+
+**Testable outcome:** place tower/wall, verify math, demolish and confirm refund.
+
+</details>
+
+<details>
+<summary><strong>Milestone 9 — Barracks & Units — ✅ Complete</strong></summary>
+
+Barracks L1–4, scouts (one-time reveal), militia (upkeep, attack/defense stats).
+
+**Testable outcome:** train units, spend scout to reveal tile, verify upkeep/desertion.
+
+</details>
+
+<details>
+<summary><strong>Milestone 10 — Territory Expansion — ✅ Complete</strong></summary>
+
+Base level upgrades, tile assault (later superseded by expedition system), adjacency + radius gating, deterministic combat.
+
+**Testable outcome:** upgrade base, claim tiles via militia/expedition; lose committed units on failure.
+
+*Note: single-tile attack generalized to multi-tile expeditions (`engine/expeditions.ts`).*
+
+</details>
+
+<details>
+<summary><strong>Milestone 11 — Horde Spawning & Pathfinding — ✅ Complete</strong></summary>
+
+Per-den spawn loop, size/cooldown formulas, pathfinding to noise source, tile advance.
+
+**Testable outcome:** high noise near den → horde spawns and paths toward base.
+
+</details>
+
+<details>
+<summary><strong>Milestone 12 — Tower/Wall Combat — ✅ Complete</strong></summary>
+
+Tower attrition per tick, wall durability, base reinforcement HP + loss condition.
+
+**Testable outcome:** defended chokepoint slows horde; base HP 0 ends session.
+
+</details>
+
+<details>
+<summary><strong>Milestone 13 — Territory Disconnection — ✅ Complete</strong></summary>
+
+Connectivity check after horde capture; disconnected section loses resources, buildings damaged.
+
+**Testable outcome:** horde severs territory → correct section flagged, not whole map.
+
+</details>
+
+<details>
+<summary><strong>Milestone 14 — Dens, Siege & Outposts — ✅ Complete</strong></summary>
+
+Den placement at world-gen (fixed level), assault + hold + outpost conversion, horde loss generalized to outposts.
+
+**Testable outcome:** clear den through hold → outpost with separate storage; outpost loss reverts to den.
+
+</details>
+
+<details>
+<summary><strong>Milestone 18 — Base Relocation — ✅ Complete</strong></summary>
+
+Relocate base to known empty land tile (L3+ gate), cost/duration scale with distance, persists offline.
+
+**Testable outcome:** relocate, countdown completes (incl. offline gap), base moves, destination owned.
+
+**Refs:** [`src/engine/base.ts`](../src/engine/base.ts).
+
+</details>
+
+<details>
+<summary><strong>Milestone 19 — Docks & Water Units — ✅ Complete</strong></summary>
+
+Docks, fishing boat, scout skiff, wandering scout; water no longer dead space.
+
+**Testable outcome:** dock yields food; boat boosts yield; skiff/scout reveal tiles over time.
+
+**Refs:** [DESIGN.md §16](DESIGN.md), [TWEAKS.md § Docks](TWEAKS.md).
+
+</details>
+
+<details>
+<summary><strong>Milestone 20 — UI Enrichment — ✅ Complete</strong></summary>
+
+Hex-ring action menu, global hex cluster panels, HUD chips, path textures, marker icons, desktop hover tooltip.
+
+**Testable outcome:** full tile actions via ring menu; all panels reachable; desktop hover shows correct stats.
+
+</details>
+
+<details>
+<summary><strong>Milestone 21 — Stability & UX Backlog — ✅ Complete</strong></summary>
+
+Playtesting backlog reorganized into dedicated ROADMAP sections (Bugs, Questions, Proposed Features) — 2026-07-23.
+
+</details>
+
+<details>
+<summary><strong>Milestone 22 — Onboarding: Field Manual — ✅ Complete</strong></summary>
+
+Paged field-manual onboarding, continue-or-new-game prompt, advanced options (difficulty, seed, recent seeds).
+
+**Testable outcome:** new player completes manual → game with chosen identity; returning save → continue prompt.
+
+**Detail file:** [Milestone22.md](Milestone22.md).
+
+</details>
+
+<details>
+<summary><strong>Milestone 23 — Difficulty Profiles & Asset Packs — ✅ Complete</strong></summary>
+
+URL slugs, bundled `public/profiles/{slug}/`, partial sprite overrides with default fallback, profile persisted in save.
+
+**Testable outcome:** `/hard` loads hard profile; continue prompt on reload; `profiles/index.json` lists difficulties.
+
+</details>
+
+</details>
