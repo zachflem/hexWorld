@@ -107,7 +107,7 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 
 ### UI
 
-*(No open UI items — see Recently resolved for #7, #13, #15–#17.)*
+*(No open UI items — see Recently resolved for #7, #13, #15–#17, #19.)*
 
 ### UX
 
@@ -117,7 +117,9 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 <details>
 <summary><strong>Recently resolved</strong></summary>
 
-- **Map camera controls.** (#17) Resolved 2026-07-23 — bottom-left hex stack: zoom in/out (hold to repeat) and recenter on base (keeps current zoom); same recenter as Settings. **Refs:** [`src/ui/hud/MapControls.tsx`](../src/ui/hud/MapControls.tsx), [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx) `zoomBy` / `recenterOnBase`, [PLAYER_GUIDE.md](PLAYER_GUIDE.md).
+- **Settings new-game flow.** (#19) Resolved 2026-07-23 — removed Recenter from Settings (map controls only); new-game choices (replay / new seed / new player) live inline in the Settings sheet instead of behind a New Game button; discard warning moved to a confirm popup on Start. **Refs:** [`src/ui/panels/SettingsPanel.tsx`](../src/ui/panels/SettingsPanel.tsx), [`src/ui/NewGameOptions.tsx`](../src/ui/NewGameOptions.tsx), [PLAYER_GUIDE.md](PLAYER_GUIDE.md).
+- **Garrisoning a new tile wipes other garrisons.** (#18) Resolved 2026-07-23 — first station on a fresh tile replaced the whole `garrisons` array with a one-element list, so earlier towers lost their troops (looked like a transfer). Fixed via shared `mergeIntoGarrison` that appends instead of replacing. **Refs:** [`src/engine/garrisons.ts`](../src/engine/garrisons.ts) `mergeIntoGarrison`, [`src/App.tsx`](../src/App.tsx) `handleGarrisonUnits`.
+- **Map camera controls.** (#17) Resolved 2026-07-23 — bottom-left hex stack: zoom in/out (hold to repeat) and recenter on base (keeps current zoom). Recenter removed from Settings (map controls are the sole entry point). **Refs:** [`src/ui/hud/MapControls.tsx`](../src/ui/hud/MapControls.tsx), [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx) `zoomBy` / `recenterOnBase`, [PLAYER_GUIDE.md](PLAYER_GUIDE.md).
 - **Resource HUD rate chip layout.** (#16) Resolved 2026-07-23 — net ±/sec chip floats at top-right of the amount instead of wrapping onto a new row and shifting the HUD. **Refs:** [`src/ui/hud/ResourceHud.tsx`](../src/ui/hud/ResourceHud.tsx).
 - **Base sheet missing status.** (#15) Resolved 2026-07-23 — base tile sheet Info tab shows operational status, reinforcement HP, noise cap, and per-resource storage fill vs capacity; Storage upgrade rows show current cap. **Refs:** [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx) `infoSheetContent`, [PLAYER_GUIDE.md](PLAYER_GUIDE.md).
 - **Early game pacing too slow.** (#12) Resolved 2026-07-23 — small-tier extraction yields raised ~50%; every flat build/upgrade timer shaved 1 minute. **Refs:** [`public/profiles/default/tweaks.jsonc`](../public/profiles/default/tweaks.jsonc), [TWEAKS.md](TWEAKS.md).

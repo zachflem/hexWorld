@@ -25,16 +25,18 @@ Progress saves automatically in your browser (IndexedDB) as you play — closing
 
 ### Starting a new game later
 
-From **Settings** in the bottom-right menu, or from the game-over screen, choose **New Game** to get three options:
+From **Settings** in the bottom-right menu, pick one of the three options directly (no extra dialog):
 - **Replay the current map** — same seed, fresh start, same layout.
 - **Start a new game** — a freshly-generated random seed (or type your own).
 - **Start as a new player** — re-enter your name/colour from scratch.
+
+The game-over and win screens still open a **New Game** dialog with the same three choices.
 
 All three wipe current progress, so use them deliberately.
 
 ### Map controls
 
-Bottom-left hex buttons: **zoom in**, **zoom out** (tap or hold to keep zooming), and **recenter on base** (keeps your current zoom; same action as Settings → Recenter on Base). Scroll-wheel / pinch zoom still work on the map itself. The bottom-right cluster opens panels (garrisons, scouting, military, research, build mode, settings).
+Bottom-left hex buttons: **zoom in**, **zoom out** (tap or hold to keep zooming), and **recenter on base** (keeps your current zoom). Scroll-wheel / pinch zoom still work on the map itself. The bottom-right cluster opens panels (garrisons, scouting, military, research, build mode, settings).
 
 The top-left resource bar shows stockpile amounts; a small green/red **±** next to an amount is the live net rate per second (inflow minus upkeep; hidden when roughly zero or that resource is at cap).
 ---

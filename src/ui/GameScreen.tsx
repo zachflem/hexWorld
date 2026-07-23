@@ -134,7 +134,6 @@ import {
   WALL_TIER_ICON_NAMES,
   type HexCanvasHandle,
 } from "../render/HexCanvas";
-import { NewGameDialog } from "./NewGameDialog";
 import {
   type BarracksUpgradeOption,
   type BaseUpgradeOption,
@@ -432,11 +431,11 @@ export function GameScreen({
   onBuildScoutSkiff: (coord: Axial) => Promise<BuildResult>;
   onCollectDock: (coord: Axial) => Promise<BuildResult>;
   onBuildWanderingScout: (coord: Axial) => Promise<BuildResult>;
-  /** New Game dialog (App.tsx) — same player, same map, progress reset. */
+  /** Settings / New Game (App.tsx) — same player, same map, progress reset. */
   onReplayCurrent: () => void;
-  /** New Game dialog (App.tsx) — same player, a chosen (or freshly-generated) map. */
+  /** Settings / New Game (App.tsx) — same player, a chosen (or freshly-generated) map. */
   onStartNewSeed: (seed: number) => void;
-  /** New Game dialog (App.tsx) — drops back to onboarding. */
+  /** Settings / New Game (App.tsx) — drops back to onboarding. */
   onNewPlayer: () => void;
 }) {
   const hexCanvasRef = useRef<HexCanvasHandle>(null);
@@ -446,7 +445,6 @@ export function GameScreen({
   const [selected, setSelected] = useState<Axial | null>(null);
   /** Desktop-mouse hover target (HexCanvas's onTileHover) — null on touch devices, which never report hover. Only changes when the hovered tile itself changes (deduped in HexCanvas), not on every mousemove pixel. */
   const [hoveredCoord, setHoveredCoord] = useState<Axial | null>(null);
-  const [newGameDialogOpen, setNewGameDialogOpen] = useState(false);
   /** Which of the global hex cluster's five panel slots (flag/binoculars/gear/chart — hammer is a toggle, not a panel) is open, if any. Only one at a time. Dismissed via BottomSheet Close/backdrop. */
   const [openPanel, setOpenPanel] = useState<"garrisons" | "scouting" | "military" | "settings" | "research" | null>(null);
   /** Hammer slot — highlights owned/empty/buildable tiles with an affordable build option, see buildModeEligibleKeysFor below. */
@@ -2941,8 +2939,9 @@ export function GameScreen({
         <SettingsPanel
           player={player}
           seed={world.seed}
-          onRecenterOnBase={() => hexCanvasRef.current?.recenterOnBase()}
-          onNewGame={() => setNewGameDialogOpen(true)}
+          onReplayCurrent={onReplayCurrent}
+          onStartNewSeed={onStartNewSeed}
+          onNewPlayer={onNewPlayer}
           onClose={() => setOpenPanel(null)}
         />
       )}
@@ -2985,24 +2984,6 @@ export function GameScreen({
           now={now}
         />
       </div>
-      {newGameDialogOpen && (
-        <NewGameDialog
-          currentSeed={world.seed}
-          onReplayCurrent={() => {
-            setNewGameDialogOpen(false);
-            onReplayCurrent();
-          }}
-          onStartNewSeed={(seed) => {
-            setNewGameDialogOpen(false);
-            onStartNewSeed(seed);
-          }}
-          onNewPlayer={() => {
-            setNewGameDialogOpen(false);
-            onNewPlayer();
-          }}
-          onCancel={() => setNewGameDialogOpen(false)}
-        />
-      )}
     </div>
   );
 }

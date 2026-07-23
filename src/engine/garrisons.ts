@@ -65,6 +65,33 @@ export function garrisonAt(garrisons: GarrisonsRecord, coord: Axial): Garrison |
   return garrisons.find((g) => axialKey(g.coord) === axialKey(coord)) ?? null;
 }
 
+/**
+ * Add units to the garrison at `coord`, creating a new record if none exists.
+ * Always preserves sibling garrisons — callers must not replace the array with
+ * a single-element list when stationing on a fresh tile.
+ */
+export function mergeIntoGarrison(
+  garrisons: GarrisonsRecord,
+  coord: Axial,
+  militia: number,
+  junkyardKnight: number,
+  crossBowSniper: number,
+): GarrisonsRecord {
+  const existing = garrisonAt(garrisons, coord);
+  return existing
+    ? garrisons.map((g) =>
+        axialKey(g.coord) === axialKey(coord)
+          ? {
+              ...g,
+              militiaCount: g.militiaCount + militia,
+              junkyardKnightCount: g.junkyardKnightCount + junkyardKnight,
+              crossBowSniperCount: g.crossBowSniperCount + crossBowSniper,
+            }
+          : g,
+      )
+    : [...garrisons, { coord, militiaCount: militia, junkyardKnightCount: junkyardKnight, crossBowSniperCount: crossBowSniper }];
+}
+
 /** Total militia currently stationed across every garrison. */
 export function garrisonedMilitiaTotal(garrisons: GarrisonsRecord): number {
   return garrisons.reduce((sum, g) => sum + g.militiaCount, 0);

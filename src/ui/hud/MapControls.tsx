@@ -71,7 +71,7 @@ function HoldRepeatHexButton({
  * Bottom-left map camera controls — mirrors the global hex cluster's
  * bottom-right footprint so the HUD reads balanced. Zoom steps match the
  * wheel/pinch factor (1.1); hold repeats. Recenter reuses
- * HexCanvas.recenterOnBase (same as Settings → Recenter on Base).
+ * HexCanvas.recenterOnBase.
  */
 export function MapControls({
   onZoomIn,
