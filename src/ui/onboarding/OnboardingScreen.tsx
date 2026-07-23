@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Player } from "../../data/player";
 import { ManualPage } from "./ManualPage";
+import { InlineColorPicker } from "./InlineColorPicker";
 import {
   COVER_HOOK,
   COVER_TITLE,
@@ -163,12 +164,12 @@ export function OnboardingScreen({
               />
             </div>
             <div className="onboarding-registration__field">
-              <label htmlFor="player-color">Colour</label>
-              <input
+              <label id="player-color-label">Colour</label>
+              <InlineColorPicker
                 id="player-color"
-                type="color"
+                aria-labelledby="player-color-label"
                 value={color}
-                onChange={(event) => setColor(event.target.value)}
+                onChange={setColor}
               />
             </div>
             <div className="onboarding-registration__field">

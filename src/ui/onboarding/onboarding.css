@@ -126,14 +126,55 @@
   }
 }
 
-.onboarding-registration__field input[type="color"] {
-  width: 3rem;
-  height: 2.25rem;
-  padding: 0.15rem;
+.onboarding-color-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.onboarding-color-picker__preview {
+  width: 100%;
+  height: 2.5rem;
   border: 1px solid var(--manual-rule);
   border-radius: 2px;
-  background: transparent;
-  cursor: pointer;
+}
+
+.onboarding-color-picker__sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.onboarding-color-picker__slider-row {
+  display: grid;
+  grid-template-columns: 1.25rem 1fr 2.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--manual-ink-muted);
+}
+
+.onboarding-color-picker__channel {
+  font-weight: 600;
+  color: var(--manual-ink);
+}
+
+.onboarding-color-picker__slider-row input[type="range"] {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--manual-ink);
+}
+
+.onboarding-color-picker__value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.onboarding-color-picker__hex {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--manual-ink-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .onboarding-registration__hint {
