@@ -38,7 +38,7 @@ export const STRUCTURE_ICON_SCALE: Record<StructurePlacementKey, number> = {
   den: 1.6,
   tower: 1.2,
   barracks: 1.6,
-  wall: 1.4,
+  wall: 1.2,
   dock: 1.6,
   construction: 1.0,
 };

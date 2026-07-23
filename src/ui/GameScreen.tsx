@@ -161,6 +161,7 @@ import {
 } from "./tileOptions";
 import { ResearchPanel } from "./ResearchPanel";
 import { NotificationTray } from "./hud/NotificationTray";
+import { ResourceHud } from "./hud/ResourceHud";
 import { ToastStack, type ToastRecord } from "./hud/Toast";
 import { Panel } from "./primitives/Panel";
 import { PartyDispatchForm } from "./primitives/PartyDispatchForm";
@@ -210,41 +211,6 @@ function structureIcon(name: string, size = 45) {
 /** Small hand-drawn marker icons (public/tiles/markers/) instead of the full-size in-world resource sprites — those read fine painted on the map itself but turn into an indistinct blob at ring-hex/HUD-chip size. */
 function resourceIcon(resource: ResourceType, size = 45) {
   return <img src={`/tiles/markers/icon-${resource}.png`} width={size} height={size} alt="" style={{ objectFit: "contain" }} />;
-}
-function noiseIcon(size = 45) {
-  return <img src="/tiles/markers/icon-noise.png" width={size} height={size} alt="" style={{ objectFit: "contain" }} />;
-}
-
-/** icon + value(+delta) chip — the HUD bar's atom. No progress bar (StatRow is for capped values); resources/scouts/base-level/build-slots are either uncapped or already show their own denominator inline. */
-function StatChip({
-  icon,
-  value,
-  delta,
-  title,
-}: {
-  icon?: ReactNode;
-  value: ReactNode;
-  /** Signed rate, shown as "+84"/"-12" in green/red — omitted entirely when 0 (nothing to report). */
-  delta?: number;
-  title?: string;
-}) {
-  return (
-    <span
-      style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: "0.1rem", fontSize: "0.9rem" }}
-      title={title}
-    >
-      <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
-        {icon}
-        <span>{value}</span>
-      </span>
-      {delta !== undefined && Math.round(delta) !== 0 && (
-        <span style={{ alignSelf: "flex-end", fontSize: "0.7rem", lineHeight: 1, color: delta > 0 ? "#81c784" : "#ef5350" }}>
-          {delta > 0 ? "+" : ""}
-          {Math.round(delta)}
-        </span>
-      )}
-    </span>
-  );
 }
 
 function capitalize(s: string): string {
@@ -2741,52 +2707,8 @@ export function GameScreen({
     hoveredCoord && !(selected && axialEquals(hoveredCoord, selected)) ? hoverInfoFor(hoveredCoord) : null;
 
   return (
-    <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column" }}>
-      <header
-        style={{
-          padding: "0.5rem 1rem",
-          flex: "0 0 auto",
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          rowGap: "0.4rem",
-          columnGap: "1.25rem",
-        }}
-      >
-        <div style={{ display: "flex", flexWrap: "wrap", rowGap: "0.4rem", columnGap: "0.85rem" }}>
-          {RESOURCE_ORDER.map((type) => (
-            <StatChip
-              key={type}
-              icon={resourceIcon(type, 18)}
-              value={Math.floor(resources[type]).toLocaleString()}
-              delta={resourceRates[type]}
-              title={type}
-            />
-          ))}
-          <StatChip icon={noiseIcon(18)} value={`${Math.floor(noise.value)}db`} title="noise" />
-        </div>
-      </header>
-      {actionError && (
-        <div
-          onClick={() => setActionError(null)}
-          style={{
-            position: "fixed",
-            top: "3.5rem",
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 60,
-            background: "rgba(20, 20, 22, 0.92)",
-            color: "#ff8080",
-            borderRadius: 8,
-            padding: "0.75rem 1rem",
-            fontSize: "0.85rem",
-            cursor: "pointer",
-          }}
-        >
-          {actionError}
-        </div>
-      )}
-      <div style={{ flex: "1 1 auto", minHeight: 0 }}>
+    <div style={{ position: "fixed", inset: 0 }}>
+      <div style={{ position: "absolute", inset: 0 }}>
         <HexCanvas
           ref={hexCanvasRef}
           seed={world.seed}
@@ -2824,6 +2746,27 @@ export function GameScreen({
           onViewportChange={handleViewportChange}
         />
       </div>
+      <ResourceHud resources={resources} resourceRates={resourceRates} noiseValue={noise.value} />
+      {actionError && (
+        <div
+          onClick={() => setActionError(null)}
+          style={{
+            position: "fixed",
+            top: "4.5rem",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 60,
+            background: "rgba(20, 20, 22, 0.92)",
+            color: "#ff8080",
+            borderRadius: 8,
+            padding: "0.75rem 1rem",
+            fontSize: "0.85rem",
+            cursor: "pointer",
+          }}
+        >
+          {actionError}
+        </div>
+      )}
       <HoverTooltip ref={hoverTooltipRef} coord={hoveredCoord} content={hoverInfoContent} />
       <CollectPinOverlay ref={collectPinOverlayRef} tiles={collectableTiles} onCollect={handleQuickCollect} />
       {selected && sheetActions.length > 0 && (
@@ -2929,12 +2872,13 @@ export function GameScreen({
         style={{
           position: "fixed",
           right: "1rem",
-          top: "3.5rem",
+          top: "max(0.65rem, env(safe-area-inset-top, 0px))",
           display: "flex",
           flexDirection: "column",
           alignItems: "flex-end",
           gap: "0.35rem",
           maxWidth: "min(90vw, 320px)",
+          zIndex: 40,
         }}
       >
         <ToastStack toasts={toasts} onDismiss={onDismissToast} />
