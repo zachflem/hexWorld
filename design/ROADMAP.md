@@ -201,7 +201,7 @@ Playtesting backlog gathered 2026-07-22. Ordered by the user's stated priority: 
 
 ---
 
-## Milestone 22 — Onboarding Overhaul: The Field Manual — 🚧 Not started
+## Milestone 22 — Onboarding Overhaul: The Field Manual — ✅ Complete
 
 The bare form from Milestone 1 (name/colour/seed, no framing, no lore delivery) gets replaced with a short paged sequence themed as a found field manual — aged paper, not the glowing-terminal look, since the player hasn't built any power infrastructure yet when the run begins. Full implementation plan and design detail: `design/Milestone22.md`.
 

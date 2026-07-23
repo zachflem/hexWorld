@@ -8,7 +8,11 @@ This guide describes the game **as it currently plays**.
 
 ## Getting started
 
-When you first open the game, you'll be asked for a **name** and a **colour** (used to tint your base and territory outline on the map). You can optionally enter a **seed** — a number that fully determines the map layout, terrain, and everything on it. Leave it blank for a random map, or enter a specific number to replay a map you (or someone else) has seen before; the same seed always generates the exact same world.
+When you first open the game, you'll page through a short **field manual** — cover, registration, a few story pages, then a send-off — before the map loads.
+
+On the registration page you'll enter a **name** and a **colour** (used to tint your base and territory outline on the map). You can optionally enter a **seed** — a number that fully determines the map layout, terrain, and everything on it. Leave it blank for a random map, or enter a specific number to replay a map you (or someone else) has seen before; the same seed always generates the exact same world.
+
+Use **Begin**, **Continue**, **Next**, and **Step Outside** (or arrow keys on non-input pages) to move through the manual. An existing save skips onboarding on reload.
 
 Progress saves automatically in your browser (IndexedDB) as you play — closing the tab is safe.
 

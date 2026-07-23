@@ -39,9 +39,14 @@ A small group arrives in unfamiliar territory. They settle, and immediately clai
 
 ## 4. Player Onboarding
 
-No login, no email, no account. On arrival:
-- Player enters a name and picks a colour (full RGB picker).
-- Player is dropped straight into the game world, owning their starting territory outright (see §6).
+No login, no email, no account. On arrival, the player finds a short **field manual** — aged paper, in-world prose, not a terminal UI — and pages through it before play begins:
+
+1. **Cover** — title and hook.
+2. **Registration** — name, full RGB colour picker, optional world seed (same validation as before: blank seed is random; otherwise a non-negative integer).
+3. **Story pages** (four brief log entries) — settling the starting territory, how noise draws hordes, the rumoured hidden lab (securing it wins the run; clearing dens is valuable but not required), and a light in-fiction nudge before heading out.
+4. **Send-off** — closing line, then into the game.
+
+Returning saves skip onboarding entirely. Choosing **Start as a new player** from the new-game dialog shows the full manual again.
 
 Progress persists locally in IndexedDB automatically during play, so closing the tab mid-session doesn't lose anything. For anything beyond that — moving a game to another device, keeping a backup, running separate playthroughs side by side — the player explicitly **saves to a file** (see §17).
 

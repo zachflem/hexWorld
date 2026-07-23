@@ -152,7 +152,7 @@ import { GameScreen } from "./ui/GameScreen";
 import type { ToastRecord } from "./ui/hud/Toast";
 import { GameOverScreen } from "./ui/GameOverScreen";
 import { WinScreen } from "./ui/WinScreen";
-import { OnboardingScreen } from "./ui/OnboardingScreen";
+import { OnboardingScreen } from "./ui/onboarding/OnboardingScreen";
 import "./App.css";
 
 interface GameState {
