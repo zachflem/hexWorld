@@ -32,3 +32,5 @@ Other useful scripts: `npm run build`, `npm test`, `npm run lint`.
 ## Docs
 
 Design notes, the full mechanics reference, the build roadmap, and the player guide all live in [`/design`](./design).
+
+Git branching (personal `goblin` / `krunchee` branches → `dev` → `main`) is documented in [`design/WORKFLOW.md`](./design/WORKFLOW.md).
