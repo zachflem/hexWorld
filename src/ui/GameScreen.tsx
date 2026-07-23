@@ -176,7 +176,6 @@ import {
   Anchor,
   Archive,
   ArrowUpCircle,
-  BarChart3,
   Binoculars,
   Eye,
   Flag,
@@ -2938,7 +2937,7 @@ export function GameScreen({
           },
           {
             key: "research",
-            icon: <BarChart3 size={20} />,
+            icon: <FlaskConical size={20} />,
             title: "Research",
             // Also lit up while a research is in progress, not just while the panel is open — mirrors the old floating button's "something's happening" cue.
             active: openPanel === "research" || Boolean(research.pending),

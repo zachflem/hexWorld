@@ -11,7 +11,7 @@ You start with a small foothold on a procedurally generated hex map. From there,
 - Every action you take generates noise — the louder you are, the more likely a zombie horde spawns and comes looking for you.
 - Fortify choke points with walls and towers, and field militia and other units to defend your territory (or go on the offensive).
 
-The goal: track down and secure a hidden research lab hidden somewhere on the map, guided by rumors and clues gathered along the way. Clearing zombie dens along the way nets useful rewards and outposts, but isn't required to win — just good preparation for it.
+The goal: track down and secure a hidden research lab hidden somewhere on the map, guided by rumors and clues gathered in the wasteland. Clearing zombie dens along the way nets useful rewards and outposts, but isn't required to win — just good preparation for it.
 
 ## Tech Stack
 
