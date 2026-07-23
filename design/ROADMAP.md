@@ -78,7 +78,7 @@ Keep the design docs aligned with the code. Stale docs cause the mismatches we h
 | Topic | Rule |
 |-------|------|
 | **Backlog format** | `- **Title.** (#id) Description. **Refs:** … Status: Open / In progress / Resolved (YYYY-MM-DD)` |
-| **Bug IDs** | `#1`–`#14` preserved ([TWEAKS.md](TWEAKS.md) references `#12`) |
+| **Bug IDs** | `#1`–`#16` — preserve existing IDs when adding new items ([TWEAKS.md](TWEAKS.md) references `#12`) |
 | **Proposed IDs** | `#P1`, `#P2`, … (P = proposed) |
 | **`[URGENT]`** | Prefix when play is blocked or game state is misleading |
 | **Balance fixes** | Backlog → `public/profiles/{slug}/tweaks.jsonc` → note in [TWEAKS.md](TWEAKS.md) → Resolved |
@@ -87,7 +87,7 @@ Keep the design docs aligned with the code. Stale docs cause the mismatches we h
 | **Collapsible blocks** | Use `<details>` / `<summary>` for completed milestones, recently resolved, deferred, and ideas (see completed section below) |
 | **Agent git workflow** | See [WORKFLOW.md](WORKFLOW.md). Ask the user which **personal branch** they use; do not assume `goblin` or `krunchee`. Merge finished work to **`dev`**. |
 
-*Last updated: 2026-07-23*
+*Last updated: 2026-07-23 (playtesting: #15, #16, #14 expanded)*
 
 ---
 
@@ -104,6 +104,7 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 - **[URGENT] Scout skiffs stuck at home dock.** (#6) Never wander off; reproduced at 5× speed for 1+ simulated hour. **Refs:** [`src/engine/scoutSkiffs.ts`](../src/engine/scoutSkiffs.ts), [`src/data/scoutSkiffs.ts`](../src/data/scoutSkiffs.ts). Status: Open.
 - **[URGENT] Extraction tiles yield during build timer.** (#8) Should yield nothing until `buildStartedAt` clears. **Refs:** [`src/engine/tick.ts`](../src/engine/tick.ts), [`src/data/extractionTiles.ts`](../src/data/extractionTiles.ts). Status: Open.
 - **[URGENT] Recalled garrison cannot join expeditions.** (#9) After recall with zero losses, expedition dispatch fails; re-garrison still works. Possibly related to militia dispatch count bug. **Refs:** [`src/App.tsx`](../src/App.tsx), [`src/engine/expeditions.ts`](../src/engine/expeditions.ts), [`src/engine/garrisons.ts`](../src/engine/garrisons.ts). Status: Open.
+- **Base not centered after page refresh.** (#15) On reload, the map viewport shows the base toward the top-left instead of centered. **Investigation:** [`HexCanvas.tsx`](../src/render/HexCanvas.tsx) sets initial `pan` once while `pan === null` (lines ~446–452) using `canvas.width/height`, but `ResizeObserver` resizes the canvas afterward without updating `pan` (~510–514). Likely race: center runs at default canvas size, then layout resize leaves pan stale. **`recenterOnBase()`** already has the correct math — initial load should match it (re-run center after first resize, or derive pan from `container.clientWidth/Height`). Status: Open.
 
 ### UI
 
@@ -112,7 +113,8 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 ### UX
 
 - **Map size choice during onboarding.** (#10) 48×48 / 96×96 / 128×128; den count and pacing must scale, not just grid resize. **Refs:** [DESIGN.md §3](DESIGN.md), [`src/ui/onboarding/OnboardingScreen.tsx`](../src/ui/onboarding/OnboardingScreen.tsx). Status: Open — see also [#P2](#map-size-selection-p2).
-- **Toast notifications should auto-collapse.** (#14) Full toast 5s, then collapse to action icon; click to re-expand. **Refs:** toast/notification UI in [`src/ui/`](../src/ui/). Status: Open.
+- **Unit training missing from notification tray.** (#16) Scout/militia/knight/sniper training queues show progress only inside the Military sheet ([`TrainForm`](../src/ui/primitives/TrainForm.tsx) `queueStatus`); unlike builds/upgrades, they do not appear in [`NotificationTray`](../src/ui/hud/NotificationTray.tsx). **Investigation:** [`activeCountdownRows()`](../src/ui/GameScreen.tsx) scans structure timers but omits `units.scoutQueue` / `militiaQueue` / `junkyardKnightQueue` / `crossBowSniperQueue` ([`src/data/units.ts`](../src/data/units.ts)). Add tray rows using the same `TrayRow` + `remainingMs` pattern; durations from [`engine/units.ts`](../src/engine/units.ts) (`scoutTrainDurationMs`, etc.). Queues are player-global today — row coord may use `territory.base` until [#5](#bugs) (per-barracks queues) lands. Status: Open.
+- **Timer notifications should auto-collapse.** (#14) After 5s realtime, expand full label/countdown then slide to **icon only**; tap/click icon to re-expand. Applies to **both** one-off toasts ([`ToastStack`](../src/ui/hud/Toast.tsx)) **and** countdown rows in [`NotificationTray`](../src/ui/hud/NotificationTray.tsx) (builds, upgrades, repairs, training once #16 ships, expeditions, assaults, recalls, sieges). Player should still see at a glance how many timers are in flight when collapsed. **Refs:** [`NotificationTray.tsx`](../src/ui/hud/NotificationTray.tsx), [`GameScreen.tsx`](../src/ui/GameScreen.tsx) `activeCountdownRows()`. Status: Open.
 
 <details>
 <summary><strong>Recently resolved</strong></summary>
