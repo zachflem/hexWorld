@@ -1811,11 +1811,25 @@ export function GameScreen({
     }
 
     if (selectedWall) {
-      // Unlike tile/path/tower/barracks, a wall's upgrade and repair options
-      // aren't damaged-XOR-not — both can be independently available at
-      // once (below-max durability AND tier-upgradeable), gated by one
-      // shared in-progress status rather than each other.
-      if (!wallActionStatusFor(selectedWall)) {
+      // Horde-capture `damaged` (§12) is a separate track from peacetime
+      // durability repair — when set, only the shared structure-repair option
+      // applies (same as tile/path/tower/barracks). Durability upgrade/repair
+      // stay off via wallUpgradeOptionFor / wallRepairOptionFor's `w.damaged`
+      // checks. When not damaged, upgrade and durability repair can both be
+      // available at once, gated by one shared in-progress action.
+      if (selectedWall.damaged) {
+        const repair = repairOptionFor(selectedStructure);
+        if (repair) {
+          actions.push({
+            key: "wall-damage-repair",
+            icon: <Wrench size={18} />,
+            title: "Repair wall",
+            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            disabled: !repair.affordable || selectedHordeOccupied,
+            onClick: handleRepairStructure,
+          });
+        }
+      } else if (!wallActionStatusFor(selectedWall)) {
         const upgrade = wallUpgradeOptionFor(selectedWall);
         if (upgrade) {
           actions.push({
