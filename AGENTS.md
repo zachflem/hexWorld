@@ -14,5 +14,5 @@ Standard commands are already documented in `README.md` and `package.json` scrip
 Non-obvious notes:
 
 - The dev server binds to localhost only; it is not exposed on the network by default (would need `--host`).
-- Runtime game balance/tuning is loaded from the static asset `public/tweaks.jsonc` (validated with Zod via `src/data/tweaksLoader.ts`), not from code — edit that file to change tuning.
+- Runtime game balance/tuning is loaded from per-profile `public/profiles/{slug}/tweaks.jsonc` (validated with Zod via `src/data/tweaksLoader.ts`), not from code — edit those files to change tuning.
 - Because saves live in IndexedDB, clearing browser site data resets game progress.
