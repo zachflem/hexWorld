@@ -44,8 +44,9 @@ export function GlobalHexCluster({ slots, pinnedSlot }: { slots: HexClusterSlot[
         position: "fixed",
         right: "1.25rem",
         bottom: "1.25rem",
-        // Above BottomSheet backdrop/dialog (z 50/51) so menu toggles still work while a sheet is open.
-        zIndex: 52,
+        // Below BottomSheet backdrop/dialog (z 50/51) so the tile action
+        // sheet and global panels cover the cluster when open.
+        zIndex: 49,
         display: "flex",
         flexDirection: "column",
         alignItems: "flex-end",

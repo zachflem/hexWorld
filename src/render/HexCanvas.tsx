@@ -536,26 +536,27 @@ export const HexCanvas = forwardRef<
         context.stroke();
       };
 
-      // Bottom-left corner badge for a structure's level (base/den/tower/barracks/
-      // extraction) — opposite the garrison count badge (top-right) so the two
-      // never collide. When an upgrade is available+affordable the same badge
-      // turns orange (UPGRADE_AVAILABLE_BADGE_COLOR) and shifts to bottom-centre
-      // so taller building sprites don't cover it.
+      // Level badge for a structure (base/den/tower/barracks/extraction) —
+      // bottom-centre so taller building sprites don't cover it. Opposite the
+      // garrison count badge (top-right). Black by default; pass badgeColor
+      // to flag an available+affordable upgrade (UPGRADE_AVAILABLE_BADGE_COLOR).
       const drawLevelBadge = (screenCenter: { x: number; y: number }, level: number, badgeColor: string = "#000000") => {
-        const upgradeAvailable = badgeColor === UPGRADE_AVAILABLE_BADGE_COLOR;
-        const badgeX = upgradeAvailable ? screenCenter.x : screenCenter.x - size * 0.55;
-        const badgeY = screenCenter.y + size * (upgradeAvailable ? 0.4 : 0.55);
+        const badgeX = screenCenter.x;
+        const badgeY = screenCenter.y + size * 0.6;
+        context.save();
+        context.globalAlpha = 0.85;
         context.beginPath();
-        context.arc(badgeX, badgeY, size * 0.3, 0, Math.PI * 2);
+        context.arc(badgeX, badgeY, size * 0.250, 0, Math.PI * 2);
         context.fillStyle = badgeColor;
         context.fill();
         context.strokeStyle = "rgba(255, 255, 255, 0.6)";
         context.stroke();
         context.fillStyle = "#ffffff";
-        context.font = `${Math.max(8, size * 0.38)}px sans-serif`;
+        context.font = `${Math.max(6, size * 0.285)}px sans-serif`;
         context.textAlign = "center";
         context.textBaseline = "middle";
         context.fillText(String(level), badgeX, badgeY);
+        context.restore();
       };
 
       // HP/durability edge bar (base, outpost, wall) — "at a glance" on the

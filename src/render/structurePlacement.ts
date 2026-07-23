@@ -27,7 +27,7 @@ export const STRUCTURE_VERTICAL_OFFSET: Record<StructurePlacementKey, number> = 
   tower: 0,
   barracks: 0.1,
   wall: 0,
-  dock: 0,
+  dock: 0.2,
   construction: 0,
 };
 
