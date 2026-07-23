@@ -96,6 +96,16 @@ describe("noiseFloor", () => {
     expect(floor).toBeCloseTo(expected);
   });
 
+  it("ignores extraction and path tiles still under construction", () => {
+    const tweaks = loadRealTweaks();
+    const underConstructionFood = extractionTile({ coord: { q: 0, r: 0 }, resource: "food", tier: "small", buildStartedAt: 0 });
+    const underConstructionPath = pathTile({ coord: { q: 1, r: 0 }, tier: "goat_track", buildStartedAt: 0 });
+
+    expect(noiseFloor(tweaks, [underConstructionFood], [underConstructionPath], [], [], BASE_LEVEL)).toBe(
+      tweaks.noise.noise_floor_minimum,
+    );
+  });
+
   it("clamps at the noise cap", () => {
     const tweaks = loadRealTweaks();
     const tiles: ExtractionTile[] = Array.from({ length: 50 }, (_, i) =>

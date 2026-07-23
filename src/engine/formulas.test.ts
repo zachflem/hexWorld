@@ -8,6 +8,7 @@ import {
   demolishRefund,
   formulaACost,
   formulaBCost,
+  isStructureActive,
   linearBuildCost,
   repairCost,
   scaledCostMap,
@@ -132,5 +133,19 @@ describe("structureHp", () => {
   it("is 0 for a structure with nothing invested", () => {
     const tweaks = loadRealTweaks();
     expect(structureHp(tweaks, {})).toBe(0);
+  });
+});
+
+describe("isStructureActive", () => {
+  it("treats buildStartedAt 0 as under construction, not active", () => {
+    expect(isStructureActive({ damaged: false, buildStartedAt: 0 })).toBe(false);
+  });
+
+  it("is active once buildStartedAt is cleared to null", () => {
+    expect(isStructureActive({ damaged: false, buildStartedAt: null })).toBe(true);
+  });
+
+  it("is inactive while damaged even if buildStartedAt is null", () => {
+    expect(isStructureActive({ damaged: true, buildStartedAt: null })).toBe(false);
   });
 });

@@ -61,7 +61,7 @@ export function accrueDockResources(
   let food = resources.food;
 
   const nextDocks = docks.map((dock) => {
-    if (dock.buildStartedAt) return dock;
+    if (dock.buildStartedAt != null) return dock;
     const rate = dockYieldPerSecond(tweaks, dock);
     let stockpile = Math.min(tileStockpileCap, dock.stockpile + rate * elapsedSeconds);
 

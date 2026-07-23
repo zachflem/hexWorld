@@ -361,7 +361,7 @@ function resolveConstruction<T extends { buildStartedAt?: number | null }>(
   durationMs: number,
   virtualNow: number,
 ): T {
-  if (!structure.buildStartedAt) return structure;
+  if (structure.buildStartedAt == null) return structure;
   if (!isTimerComplete(structure.buildStartedAt, durationMs, virtualNow)) return structure;
   return { ...structure, buildStartedAt: null };
 }
@@ -829,27 +829,40 @@ export default function App() {
       // Unit training queues — closed-form trickle delivery (engine/units.ts).
       // More/higher-level (non-damaged) barracks means faster training, not
       // just more capacity — barracksTrainingCapacity is level-weighted.
+      // Paused while no active barracks remain (all damaged or under construction).
       const trainingCapacity = barracksTrainingCapacity(barracksList);
-      const scoutQueueResult = resolveTrainingQueue(
-        unitsAfterUpkeep.scoutQueue,
-        scoutTrainDurationMs(current.tweaks, trainingCapacity),
-        virtualNow,
-      );
-      const militiaQueueResult = resolveTrainingQueue(
-        unitsAfterUpkeep.militiaQueue,
-        militiaTrainDurationMs(current.tweaks, trainingCapacity),
-        virtualNow,
-      );
-      const junkyardKnightQueueResult = resolveTrainingQueue(
-        unitsAfterUpkeep.junkyardKnightQueue,
-        junkyardKnightTrainDurationMs(current.tweaks, trainingCapacity),
-        virtualNow,
-      );
-      const crossBowSniperQueueResult = resolveTrainingQueue(
-        unitsAfterUpkeep.crossBowSniperQueue,
-        crossBowSniperTrainDurationMs(current.tweaks, trainingCapacity),
-        virtualNow,
-      );
+      const scoutQueueResult =
+        trainingCapacity > 0
+          ? resolveTrainingQueue(
+              unitsAfterUpkeep.scoutQueue,
+              scoutTrainDurationMs(current.tweaks, trainingCapacity),
+              virtualNow,
+            )
+          : { queue: unitsAfterUpkeep.scoutQueue, delivered: 0 };
+      const militiaQueueResult =
+        trainingCapacity > 0
+          ? resolveTrainingQueue(
+              unitsAfterUpkeep.militiaQueue,
+              militiaTrainDurationMs(current.tweaks, trainingCapacity),
+              virtualNow,
+            )
+          : { queue: unitsAfterUpkeep.militiaQueue, delivered: 0 };
+      const junkyardKnightQueueResult =
+        trainingCapacity > 0
+          ? resolveTrainingQueue(
+              unitsAfterUpkeep.junkyardKnightQueue,
+              junkyardKnightTrainDurationMs(current.tweaks, trainingCapacity),
+              virtualNow,
+            )
+          : { queue: unitsAfterUpkeep.junkyardKnightQueue, delivered: 0 };
+      const crossBowSniperQueueResult =
+        trainingCapacity > 0
+          ? resolveTrainingQueue(
+              unitsAfterUpkeep.crossBowSniperQueue,
+              crossBowSniperTrainDurationMs(current.tweaks, trainingCapacity),
+              virtualNow,
+            )
+          : { queue: unitsAfterUpkeep.crossBowSniperQueue, delivered: 0 };
       const units: UnitsRecord = {
         ...unitsAfterUpkeep,
         scoutStockpile: unitsAfterUpkeep.scoutStockpile + scoutQueueResult.delivered,
@@ -2745,6 +2758,7 @@ export default function App() {
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
     if (game.units.scoutQueue) return { ok: false, reason: "Training already in progress" };
+    if (barracksTrainingCapacity(game.barracksList) <= 0) return { ok: false, reason: "No active barracks available" };
 
     const capacity = scoutCapacity(tweaks, game.barracksList);
     if (game.units.scoutStockpile + quantity > capacity) return { ok: false, reason: "Not enough scout capacity" };
@@ -2781,6 +2795,7 @@ export default function App() {
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
     if (game.units.militiaQueue) return { ok: false, reason: "Training already in progress" };
+    if (barracksTrainingCapacity(game.barracksList) <= 0) return { ok: false, reason: "No active barracks available" };
 
     const capacity = militiaCapacity(tweaks, game.barracksList);
     if (game.units.militiaCount + quantity > capacity) return { ok: false, reason: "Not enough militia capacity" };
@@ -2818,6 +2833,7 @@ export default function App() {
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
     if (game.units.junkyardKnightQueue) return { ok: false, reason: "Training already in progress" };
+    if (barracksTrainingCapacity(game.barracksList) <= 0) return { ok: false, reason: "No active barracks available" };
 
     const capacity = junkyardKnightCapacity(tweaks, game.barracksList);
     if (game.units.junkyardKnightCount + quantity > capacity) {
@@ -2857,6 +2873,7 @@ export default function App() {
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
     if (game.units.crossBowSniperQueue) return { ok: false, reason: "Training already in progress" };
+    if (barracksTrainingCapacity(game.barracksList) <= 0) return { ok: false, reason: "No active barracks available" };
 
     const capacity = crossBowSniperCapacity(tweaks, game.barracksList);
     if (game.units.crossBowSniperCount + quantity > capacity) {
@@ -2903,6 +2920,7 @@ export default function App() {
     const { tweaks, game } = boot;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
+    if (barracksTrainingCapacity(game.barracksList) <= 0) return { ok: false, reason: "No active barracks available" };
 
     const capacity = scoutCapacity(tweaks, game.barracksList);
     if (game.units.scoutStockpile + quantity > capacity) return { ok: false, reason: "Not enough scout capacity" };
@@ -2937,6 +2955,7 @@ export default function App() {
     const { tweaks, game } = boot;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
+    if (barracksTrainingCapacity(game.barracksList) <= 0) return { ok: false, reason: "No active barracks available" };
 
     const capacity = militiaCapacity(tweaks, game.barracksList);
     if (game.units.militiaCount + quantity > capacity) return { ok: false, reason: "Not enough militia capacity" };
@@ -3011,6 +3030,7 @@ export default function App() {
     const { tweaks, game } = boot;
 
     if (game.base.upgrade) return { ok: false, reason: "Upgrade already in progress" };
+    if (game.base.reinforcementAction) return { ok: false, reason: "Already busy (reinforcement upgrade or repair in progress)" };
 
     const targetLevel = game.base.level + 1;
     const cost = baseUpgradeCost(tweaks, targetLevel);
@@ -3051,6 +3071,7 @@ export default function App() {
     const { tweaks, game } = boot;
 
     if (game.base.reinforcementAction) return { ok: false, reason: "Already busy (upgrade or repair in progress)" };
+    if (game.base.upgrade) return { ok: false, reason: "Base level upgrade already in progress" };
 
     const targetLevel = game.base.reinforcementLevel + 1;
     if (targetLevel > maxReinforcementLevel(game.base.level)) {
@@ -3095,6 +3116,7 @@ export default function App() {
     const { tweaks, game } = boot;
 
     if (game.base.reinforcementAction) return { ok: false, reason: "Already busy (upgrade or repair in progress)" };
+    if (game.base.upgrade) return { ok: false, reason: "Base level upgrade already in progress" };
 
     const maxHp = baseReinforcementHp(tweaks, game.base.reinforcementLevel);
     if (game.base.currentHp >= maxHp) return { ok: false, reason: "Not damaged" };

@@ -11,13 +11,14 @@ export type NoiseAction = keyof Tweaks["noise"]["one_time_action_noise"];
 
 /** floor_contribution(tile) = base * extraction_tier_noise_multiplier^tier_index — small tier is "foraging," large is "a factory farm." */
 export function extractionFloorContribution(tweaks: Tweaks, tile: ExtractionTile): number {
+  if (!isStructureActive(tile)) return 0;
   const base = tweaks.noise.passive_gathering_noise_floor[tile.resource];
   const tierIndex = TIER_ORDER.indexOf(tile.tier);
   return base * tweaks.noise.extraction_tier_noise_multiplier ** tierIndex;
 }
 
 export function pathFloorContribution(tweaks: Tweaks, tile: PathTile): number {
-  return tweaks.noise.path_noise_floor[tile.tier];
+  return isStructureActive(tile) ? tweaks.noise.path_noise_floor[tile.tier] : 0;
 }
 
 /** Towers/walls are built to watch and hold ground quietly — a tiny per-level/tier floor contribution vs. an active extraction/path tile. A damaged (horde-captured) or still-under-construction one contributes nothing, same as everywhere else it goes non-functional (engine/formulas.ts:isStructureActive). */

@@ -6,6 +6,7 @@ import { tweaksSchema } from "../data/tweaksSchema";
 import type { Barracks } from "../data/barracks";
 import {
   barracksBuildCost,
+  barracksTrainingCapacity,
   barracksUpgradeCost,
   barracksUpgradeDurationMs,
   crossBowSniperCapacity,
@@ -117,5 +118,24 @@ describe("junkyardKnightCapacity / crossBowSniperCapacity", () => {
     const tweaks = loadRealTweaks();
     expect(junkyardKnightCapacity(tweaks, [])).toBe(0);
     expect(crossBowSniperCapacity(tweaks, [])).toBe(0);
+  });
+});
+
+describe("barracksTrainingCapacity", () => {
+  it("excludes damaged and under-construction barracks", () => {
+    const list: Barracks[] = [
+      { coord: { q: 0, r: 0 }, level: 3, totalInvested: {}, upgrade: null, buildCost: {}, damaged: true },
+      { coord: { q: 1, r: 0 }, level: 2, totalInvested: {}, upgrade: null, buildCost: {}, damaged: false, buildStartedAt: 0 },
+      { coord: { q: 2, r: 0 }, level: 4, totalInvested: {}, upgrade: null, buildCost: {}, damaged: false, buildStartedAt: null },
+    ];
+    expect(barracksTrainingCapacity(list)).toBe(4);
+  });
+
+  it("is 0 when every barracks is non-functional", () => {
+    const list: Barracks[] = [
+      { coord: { q: 0, r: 0 }, level: 3, totalInvested: {}, upgrade: null, buildCost: {}, damaged: true },
+      { coord: { q: 1, r: 0 }, level: 2, totalInvested: {}, upgrade: null, buildCost: {}, damaged: false, buildStartedAt: 1000 },
+    ];
+    expect(barracksTrainingCapacity(list)).toBe(0);
   });
 });
