@@ -52,7 +52,14 @@ import { extractionTierLevel } from "../engine/tiers";
 export const BASE_HEX_SIZE = 24;
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 3;
-const CLICK_DRAG_THRESHOLD_PX = 6;
+/**
+ * Finger jitter on Android touchscreens routinely exceeds ~6–10px during a
+ * deliberate tap; below this threshold the gesture is still a tile click,
+ * above it becomes a pan. iOS/macOS rarely hit the old 6px value, which is
+ * why short taps worked there while Android needed a long-press (finger
+ * planted still enough to stay under threshold).
+ */
+const CLICK_DRAG_THRESHOLD_PX = 14;
 
 const TERRAIN_COLORS: Record<TerrainType, string> = {
   water: "#2f6f9f",
@@ -1291,15 +1298,21 @@ export const HexCanvas = forwardRef<
 
     const drag = dragRef.current;
     if (!drag) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    // Defer pan until past the tap threshold so Android finger-jitter during
+    // a short tap doesn't nudge the map (and so the eventual pointerup still
+    // counts as a click rather than a drag).
+    if (Math.hypot(dx, dy) <= CLICK_DRAG_THRESHOLD_PX) return;
     setPan({
-      x: drag.panX + (event.clientX - drag.startX),
-      y: drag.panY + (event.clientY - drag.startY),
+      x: drag.panX + dx,
+      y: drag.panY + dy,
     });
   }
 
-  function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
-    // Covers pointerup/cancel/leave alike — leaving the canvas (mouse) or
-    // releasing (touch) both end whatever hover was in effect.
+  function endPointerGesture(event: React.PointerEvent<HTMLCanvasElement>, allowTap: boolean) {
+    // Leaving the canvas (mouse) or releasing/cancelling (touch) both end
+    // whatever hover was in effect.
     if (hoveredKeyRef.current !== null) {
       hoveredKeyRef.current = null;
       onTileHoverRef.current?.(null);
@@ -1337,7 +1350,7 @@ export const HexCanvas = forwardRef<
     dragRef.current = null;
     const wasMultiTouch = multiTouchRef.current;
     multiTouchRef.current = false;
-    if (!drag || wasMultiTouch) return;
+    if (!allowTap || !drag || wasMultiTouch) return;
 
     const movedDistance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
     if (movedDistance > CLICK_DRAG_THRESHOLD_PX) return;
@@ -1352,16 +1365,29 @@ export const HexCanvas = forwardRef<
     onTileClick(pixelToAxial({ x: worldX, y: worldY }, BASE_HEX_SIZE));
   }
 
+  function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
+    // pointerup and pointercancel can both resolve a tap on Android — Chrome
+    // sometimes cancels a short touch instead of delivering pointerup, and
+    // treating that as a tap (when under the drag threshold) is what makes
+    // the tile sheet open. pointerleave only cleans up (no tap).
+    endPointerGesture(event, true);
+  }
+
+  function handlePointerLeave(event: React.PointerEvent<HTMLCanvasElement>) {
+    endPointerGesture(event, false);
+  }
+
   return (
-    <div ref={containerRef} style={{ width: "100%", height: "100%" }}>
+    <div ref={containerRef} style={{ width: "100%", height: "100%", touchAction: "none" }}>
       <canvas
         ref={canvasRef}
         onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
         onPointerCancel={handlePointerUp}
+        onContextMenu={(event) => event.preventDefault()}
         style={{ display: "block", cursor: "grab", touchAction: "none" }}
       />
     </div>

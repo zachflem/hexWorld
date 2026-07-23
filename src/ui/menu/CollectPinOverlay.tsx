@@ -96,7 +96,7 @@ function CollectPin({
         style={{
           position: "absolute",
           left: "50%",
-          top: 4,
+          top: 2,
           transform: "translateX(-50%)",
           objectFit: "contain",
           pointerEvents: "none",
