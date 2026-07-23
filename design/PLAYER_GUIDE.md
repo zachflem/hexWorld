@@ -54,7 +54,7 @@ You begin owning your base tile plus the two full rings around it (19 tiles) out
 
 Five types, in ascending rarity: **food → wood → stone → steel → power**. Rarer resources yield less per tile and generate more noise while being gathered.
 
-Each resource has its own **storage cap** at your base (1000 at level 1, doubling per storage upgrade level — upgraded per-resource from its own panel, no building required; this is separate from the global tech tree described under [Research](#research)).
+Each resource has its own **storage cap** at your base (1000 at level 1, doubling per storage upgrade level — upgraded per-resource from the base tile menu; first upgrade takes **2 minutes**, each further level **+50%** on that timer, and progress shows in the notification tray). Separate from the global tech tree under [Research](#research).
 
 ---
 

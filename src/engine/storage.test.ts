@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import stripJsonComments from "strip-json-comments";
 import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
-import { storageCapacity, storageUpgradeCost } from "./storage";
+import { storageCapacity, storageUpgradeCost, storageUpgradeDurationMs } from "./storage";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -25,5 +25,14 @@ describe("storageUpgradeCost", () => {
     // food L1->L2: (500*0.5)*(1+0.1*2) = 300 wood
     const cost = storageUpgradeCost(tweaks, "food", 1);
     expect(cost.wood).toBeCloseTo(300);
+  });
+});
+
+describe("storageUpgradeDurationMs", () => {
+  it("starts at 2min for L1→L2 and grows 50% per target level", () => {
+    const tweaks = loadRealTweaks();
+    expect(storageUpgradeDurationMs(tweaks, 2)).toBe(2 * 60_000);
+    expect(storageUpgradeDurationMs(tweaks, 3)).toBe(3 * 60_000);
+    expect(storageUpgradeDurationMs(tweaks, 4)).toBe(4.5 * 60_000);
   });
 });

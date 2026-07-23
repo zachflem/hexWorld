@@ -23,6 +23,7 @@ export interface StorageUpgradeOption {
   capacity: number;
   cost: Partial<Record<ResourceType, number>>;
   affordable: boolean;
+  durationMinutes: number;
   /** Non-null while this resource's storage upgrade is in progress — remainingMs counts down to the level bump. */
   inProgress: { targetLevel: number; remainingMs: number } | null;
 }

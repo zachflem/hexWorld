@@ -357,6 +357,8 @@ Starting at 1000 for L1. This same 1000 baseline (not scaled by storage-skill le
 
 *(These were bumped 10× from an initial pass that felt too cheap — worth sanity-checking again once you're playtesting.)*
 
+**Upgrade time:** **2 minutes** for the first bump (L1→L2), then **+50% per level** compounding on the timer (`2min → 3min → 4.5min → …`). Cost paid upfront; capacity increases when the timer completes. Shows in the notification tray and on the base Storage menu row (`cost, Nm`).
+
 ---
 
 ## Base Level Upgrades

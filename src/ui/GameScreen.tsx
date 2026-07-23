@@ -538,6 +538,7 @@ export function GameScreen({
     return RESOURCE_ORDER.map((resource) => {
       const level = storageLevels[resource];
       const cost = storageUpgradeCost(tweaks, resource, level);
+      const targetLevel = level + 1;
       const pending = storageUpgrades[resource];
       const inProgress = pending
         ? {
@@ -545,7 +546,15 @@ export function GameScreen({
             remainingMs: remainingMs(pending.startedAt, storageUpgradeDurationMs(tweaks, pending.targetLevel), now),
           }
         : null;
-      return { resource, level, capacity: storageCapacity(tweaks, level), cost, affordable: affordable(cost), inProgress };
+      return {
+        resource,
+        level,
+        capacity: storageCapacity(tweaks, level),
+        cost,
+        affordable: affordable(cost),
+        durationMinutes: storageUpgradeDurationMs(tweaks, targetLevel) / 60_000,
+        inProgress,
+      };
     });
   }
 
@@ -1693,20 +1702,24 @@ export function GameScreen({
           onClick: handleRepairBase,
         });
       }
-      const storageOptions = storageUpgradesFor().filter((o) => o.inProgress === null);
+      const storageOptions = storageUpgradesFor();
       if (storageOptions.length > 0) {
         actions.push({
           key: "storage-upgrade",
           icon: <Archive size={18} />,
           title: "Storage",
-          upgradeAvailable: storageOptions.some((o) => o.affordable),
+          upgradeAvailable: storageOptions.some((o) => o.inProgress === null && o.affordable),
           subActions: storageOptions.map((o) => ({
             key: o.resource,
             icon: resourceIcon(o.resource),
-            title: `${o.resource} → L${o.level}`,
-            detail: formatCost(o.cost),
-            disabled: !o.affordable,
-            upgradeAvailable: o.affordable,
+            title: o.inProgress
+              ? `${o.resource} storage → L${o.inProgress.targetLevel}`
+              : `${o.resource} → L${o.level + 1}`,
+            detail: o.inProgress
+              ? formatDuration(o.inProgress.remainingMs)
+              : `${formatCost(o.cost)}, ${o.durationMinutes}m`,
+            disabled: o.inProgress !== null || !o.affordable,
+            upgradeAvailable: o.inProgress === null && o.affordable,
             onClick: () => handleUpgradeStorage(o.resource),
           })),
         });
@@ -2483,6 +2496,20 @@ export function GameScreen({
         label: "Relocating base",
         coord: baseRelocationInProgress.destination,
         remainingMs: baseRelocationInProgress.remainingMs,
+      });
+    }
+
+    for (const [resource, pending] of Object.entries(storageUpgrades) as [
+      ResourceType,
+      { targetLevel: number; startedAt: number } | undefined,
+    ][]) {
+      if (!pending) continue;
+      rows.push({
+        key: `storage-${resource}`,
+        icon: resourceIcon(resource),
+        label: `Upgrading ${resource} storage to L${pending.targetLevel}`,
+        coord: territory.base,
+        remainingMs: remainingMs(pending.startedAt, storageUpgradeDurationMs(tweaks, pending.targetLevel), now),
       });
     }
 

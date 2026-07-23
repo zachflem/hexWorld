@@ -22,7 +22,10 @@ export function storageUpgradeCost(
   return cost;
 }
 
-/** time(targetLevel) = upgrade_time_minutes_base * targetLevel — same shape as base/barracks/tower upgrade durations. */
+/** L1→L2 = `upgrade_time_minutes_base` minutes; each further level × (1 + growth%/100). */
 export function storageUpgradeDurationMs(tweaks: Tweaks, targetLevel: number): number {
-  return tweaks.storage.upgrade_time_minutes_base * targetLevel * 60 * 1000;
+  const { upgrade_time_minutes_base, upgrade_time_growth_per_level_pct } = tweaks.storage;
+  const stepsAboveFirst = Math.max(0, targetLevel - 2);
+  const multiplier = (1 + upgrade_time_growth_per_level_pct / 100) ** stepsAboveFirst;
+  return upgrade_time_minutes_base * multiplier * 60 * 1000;
 }

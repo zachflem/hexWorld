@@ -270,6 +270,7 @@ export const tweaksSchema = z.object({
     upgrade_cost_scaling: z.string(),
     upgrade_cost_base: z.record(z.string(), resourceCostMap),
     upgrade_time_minutes_base: z.number(),
+    upgrade_time_growth_per_level_pct: z.number(),
   }),
 
   base_upgrades: z.object({

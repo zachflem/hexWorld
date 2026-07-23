@@ -427,8 +427,9 @@
     "_tile_stockpile_note": "Also reused as the flat, storage-skill-independent cap on an extraction tile's own local stockpile (DESIGN.md §8's 'resource tile's own stockpile cap') — unconnected/uncollected tiles stop producing once they hold this much.",
 
     "upgrade_cost_scaling": "FORMULA_B",
-    "upgrade_time_minutes_base": 3,
-    "_upgrade_time_note": "storageUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=6min, L3=9min, same shape as base/barracks/tower upgrade timers. Upgrade no longer applies instantly; cost is still deducted upfront, the level change lands when the timer completes (App.tsx runTick). CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
+    "upgrade_time_minutes_base": 2,
+    "upgrade_time_growth_per_level_pct": 50,
+    "_upgrade_time_note": "storageUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * (1 + upgrade_time_growth_per_level_pct/100) ^ (targetLevel - 2) — L1→L2 = 2min, L2→L3 = 3min, L3→L4 = 4.5min. Capacity bumps when the timer completes (App.tsx runTick). Cost deducted upfront.",
     "upgrade_cost_base": {
       "food":  { "wood": 500 },
       "wood":  { "wood": 750, "stone": 500 },
