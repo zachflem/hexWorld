@@ -66,6 +66,8 @@ Commit-hash previews (`abc123.hexworld.pages.dev`) still exist but are not the p
 
 ## For Cloud Agents / automation
 
-- Default working branch for Goblin's agent runs: **`goblin`**
+- **Personal branch:** ask the user which branch they work on (`goblin`, `krunchee`, or another personal branch). Confirm and use that for commits and pushes — do not assume a default.
 - Do not create `cursor/<random>-6a49` branches unless explicitly asked
-- Base PRs on `dev`, not `main`, unless releasing
+- Base PRs and merges on **`dev`**, not `main`, unless releasing
+- Playtesting backlog and priorities: [ROADMAP.md](ROADMAP.md) § Bugs & testing feedback
+- Complex implementation plans: write `design/MilestoneN.md`; keep ROADMAP milestone entries brief
