@@ -87,7 +87,7 @@ Keep the design docs aligned with the code. Stale docs cause the mismatches we h
 | **Collapsible blocks** | Use `<details>` / `<summary>` for completed milestones, recently resolved, deferred, and ideas (see completed section below) |
 | **Agent git workflow** | See [WORKFLOW.md](WORKFLOW.md). Ask the user which **personal branch** they use; do not assume `goblin` or `krunchee`. Merge finished work to **`dev`**. |
 
-*Last updated: 2026-07-24 (#19 — notification coord link pan)*
+*Last updated: 2026-07-24 (#20 — mobile toast overlaps noise meter)*
 
 ---
 
@@ -98,6 +98,7 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 ### Bugs
 
 - **Notification coord link selects tile but does not pan.** (#19) Tapping `(q, r)` in a notification tray row opens the tile action sheet (`goToTile` → `setSelected`) but the map view stays put — `hexCanvasRef.current?.centerOnCoord(coord)` does not visibly recenter. Expected: pan/zoom so the linked tile is on screen, same as clicking it on the map. **Refs:** [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx) (`goToTile`), [`src/ui/hud/NotificationTray.tsx`](../src/ui/hud/NotificationTray.tsx) (`CoordLink`), [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx) (`centerOnCoord`). Status: Open
+- **Toast notifications sit above the resource bar on mobile, obscuring the noise meter.** (#20) The toast stack needs to be repositioned below the HUD resource bar on mobile viewports so it no longer overlaps/hides the noise chip. **Refs:** [`src/ui/hud/Toast.tsx`](../src/ui/hud/Toast.tsx), [`src/ui/hud/NotificationTray.tsx`](../src/ui/hud/NotificationTray.tsx). Status: Open
 
 ### UI
 
