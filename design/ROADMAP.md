@@ -78,7 +78,7 @@ Keep the design docs aligned with the code. Stale docs cause the mismatches we h
 | Topic | Rule |
 |-------|------|
 | **Backlog format** | `- **Title.** (#id) Description. **Refs:** … Status: Open / In progress / Resolved (YYYY-MM-DD)` |
-| **Bug IDs** | `#1`–`#18` — preserve existing IDs when adding new items ([TWEAKS.md](TWEAKS.md) references `#12`) |
+| **Bug IDs** | `#1`–`#19` — preserve existing IDs when adding new items ([TWEAKS.md](TWEAKS.md) references `#12`) |
 | **Proposed IDs** | `#P1`, `#P2`, … (P = proposed) |
 | **`[URGENT]`** | Prefix when play is blocked or game state is misleading |
 | **Balance fixes** | Backlog → `public/profiles/{slug}/tweaks.jsonc` → note in [TWEAKS.md](TWEAKS.md) → Resolved |
@@ -87,7 +87,7 @@ Keep the design docs aligned with the code. Stale docs cause the mismatches we h
 | **Collapsible blocks** | Use `<details>` / `<summary>` for completed milestones, recently resolved, deferred, and ideas (see completed section below) |
 | **Agent git workflow** | See [WORKFLOW.md](WORKFLOW.md). Ask the user which **personal branch** they use; do not assume `goblin` or `krunchee`. Merge finished work to **`dev`**. |
 
-*Last updated: 2026-07-24 (UX — horde structure-damage toast)*
+*Last updated: 2026-07-24 (#19 — notification coord link pan)*
 
 ---
 
@@ -97,7 +97,7 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 
 ### Bugs
 
-*(No open bugs — see Recently resolved for #17.)*
+- **Notification coord link selects tile but does not pan.** (#19) Tapping `(q, r)` in a notification tray row opens the tile action sheet (`goToTile` → `setSelected`) but the map view stays put — `hexCanvasRef.current?.centerOnCoord(coord)` does not visibly recenter. Expected: pan/zoom so the linked tile is on screen, same as clicking it on the map. **Refs:** [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx) (`goToTile`), [`src/ui/hud/NotificationTray.tsx`](../src/ui/hud/NotificationTray.tsx) (`CoordLink`), [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx) (`centerOnCoord`). Status: Open
 
 ### UI
 
