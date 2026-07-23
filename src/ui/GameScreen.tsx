@@ -170,6 +170,7 @@ import { SheetButton } from "./primitives/SheetButton";
 import { GlobalHexCluster } from "./menu/GlobalHexCluster";
 import { TileActionSheet, type SheetAction } from "./menu/TileActionSheet";
 import { HoverTooltip, type HoverTooltipHandle } from "./menu/HoverTooltip";
+import { CollectPinOverlay, type CollectPinOverlayHandle } from "./menu/CollectPinOverlay";
 import { formatCost, formatDuration } from "./format";
 import { GarrisonsPanel } from "./panels/GarrisonsPanel";
 import { ScoutingPanel } from "./panels/ScoutingPanel";
@@ -458,6 +459,7 @@ export function GameScreen({
   const hexCanvasRef = useRef<HexCanvasHandle>(null);
   /** Same imperative-positioning convention as TileActionSheet's predecessor used — see HoverTooltip.tsx. */
   const hoverTooltipRef = useRef<HoverTooltipHandle>(null);
+  const collectPinOverlayRef = useRef<CollectPinOverlayHandle>(null);
   const [selected, setSelected] = useState<Axial | null>(null);
   /** Desktop-mouse hover target (HexCanvas's onTileHover) — null on touch devices, which never report hover. Only changes when the hovered tile itself changes (deduped in HexCanvas), not on every mousemove pixel. */
   const [hoveredCoord, setHoveredCoord] = useState<Axial | null>(null);
@@ -1074,6 +1076,11 @@ export function GameScreen({
     applyActionResult(result);
   }
 
+  async function handleQuickCollect(coord: Axial) {
+    const result = await onCollectTile(coord);
+    setActionError(result.ok ? null : result.reason);
+  }
+
   async function handleBuildPath() {
     if (!selected) return;
     const result = await onBuildPath(selected);
@@ -1357,9 +1364,21 @@ export function GameScreen({
     const hubCoords: Axial[] = [territory.base, ...outposts.map((o) => o.coord)];
     return computeResourceRates(tweaks, extractionTiles, pathTiles, docks, hubCoords, resources, storageLevels, units, world.seed);
   }, [tweaks, extractionTiles, pathTiles, docks, territory.base, outposts, resources, storageLevels, units, world.seed]);
+  const collectableTiles = useMemo(() => {
+    const stockpileCap = tweaks.storage.capacity_base_per_resource;
+    return extractionTiles
+      .filter((tile) => !tile.damaged && isStructureActive(tile) && tile.stockpile > 0)
+      .map((tile) => ({
+        coord: tile.coord,
+        resource: tile.resource,
+        stockpile: tile.stockpile,
+        stockpileCap,
+        upgradeAvailable: tierUpgradeFor(tile)?.affordable ?? false,
+      }));
+  }, [extractionTiles, tweaks, resources]);
   /**
-   * Coord keys of every upgradeable structure (base, Tower, Barracks) whose
-   * next upgrade is unlocked and affordable right now — reuses the exact
+   * Coord keys of every upgradeable structure (base, Tower, Barracks, extraction
+   * tile) whose next upgrade is unlocked and affordable right now — reuses the
    * same *UpgradeOptionFor helpers the tile popup's own upgrade buttons call,
    * so the map badge can never disagree with whether the button is actually
    * clickable. Feeds HexCanvas's upgradeAvailableKeys prop, which colors that
@@ -1388,6 +1407,10 @@ export function GameScreen({
     for (const b of barracksList) {
       if (b.buildStartedAt) continue;
       if (barracksUpgradeOptionFor(b)?.affordable) set.add(axialKey(b.coord));
+    }
+    for (const t of extractionTiles) {
+      if (t.buildStartedAt) continue;
+      if (tierUpgradeFor(t)?.affordable) set.add(axialKey(t.coord));
     }
     return set;
   }
@@ -1459,10 +1482,10 @@ export function GameScreen({
    * The tile action sheet is viewport-fixed and needs no repositioning.
    */
   function handleViewportChange(viewport: { pan: { x: number; y: number }; zoom: number }) {
-    hoverTooltipRef.current?.reposition(
-      (coord) => hexCanvasRef.current?.getTileScreenPosition(coord) ?? null,
-      BASE_HEX_SIZE * viewport.zoom,
-    );
+    const getScreenPosition = (coord: Axial) => hexCanvasRef.current?.getTileScreenPosition(coord) ?? null;
+    const hexCircumradius = BASE_HEX_SIZE * viewport.zoom;
+    hoverTooltipRef.current?.reposition(getScreenPosition, hexCircumradius);
+    collectPinOverlayRef.current?.reposition(getScreenPosition, hexCircumradius);
   }
 
   /** HexCanvas's onTileHover — already deduped to only fire on an actual tile change, so this is a cheap, infrequent state update rather than a per-mousemove-frame one. */
@@ -2791,6 +2814,7 @@ export function GameScreen({
         />
       </div>
       <HoverTooltip ref={hoverTooltipRef} coord={hoveredCoord} content={hoverInfoContent} />
+      <CollectPinOverlay ref={collectPinOverlayRef} tiles={collectableTiles} onCollect={handleQuickCollect} />
       {selected && sheetActions.length > 0 && (
         <TileActionSheet
           key={axialKey(selected)}

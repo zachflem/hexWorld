@@ -45,6 +45,8 @@ import {
   getUnitIconTexture,
   onTextureLoad,
 } from "./tileTextures";
+import { drawPlacedResourceIcon, drawPlacedStructureIcon } from "./structurePlacement";
+import { extractionTierLevel } from "../engine/tiers";
 
 /** Exported so DOM overlays (e.g. HoverTooltip) can compute the same on-screen hex circumradius (BASE_HEX_SIZE * zoom) the canvas itself draws with. */
 export const BASE_HEX_SIZE = 24;
@@ -74,15 +76,6 @@ const RESOURCE_MARKER_COLORS: Record<ResourceType, string> = {
   stone: "#c9c9c9",
   steel: "#7fa8c9",
   power: "#f2f2f2",
-};
-
-/** Per-resource icon width multiplier (of `size`) — wood's source art reads oversized at the shared 1.6 scale, so it gets its own. */
-const RESOURCE_ICON_SCALE: Record<ResourceType, number> = {
-  food: 1.6,
-  wood: 1.2,
-  stone: 1.6,
-  steel: 1.6,
-  power: 1.6,
 };
 
 const PATH_TIER_COLORS: Record<PathTier, string> = {
@@ -543,15 +536,15 @@ export const HexCanvas = forwardRef<
         context.stroke();
       };
 
-      // Bottom-left corner badge for a structure's level (base/den/tower/barracks)
-      // — the opposite corner from the garrison count badge (top-right,
-      // further below), so the two never collide on a tile that has both.
-      // A black dot with a white number by default, regardless of whether the
-      // structure's own icon has loaded yet — pass badgeColor to flag an
-      // available+affordable upgrade instead (UPGRADE_AVAILABLE_BADGE_COLOR).
+      // Bottom-left corner badge for a structure's level (base/den/tower/barracks/
+      // extraction) — opposite the garrison count badge (top-right) so the two
+      // never collide. When an upgrade is available+affordable the same badge
+      // turns orange (UPGRADE_AVAILABLE_BADGE_COLOR) and shifts to bottom-centre
+      // so taller building sprites don't cover it.
       const drawLevelBadge = (screenCenter: { x: number; y: number }, level: number, badgeColor: string = "#000000") => {
-        const badgeX = screenCenter.x - size * 0.55;
-        const badgeY = screenCenter.y + size * 0.55;
+        const upgradeAvailable = badgeColor === UPGRADE_AVAILABLE_BADGE_COLOR;
+        const badgeX = upgradeAvailable ? screenCenter.x : screenCenter.x - size * 0.55;
+        const badgeY = screenCenter.y + size * (upgradeAvailable ? 0.4 : 0.55);
         context.beginPath();
         context.arc(badgeX, badgeY, size * 0.3, 0, Math.PI * 2);
         context.fillStyle = badgeColor;
@@ -565,17 +558,30 @@ export const HexCanvas = forwardRef<
         context.fillText(String(level), badgeX, badgeY);
       };
 
-      // Bottom-right edge bar for anything with an HP/durability-style stat
-      // (base, outpost, wall) — "at a glance" on the map itself rather than
-      // requiring a click, red/orange/green banding matching how players
-      // already read health bars in most games (<30% / 30-60% / 60%+).
-      const drawHealthBar = (screenCenter: { x: number; y: number }, current: number, max: number) => {
+      // HP/durability edge bar (base, outpost, wall) — "at a glance" on the
+      // map itself rather than requiring a click, red/orange/green banding
+      // matching how players already read health bars in most games
+      // (<30% / 30-60% / 60%+). Default bottom-right; base uses top-centre so
+      // the tall base sprite doesn't cover it.
+      const drawHealthBar = (
+        screenCenter: { x: number; y: number },
+        current: number,
+        max: number,
+        placement: "bottom-right" | "top-center" = "bottom-right",
+      ) => {
         if (max <= 0) return;
+        if (current >= max) return;
         const fraction = Math.max(0, Math.min(1, current / max));
         const barWidth = size * 0.75;
         const barHeight = Math.max(3, size * 0.16);
-        const barX = screenCenter.x + size * 0.55 - barWidth / 2;
-        const barY = screenCenter.y + size * 0.55 - barHeight / 2;
+        const barX =
+          placement === "top-center"
+            ? screenCenter.x - barWidth / 2
+            : screenCenter.x + size * 0.55 - barWidth / 2;
+        const barY =
+          placement === "top-center"
+            ? screenCenter.y - size * 0.99 - barHeight / 2
+            : screenCenter.y + size * 0.55 - barHeight / 2;
         const fillColor = fraction < 0.3 ? "#e74c3c" : fraction < 0.6 ? "#f39c12" : "#2ecc71";
         context.fillStyle = "rgba(0, 0, 0, 0.6)";
         context.fillRect(barX, barY, barWidth, barHeight);
@@ -714,7 +720,7 @@ export const HexCanvas = forwardRef<
           if (axialEquals(coord, base)) {
             const baseIcon = getStructureIconTexture("base");
             if (baseIcon) {
-              drawImageAtWidth(ctx, baseIcon, screenCenter.x, screenCenter.y, size * 2.2);
+              drawPlacedStructureIcon(ctx, baseIcon, screenCenter.x, screenCenter.y, size, "base");
             } else {
               ctx.beginPath();
               ctx.arc(screenCenter.x, screenCenter.y, size * 0.55, 0, Math.PI * 2);
@@ -734,7 +740,7 @@ export const HexCanvas = forwardRef<
               baseLevel,
               upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
             );
-            drawHealthBar(screenCenter, baseCurrentHp, baseMaxHp);
+            drawHealthBar(screenCenter, baseCurrentHp, baseMaxHp, "top-center");
           } else {
             const tower = towersByKey.get(axialKey(coord));
             const wall = wallsByKey.get(axialKey(coord));
@@ -748,7 +754,7 @@ export const HexCanvas = forwardRef<
             if (outpost) {
               const outpostIcon = getStructureIconTexture("outpost");
               if (outpostIcon) {
-                drawImageAtWidth(ctx, outpostIcon, screenCenter.x, screenCenter.y, size * 2.2);
+                drawPlacedStructureIcon(ctx, outpostIcon, screenCenter.x, screenCenter.y, size, "outpost");
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.55, 0, Math.PI * 2);
@@ -774,7 +780,7 @@ export const HexCanvas = forwardRef<
               }
               const denIcon = getStructureIconTexture("den");
               if (denIcon) {
-                drawImageAtWidth(ctx, denIcon, screenCenter.x, screenCenter.y, size * 1.6);
+                drawPlacedStructureIcon(ctx, denIcon, screenCenter.x, screenCenter.y, size, "den");
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.4, 0, Math.PI * 2);
@@ -799,7 +805,14 @@ export const HexCanvas = forwardRef<
                 ? getStructureIconTexture("construction")
                 : getStructureIconTexture("tower");
               if (towerIcon) {
-                drawImageAtWidth(ctx, towerIcon, screenCenter.x, screenCenter.y, size * 1.2);
+                drawPlacedStructureIcon(
+                  ctx,
+                  towerIcon,
+                  screenCenter.x,
+                  screenCenter.y,
+                  size,
+                  tower.buildStartedAt ? "construction" : "tower",
+                );
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.4, 0, Math.PI * 2);
@@ -814,7 +827,14 @@ export const HexCanvas = forwardRef<
                 ? getStructureIconTexture("construction")
                 : getStructureIconTexture("barracks");
               if (barracksIcon) {
-                drawImageAtWidth(ctx, barracksIcon, screenCenter.x, screenCenter.y, size * 1.6);
+                drawPlacedStructureIcon(
+                  ctx,
+                  barracksIcon,
+                  screenCenter.x,
+                  screenCenter.y,
+                  size,
+                  barracks.buildStartedAt ? "construction" : "barracks",
+                );
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.4, 0, Math.PI * 2);
@@ -833,7 +853,14 @@ export const HexCanvas = forwardRef<
                 ? getStructureIconTexture("construction")
                 : getStructureIconTexture(WALL_TIER_ICON_NAMES[wall.tier]);
               if (wallIcon) {
-                drawImageAtWidth(ctx, wallIcon, screenCenter.x, screenCenter.y, size * 1.4);
+                drawPlacedStructureIcon(
+                  ctx,
+                  wallIcon,
+                  screenCenter.x,
+                  screenCenter.y,
+                  size,
+                  wall.buildStartedAt ? "construction" : "wall",
+                );
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.45, 0, Math.PI * 2);
@@ -848,7 +875,11 @@ export const HexCanvas = forwardRef<
                 ? getStructureIconTexture("construction")
                 : getResourceTexture(tile.resource);
               if (resourceImg) {
-                drawImageAtWidth(ctx, resourceImg, screenCenter.x, screenCenter.y, size * RESOURCE_ICON_SCALE[tile.resource]);
+                if (tile.buildStartedAt) {
+                  drawPlacedStructureIcon(ctx, resourceImg, screenCenter.x, screenCenter.y, size, "construction");
+                } else {
+                  drawPlacedResourceIcon(ctx, resourceImg, screenCenter.x, screenCenter.y, size, tile.resource);
+                }
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.35, 0, Math.PI * 2);
@@ -857,18 +888,25 @@ export const HexCanvas = forwardRef<
                 ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
                 ctx.stroke();
               }
+              if (!tile.buildStartedAt && !tile.damaged) {
+                drawLevelBadge(
+                  screenCenter,
+                  extractionTierLevel(tile.tier),
+                  upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
+                );
+              }
             } else if (pathTile && pathTile.buildStartedAt) {
               // Path tiles otherwise have no persistent icon (just the tier
               // color fill in pass 1) — this only ever fires while under
               // construction, falling through to no marker at all once built.
               const constructionIcon = getStructureIconTexture("construction");
               if (constructionIcon) {
-                drawImageAtWidth(ctx, constructionIcon, screenCenter.x, screenCenter.y, size * 1.0);
+                drawPlacedStructureIcon(ctx, constructionIcon, screenCenter.x, screenCenter.y, size, "construction");
               }
             } else if (dock) {
               const dockIcon = getStructureIconTexture("dock");
               if (dockIcon) {
-                drawImageAtWidth(ctx, dockIcon, screenCenter.x, screenCenter.y, size * 1.6);
+                drawPlacedStructureIcon(ctx, dockIcon, screenCenter.x, screenCenter.y, size, "dock");
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.4, 0, Math.PI * 2);

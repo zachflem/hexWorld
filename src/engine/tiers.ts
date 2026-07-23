@@ -8,6 +8,10 @@ export const TIER_ORDER: ExtractionTier[] = ["small", "mid", "large"];
 /** 1-based, matching Formula B's "target_level" semantics (as used by towers' L1-L4). */
 const TIER_LEVEL: Record<ExtractionTier, number> = { small: 1, mid: 2, large: 3 };
 
+export function extractionTierLevel(tier: ExtractionTier): number {
+  return TIER_LEVEL[tier];
+}
+
 export function nextTier(tier: ExtractionTier): ExtractionTier | null {
   const index = TIER_ORDER.indexOf(tier);
   return index < TIER_ORDER.length - 1 ? TIER_ORDER[index + 1] : null;

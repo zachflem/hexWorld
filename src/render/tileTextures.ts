@@ -127,3 +127,25 @@ export function drawImageAtWidth(
   const destH = destW * (img.height / img.width);
   ctx.drawImage(img, centerX - destW / 2, centerY - destH / 2, destW, destH);
 }
+
+/**
+ * Draws a fixed-structure/building icon with its bottom edge pinned to a
+ * ground line on the hex (`centerY + hexSize * groundFraction`), letting the
+ * sprite's full natural height rise upward so taller art spills into the tile
+ * above — same depth illusion as `drawHexTileOverlay` gives terrain. Center-
+ * anchoring via `drawImageAtWidth` left buildings sitting too low in the cell.
+ * Per-structure offsets live in `structurePlacement.ts`.
+ */
+export function drawStructureIconAtWidth(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  centerX: number,
+  centerY: number,
+  hexSize: number,
+  destW: number,
+  groundFraction = 0.35,
+): void {
+  const destH = destW * (img.height / img.width);
+  const groundY = centerY + hexSize * groundFraction;
+  ctx.drawImage(img, centerX - destW / 2, groundY - destH, destW, destH);
+}
