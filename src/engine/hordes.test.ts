@@ -21,6 +21,7 @@ import {
   checkHordeSpawns,
   hordeTileDefense,
   markCapturedStructuresDamaged,
+  hordeStructureCaptureEvents,
   resolveGarrisonAutoAttacks,
   resolveHordeAttack,
   resolveHordeTileFight,
@@ -1058,5 +1059,24 @@ describe("markCapturedStructuresDamaged", () => {
     expect(result.damaged).toBe(true);
     expect(result.upgrade).toBeNull();
     expect(result.buildStartedAt).toBeNull();
+  });
+});
+
+describe("hordeStructureCaptureEvents", () => {
+  it("reports cancelled upgrade work from the pre-capture snapshot", () => {
+    const tower = {
+      coord: { q: 2, r: 0 },
+      damaged: false,
+      upgrade: { targetLevel: 2, startedAt: 0 },
+    };
+    const events = hordeStructureCaptureEvents([{ q: 2, r: 0 }], [], [], [tower], [], []);
+    expect(events).toHaveLength(1);
+    expect(events[0].kind).toBe("tower");
+    expect(events[0].cancelledWork).toContain("Upgrade cancelled");
+  });
+
+  it("skips already-damaged structures", () => {
+    const tower = { coord: { q: 0, r: 0 }, damaged: true, upgrade: null };
+    expect(hordeStructureCaptureEvents([{ q: 0, r: 0 }], [], [], [tower], [], [])).toHaveLength(0);
   });
 });

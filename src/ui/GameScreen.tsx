@@ -1002,7 +1002,9 @@ export function GameScreen({
     setOpenPanel(null);
     setActionError(null);
     setSelected(coord);
-    hexCanvasRef.current?.centerOnCoord(coord);
+    requestAnimationFrame(() => {
+      hexCanvasRef.current?.centerOnCoord(coord);
+    });
     setMilitiaToSend(1);
     setScoutsToTrain(1);
     setMilitiaToTrain(1);
@@ -3088,7 +3090,7 @@ export function GameScreen({
           zIndex: 40,
         }}
       >
-        <ToastStack toasts={toasts} onDismiss={onDismissToast} />
+        <ToastStack toasts={toasts} onDismiss={onDismissToast} onGoToTile={goToTile} />
         <NotificationTray
           expeditions={expeditions}
           denAssaults={denAssaults}

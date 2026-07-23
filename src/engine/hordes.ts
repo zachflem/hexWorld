@@ -556,6 +556,76 @@ function applyHordeCaptureDamage<T extends CapturedStructureFields>(structure: T
   };
 }
 
+export type HordeStructureKind = "extraction tile" | "path" | "tower" | "wall" | "barracks";
+
+export type HordeStructureCaptureEvent = {
+  coord: Axial;
+  kind: HordeStructureKind;
+  cancelledWork: string[];
+};
+
+/** Plain-English labels for work cleared when a horde captures a structure's tile. */
+export function cancelledWorkLabelsForCapture(structure: CapturedStructureFields): string[] {
+  const labels: string[] = [];
+  if (structure.buildStartedAt != null) labels.push("Construction cancelled");
+  if (structure.upgrade != null) labels.push("Upgrade cancelled");
+  if (structure.damageRepair != null) labels.push("Repair cancelled");
+  if (structure.action != null) {
+    const kind = (structure.action as { kind?: string }).kind;
+    if (kind === "repair") labels.push("Wall repair cancelled");
+    else if (kind === "upgrade") labels.push("Wall upgrade cancelled");
+    else labels.push("Wall work cancelled");
+  }
+  if (structure.trainingQueue != null) labels.push("Training cancelled");
+  return labels;
+}
+
+/**
+ * One event per structure newly flagged damaged this capture tick — call
+ * BEFORE markCapturedStructuresDamaged so cancelled-work labels reflect
+ * the pre-capture timers.
+ */
+export function hordeStructureCaptureEvents(
+  capturedTiles: Axial[],
+  extractionTiles: CapturedStructureFields[],
+  pathTiles: CapturedStructureFields[],
+  towers: CapturedStructureFields[],
+  walls: CapturedStructureFields[],
+  barracksList: CapturedStructureFields[],
+): HordeStructureCaptureEvent[] {
+  if (capturedTiles.length === 0) return [];
+
+  const events: HordeStructureCaptureEvent[] = [];
+  for (const coord of capturedTiles) {
+    const key = axialKey(coord);
+    const extraction = extractionTiles.find((s) => axialKey(s.coord) === key);
+    if (extraction && !extraction.damaged) {
+      events.push({ coord, kind: "extraction tile", cancelledWork: cancelledWorkLabelsForCapture(extraction) });
+      continue;
+    }
+    const path = pathTiles.find((s) => axialKey(s.coord) === key);
+    if (path && !path.damaged) {
+      events.push({ coord, kind: "path", cancelledWork: cancelledWorkLabelsForCapture(path) });
+      continue;
+    }
+    const tower = towers.find((s) => axialKey(s.coord) === key);
+    if (tower && !tower.damaged) {
+      events.push({ coord, kind: "tower", cancelledWork: cancelledWorkLabelsForCapture(tower) });
+      continue;
+    }
+    const wall = walls.find((s) => axialKey(s.coord) === key);
+    if (wall && !wall.damaged) {
+      events.push({ coord, kind: "wall", cancelledWork: cancelledWorkLabelsForCapture(wall) });
+      continue;
+    }
+    const barracks = barracksList.find((s) => axialKey(s.coord) === key);
+    if (barracks && !barracks.damaged) {
+      events.push({ coord, kind: "barracks", cancelledWork: cancelledWorkLabelsForCapture(barracks) });
+    }
+  }
+  return events;
+}
+
 /**
  * Flags any structure sitting on a tile a horde just captured as `damaged` —
  * DESIGN.md §12: buildings survive a lost tile but become non-functional

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Skull } from "lucide-react";
 import { loadProfile, fetchProfileRegistry, resolveProfileSlug, DEFAULT_PROFILE_SLUG, type ProfileEntry } from "./data/profileRegistry";
 import type { Tweaks } from "./data/tweaksSchema";
 import { PROFILE_SLUG_DB_KEY } from "./data/profile";
@@ -106,6 +107,7 @@ import { accrueNoise, addActionNoise } from "./engine/noiseMeter";
 import {
   advanceHordes,
   checkHordeSpawns,
+  hordeStructureCaptureEvents,
   markCapturedStructuresDamaged,
   resolveGarrisonAutoAttacks,
   type HordeHub,
@@ -939,6 +941,22 @@ export default function App() {
       // Any structure sitting on a tile a horde just captured goes non-
       // functional until reclaimed and repaired — DESIGN.md §12. A no-op
       // (same array reference back) whenever nothing was captured this tick.
+      const hordeCaptureEvents = hordeStructureCaptureEvents(
+        capturedTiles,
+        extractionTiles,
+        pathTiles,
+        towers,
+        walls,
+        barracksList,
+      );
+      for (const event of hordeCaptureEvents) {
+        pushToast({
+          icon: <Skull size={14} />,
+          coord: event.coord,
+          message: `Horde damaged ${event.kind} at`,
+          detail: event.cancelledWork.length > 0 ? event.cancelledWork.join(" · ") : undefined,
+        });
+      }
       const extractionTilesAfterCapture = markCapturedStructuresDamaged(extractionTiles, capturedTiles);
       const pathTilesAfterCapture = markCapturedStructuresDamaged(pathTiles, capturedTiles);
       const towersAfterCapture = markCapturedStructuresDamaged(towers, capturedTiles);

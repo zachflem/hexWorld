@@ -78,7 +78,7 @@ Keep the design docs aligned with the code. Stale docs cause the mismatches we h
 | Topic | Rule |
 |-------|------|
 | **Backlog format** | `- **Title.** (#id) Description. **Refs:** … Status: Open / In progress / Resolved (YYYY-MM-DD)` |
-| **Bug IDs** | `#1`–`#19` — preserve existing IDs when adding new items ([TWEAKS.md](TWEAKS.md) references `#12`) |
+| **Bug IDs** | `#1`–`#20` — preserve existing IDs when adding new items ([TWEAKS.md](TWEAKS.md) references `#12`) |
 | **Proposed IDs** | `#P1`, `#P2`, … (P = proposed) |
 | **`[URGENT]`** | Prefix when play is blocked or game state is misleading |
 | **Balance fixes** | Backlog → `public/profiles/{slug}/tweaks.jsonc` → note in [TWEAKS.md](TWEAKS.md) → Resolved |
@@ -87,7 +87,7 @@ Keep the design docs aligned with the code. Stale docs cause the mismatches we h
 | **Collapsible blocks** | Use `<details>` / `<summary>` for completed milestones, recently resolved, deferred, and ideas (see completed section below) |
 | **Agent git workflow** | See [WORKFLOW.md](WORKFLOW.md). Ask the user which **personal branch** they use; do not assume `goblin` or `krunchee`. Merge finished work to **`dev`**. |
 
-*Last updated: 2026-07-24 (#20 — mobile toast overlaps noise meter)*
+*Last updated: 2026-07-24 (#18, #19 resolved — horde damage toast, coord pan)*
 
 ---
 
@@ -97,7 +97,6 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 
 ### Bugs
 
-- **Notification coord link selects tile but does not pan.** (#19) Tapping `(q, r)` in a notification tray row opens the tile action sheet (`goToTile` → `setSelected`) but the map view stays put — `hexCanvasRef.current?.centerOnCoord(coord)` does not visibly recenter. Expected: pan/zoom so the linked tile is on screen, same as clicking it on the map. **Refs:** [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx) (`goToTile`), [`src/ui/hud/NotificationTray.tsx`](../src/ui/hud/NotificationTray.tsx) (`CoordLink`), [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx) (`centerOnCoord`). Status: Open
 - **Toast notifications sit above the resource bar on mobile, obscuring the noise meter.** (#20) The toast stack needs to be repositioned below the HUD resource bar on mobile viewports so it no longer overlaps/hides the noise chip. **Refs:** [`src/ui/hud/Toast.tsx`](../src/ui/hud/Toast.tsx), [`src/ui/hud/NotificationTray.tsx`](../src/ui/hud/NotificationTray.tsx). Status: Open
 
 ### UI
@@ -106,11 +105,13 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 
 ### UX
 
-- **Toast when a horde damages a structure.** (#18) One-off notification (same lifecycle as other completion toasts — `Toast.tsx` / `CollapsibleNotificationRow`) when `markCapturedStructuresDamaged` flags a structure on a captured tile: structure type + **clickable `(q, r)` coord link** that pans/selects the tile (`goToTile` / `centerOnCoord` in `GameScreen.tsx`). If capture cleared in-flight work (`applyHordeCaptureDamage` — build timer, tier/level upgrade, wall `action`, barracks training queue), append plain-English copy naming what was cancelled (e.g. “Tower upgrade cancelled”); upgrades are **cancelled**, not paused — cost already spent is not refunded. **Refs:** [`src/engine/hordes.ts`](../src/engine/hordes.ts) (`markCapturedStructuresDamaged`, `applyHordeCaptureDamage`), [`src/ui/hud/Toast.tsx`](../src/ui/hud/Toast.tsx), [`src/ui/hud/NotificationTray.tsx`](../src/ui/hud/NotificationTray.tsx). Status: Open
+*(No open UX items — see Recently resolved for #18.)*
 
 <details>
 <summary><strong>Recently resolved</strong></summary>
 
+- **Notification coord link selects tile but does not pan.** (#19) Resolved 2026-07-24 — `centerOnCoord` no longer bails when `pan` is null; uses container dimensions; pan deferred via `requestAnimationFrame` from `goToTile`. **Refs:** [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx), [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx), [`src/ui/hud/CoordLink.tsx`](../src/ui/hud/CoordLink.tsx).
+- **Toast when a horde damages a structure.** (#18) Resolved 2026-07-24 — `hordeStructureCaptureEvents` + `pushToast` on capture tick; skull icon, clickable coord link, detail line for cancelled build/upgrade/training. **Refs:** [`src/engine/hordes.ts`](../src/engine/hordes.ts), [`src/App.tsx`](../src/App.tsx), [`src/ui/hud/Toast.tsx`](../src/ui/hud/Toast.tsx).
 - **Map size choice during onboarding.** (#10, #P2) Resolved 2026-07-23 — 48×48 / 96×96 / 128×128 under **Show Advanced Options**; `WorldRecord.gridSize` persisted; den count and min distances scale via `tweaksForMapSize()`. Profile scenario overrides: `game.grid_size_locked` + `game.world_seed` in tweaks take precedence over onboarding. Replay/new-seed from the in-game New Game dialog keep the save's size; new player re-enters onboarding (map size there). **Refs:** [`src/data/mapSize.ts`](../src/data/mapSize.ts), [`OnboardingScreen.tsx`](../src/ui/onboarding/OnboardingScreen.tsx), [TWEAKS.md § Game / world](TWEAKS.md).
 - **Timer notifications should auto-collapse.** (#14) Resolved 2026-07-23 — shared `CollapsibleNotificationRow`: 5s full expand, slide right to icon peek; tap icon to re-expand. Countdown rows stay peeking; one-off toasts dismiss after 8s collapsed. **Refs:** [`src/ui/hud/CollapsibleNotificationRow.tsx`](../src/ui/hud/CollapsibleNotificationRow.tsx), [`NotificationTray.tsx`](../src/ui/hud/NotificationTray.tsx), [`Toast.tsx`](../src/ui/hud/Toast.tsx).
 - **Early game pacing too slow.** (#12) Resolved 2026-07-23 — small-tier extraction yields raised ~50%; every flat build/upgrade timer shaved 1 minute. **Refs:** [`public/profiles/default/tweaks.jsonc`](../public/profiles/default/tweaks.jsonc), [TWEAKS.md](TWEAKS.md).

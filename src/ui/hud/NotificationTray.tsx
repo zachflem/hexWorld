@@ -7,28 +7,8 @@ import type { DenAssaultsRecord } from "../../data/denAssaults";
 import type { LabAssaultsRecord } from "../../data/labAssaults";
 import type { GarrisonRecallsRecord } from "../../data/garrisonRecalls";
 import { CollapsibleNotificationRow } from "./CollapsibleNotificationRow";
+import { CoordLink, coordLinkStyle } from "./CoordLink";
 import { formatDuration } from "../format";
-
-const coordLinkStyle: React.CSSProperties = {
-  padding: 0,
-  margin: 0,
-  border: "none",
-  background: "transparent",
-  color: "inherit",
-  textDecoration: "underline",
-  textUnderlineOffset: "2px",
-  cursor: "pointer",
-  font: "inherit",
-  WebkitTapHighlightColor: "transparent",
-};
-
-function CoordLink({ coord, onGoToTile }: { coord: Axial; onGoToTile: (coord: Axial) => void }) {
-  return (
-    <button type="button" onClick={() => onGoToTile(coord)} style={coordLinkStyle}>
-      ({coord.q}, {coord.r})
-    </button>
-  );
-}
 
 function TrayRow({
   rowKey,

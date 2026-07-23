@@ -438,6 +438,8 @@ export const HexCanvas = forwardRef<
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<{ x: number; y: number } | null>(null);
+  const panRef = useRef(pan);
+  panRef.current = pan;
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   // Mobile pinch-to-zoom — every currently-touching pointer's latest screen
   // position, keyed by pointerId (pointer events unify mouse/touch/pen, so
@@ -495,11 +497,18 @@ export const HexCanvas = forwardRef<
       },
       centerOnCoord(coord: Axial) {
         const canvas = canvasRef.current;
-        if (!canvas || pan === null) return;
+        const container = containerRef.current;
+        if (!canvas || !container) return;
+        if (canvas.width === 0 || canvas.height === 0) {
+          canvas.width = container.clientWidth;
+          canvas.height = container.clientHeight;
+        }
         setPan(centerPanOnCoord(coord, canvas.width, canvas.height));
+        pendingInitialCenterRef.current = false;
       },
       getTileScreenPosition(coord: Axial) {
-        if (pan === null) return null;
+        const currentPan = panRef.current;
+        if (currentPan === null) return null;
         const canvas = canvasRef.current;
         if (!canvas) return null;
         // pan/zoom operate in the canvas's own backing-buffer coordinate
@@ -510,10 +519,10 @@ export const HexCanvas = forwardRef<
         // (e.g. up and left, since the header above it pushes it down).
         const rect = canvas.getBoundingClientRect();
         const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
-        return { x: worldPixel.x * zoom + pan.x + rect.left, y: worldPixel.y * zoom + pan.y + rect.top };
+        return { x: worldPixel.x * zoom + currentPan.x + rect.left, y: worldPixel.y * zoom + currentPan.y + rect.top };
       },
     }),
-    [base, zoom, pan],
+    [base, zoom],
   );
 
   useEffect(() => {
