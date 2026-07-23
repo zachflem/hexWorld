@@ -2,8 +2,8 @@ import { Minus, Plus } from "lucide-react";
 import type { CSSProperties } from "react";
 
 const STEP_BTN: CSSProperties = {
-  width: 48,
-  height: 48,
+  width: 44,
+  height: 44,
   flexShrink: 0,
   display: "inline-flex",
   alignItems: "center",
@@ -18,8 +18,8 @@ const STEP_BTN: CSSProperties = {
 };
 
 /**
- * Mobile-first quantity control: large − / + hit targets with a centered
- * value. Avoids native number-input spinners, which are unusable on touch.
+ * Mobile-first quantity control: − / + hit targets with a centered value and
+ * an inline Max — keeps the whole control on one row for sheet forms.
  */
 export function QuantityStepper({
   value,
@@ -40,6 +40,7 @@ export function QuantityStepper({
   const clampedMax = Math.max(min, max);
   const atMin = value <= min;
   const atMax = value >= clampedMax;
+  const maxDisabled = clampedMax <= min || value >= clampedMax;
 
   function setClamped(n: number) {
     const rounded = Number.isFinite(n) ? Math.floor(n) : min;
@@ -47,77 +48,75 @@ export function QuantityStepper({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
-      <div
-        role="group"
-        aria-label={label}
-        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.65rem" }}
+    <div
+      role="group"
+      aria-label={label}
+      style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.45rem" }}
+    >
+      <button
+        type="button"
+        aria-label={`Decrease ${label}`}
+        disabled={atMin}
+        onClick={() => setClamped(value - 1)}
+        style={{ ...STEP_BTN, opacity: atMin ? 0.35 : 1, cursor: atMin ? "default" : "pointer" }}
       >
-        <button
-          type="button"
-          aria-label={`Decrease ${label}`}
-          disabled={atMin}
-          onClick={() => setClamped(value - 1)}
-          style={{ ...STEP_BTN, opacity: atMin ? 0.35 : 1, cursor: atMin ? "default" : "pointer" }}
-        >
-          <Minus size={22} />
-        </button>
-        <input
-          inputMode="numeric"
-          pattern="[0-9]*"
-          aria-label={label}
-          value={Number.isFinite(value) ? String(value) : "0"}
-          onChange={(e) => {
-            const raw = e.target.value.replace(/\D/g, "");
-            if (raw === "") {
-              onChange(min);
-              return;
-            }
-            setClamped(Number(raw));
-          }}
-          style={{
-            width: 72,
-            height: 48,
-            textAlign: "center",
-            fontSize: "1.35rem",
-            fontWeight: 700,
-            background: "rgba(0, 0, 0, 0.35)",
-            border: "1px solid rgba(255, 255, 255, 0.18)",
-            borderRadius: 10,
-            color: "white",
-            // Hide native spinners if a browser still treats this as numeric.
-            appearance: "textfield",
-            MozAppearance: "textfield",
-          }}
-        />
-        <button
-          type="button"
-          aria-label={`Increase ${label}`}
-          disabled={atMax}
-          onClick={() => setClamped(value + 1)}
-          style={{ ...STEP_BTN, opacity: atMax ? 0.35 : 1, cursor: atMax ? "default" : "pointer" }}
-        >
-          <Plus size={22} />
-        </button>
-      </div>
+        <Minus size={20} />
+      </button>
+      <input
+        inputMode="numeric"
+        pattern="[0-9]*"
+        aria-label={label}
+        value={Number.isFinite(value) ? String(value) : "0"}
+        onChange={(e) => {
+          const raw = e.target.value.replace(/\D/g, "");
+          if (raw === "") {
+            onChange(min);
+            return;
+          }
+          setClamped(Number(raw));
+        }}
+        style={{
+          width: 64,
+          height: 44,
+          textAlign: "center",
+          fontSize: "1.25rem",
+          fontWeight: 700,
+          background: "rgba(0, 0, 0, 0.35)",
+          border: "1px solid rgba(255, 255, 255, 0.18)",
+          borderRadius: 10,
+          color: "white",
+          appearance: "textfield",
+          MozAppearance: "textfield",
+        }}
+      />
+      <button
+        type="button"
+        aria-label={`Increase ${label}`}
+        disabled={atMax}
+        onClick={() => setClamped(value + 1)}
+        style={{ ...STEP_BTN, opacity: atMax ? 0.35 : 1, cursor: atMax ? "default" : "pointer" }}
+      >
+        <Plus size={20} />
+      </button>
       {showMaxButton && (
         <button
           type="button"
-          disabled={clampedMax <= min || value >= clampedMax}
+          disabled={maxDisabled}
           onClick={() => setClamped(clampedMax)}
           style={{
-            alignSelf: "center",
+            flexShrink: 0,
+            height: 44,
             background: "transparent",
             border: "1px solid rgba(255, 255, 255, 0.25)",
             color: "white",
-            borderRadius: 8,
-            padding: "0.4rem 0.9rem",
-            fontSize: "0.85rem",
-            cursor: clampedMax <= min || value >= clampedMax ? "default" : "pointer",
-            opacity: clampedMax <= min || value >= clampedMax ? 0.4 : 1,
+            borderRadius: 10,
+            padding: "0 0.7rem",
+            fontSize: "0.8rem",
+            cursor: maxDisabled ? "default" : "pointer",
+            opacity: maxDisabled ? 0.4 : 1,
           }}
         >
-          Max ({clampedMax})
+          Max
         </button>
       )}
     </div>

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Menu, X } from "lucide-react";
 import { HexButton } from "../primitives/HexButton";
-import { hexNeighborOffsets } from "../hexGeometry";
 
 export interface HexClusterSlot {
   key: string;
@@ -14,46 +13,14 @@ export interface HexClusterSlot {
 }
 
 /**
- * Only the up/upper-left/left directions are used to build the cluster
- * (never right/lower-right/lower-left), so it only ever grows up-and-left
- * from the bottom-right-anchored toggle and can't push itself off-screen.
- */
-const { upperLeft: UPPER_LEFT, upperRight: UPPER_RIGHT, left: LEFT } = hexNeighborOffsets();
-
-function add(a: [number, number], b: [number, number]): [number, number] {
-  return [a[0] + b[0], a[1] + b[1]];
-}
-
-/**
- * Six positions, each reached by summing only UPPER_LEFT/UPPER_RIGHT/LEFT
- * steps from the center (the toggle) — since every step is a genuine
- * hex-neighbor offset, any two positions one step apart are true touching
- * neighbors, not just visually close. Forms a compact 2-3-1 triangular
- * honeycomb block above and to the left of the toggle.
- */
-const HONEYCOMB_POSITIONS: [number, number][] = (() => {
-  const p1 = UPPER_LEFT;
-  const p2 = add(UPPER_LEFT, UPPER_RIGHT); // straight up from the toggle
-  const p3 = add(UPPER_LEFT, LEFT);
-  const p4 = add(p2, LEFT);
-  const p5 = add(p2, UPPER_LEFT);
-  const p6 = add(p3, UPPER_LEFT);
-  return [p1, p2, p3, p4, p5, p6];
-})();
-
-/**
- * Collapsed-by-default global menu (bottom-right) — a single center hex
- * button that blooms into a tight honeycomb cluster of up to 6 hex buttons
- * on click, and retracts on a second click or a click outside the cluster.
- * Per-slot click handlers are expected to close the cluster themselves if
- * opening a panel (this component only owns the open/closed bloom state,
- * not what happens after a slot is clicked).
+ * Collapsed-by-default global menu (bottom-right) — a single hex toggle that
+ * expands into a vertical stack of hex buttons above it, and retracts on a
+ * second click or a click outside. Per-slot click handlers own what happens
+ * after a slot is clicked (this component only owns open/closed state).
  *
- * `pinnedSlot`, if given, sits at the toggle's LEFT neighbor position —
- * always visible, unaffected by open/closed state, still a true touching
- * hex neighbor rather than an arbitrarily-placed nearby button. Meant for
- * playtest-only controls (fast-forward) that don't belong in the honeycomb
- * itself but should stay reachable without opening it.
+ * `pinnedSlot`, if given, sits to the left of the toggle — always visible,
+ * unaffected by open/closed state. Meant for playtest-only controls
+ * (fast-forward) that should stay reachable without opening the menu.
  */
 export function GlobalHexCluster({ slots, pinnedSlot }: { slots: HexClusterSlot[]; pinnedSlot?: HexClusterSlot }) {
   const [open, setOpen] = useState(false);
@@ -71,49 +38,61 @@ export function GlobalHexCluster({ slots, pinnedSlot }: { slots: HexClusterSlot[
   }, [open]);
 
   return (
-    <div ref={containerRef} style={{ position: "fixed", right: "1.25rem", bottom: "1.25rem" }}>
-      {slots.slice(0, HONEYCOMB_POSITIONS.length).map((slot, i) => {
-        const [dx, dy] = HONEYCOMB_POSITIONS[i];
-        return (
+    <div
+      ref={containerRef}
+      style={{
+        position: "fixed",
+        right: "1.25rem",
+        bottom: "1.25rem",
+        // Above BottomSheet backdrop/dialog (z 50/51) so menu toggles still work while a sheet is open.
+        zIndex: 52,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: "0.35rem",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-end",
+          gap: "0.35rem",
+          // Collapse when closed so the toggle stays bottom-anchored.
+          maxHeight: open ? 480 : 0,
+          opacity: open ? 1 : 0,
+          overflow: "hidden",
+          transition: "max-height 0.2s ease, opacity 0.2s ease",
+          pointerEvents: open ? "auto" : "none",
+        }}
+      >
+        {slots.map((slot) => (
           <HexButton
             key={slot.key}
             icon={slot.icon}
             title={slot.title}
             active={slot.active}
             onClick={slot.onClick}
-            style={{
-              position: "absolute",
-              right: 0,
-              bottom: 0,
-              transform: open ? `translate(${dx}px, ${dy}px) scale(1)` : "translate(0, 0) scale(0)",
-              opacity: open ? 1 : 0,
-              transition: "transform 0.2s ease, opacity 0.2s ease",
-              pointerEvents: open ? "auto" : "none",
-            }}
           />
-        );
-      })}
-      {pinnedSlot && (
+        ))}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+        {pinnedSlot && (
+          <HexButton
+            key={pinnedSlot.key}
+            icon={pinnedSlot.icon}
+            title={pinnedSlot.title}
+            active={pinnedSlot.active}
+            onClick={pinnedSlot.onClick}
+          />
+        )}
         <HexButton
-          key={pinnedSlot.key}
-          icon={pinnedSlot.icon}
-          title={pinnedSlot.title}
-          active={pinnedSlot.active}
-          onClick={pinnedSlot.onClick}
-          style={{
-            position: "absolute",
-            right: 0,
-            bottom: 0,
-            transform: `translate(${LEFT[0]}px, ${LEFT[1]}px)`,
-          }}
+          icon={open ? <X size={20} /> : <Menu size={20} />}
+          title={open ? "Close menu" : "Menu"}
+          onClick={() => setOpen((v) => !v)}
         />
-      )}
-      <HexButton
-        icon={open ? <X size={20} /> : <Menu size={20} />}
-        title={open ? "Close menu" : "Menu"}
-        onClick={() => setOpen((v) => !v)}
-        style={{ position: "relative" }}
-      />
+      </div>
     </div>
   );
 }
