@@ -9,13 +9,45 @@ import type { GarrisonRecallsRecord } from "../../data/garrisonRecalls";
 import { Panel } from "../primitives/Panel";
 import { formatDuration } from "../format";
 
-function TrayRow({ icon, label, coord, remaining }: { icon: ReactNode; label: string; coord: Axial; remaining: number }) {
+function TrayRow({
+  icon,
+  label,
+  coord,
+  remaining,
+  onRush,
+}: {
+  icon: ReactNode;
+  label: string;
+  coord: Axial;
+  remaining: number;
+  onRush?: () => void;
+}) {
   return (
     <Panel style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.65rem", fontSize: "0.8rem" }}>
       {icon}
       <span>
         {label} ({coord.q}, {coord.r})
       </span>
+      {onRush && (
+        <button
+          type="button"
+          onClick={onRush}
+          style={{
+            marginLeft: "0.15rem",
+            padding: "0.15rem 0.45rem",
+            fontSize: "0.72rem",
+            fontWeight: 600,
+            color: "white",
+            background: "transparent",
+            border: "1px solid rgba(255, 255, 255, 0.35)",
+            borderRadius: 6,
+            cursor: "pointer",
+            WebkitTapHighlightColor: "transparent",
+          }}
+        >
+          Rush
+        </button>
+      )}
       <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.7)" }}>{formatDuration(remaining)}</span>
     </Panel>
   );
@@ -44,7 +76,7 @@ export function NotificationTray({
   /** Coord + hold-countdown for every den currently under siege — computed in GameScreen (engine/denSiegeStatusFor's math), kept to just what a row needs so this component stays presentation-only. */
   siegedDens: { coord: Axial; holdRemainingMs: number }[];
   /** Every active build/upgrade/repair timer across every owned structure (GameScreen:activeCountdownRows) — the default home for any user-created action with a countdown, not just what happens to be selected. */
-  countdowns: { key: string; icon: ReactNode; label: string; coord: Axial; remainingMs: number }[];
+  countdowns: { key: string; icon: ReactNode; label: string; coord: Axial; remainingMs: number; onRush?: () => void }[];
   now: number;
 }) {
   return (
@@ -53,7 +85,7 @@ export function NotificationTray({
         <TrayRow key={`siege-${den.coord.q},${den.coord.r}`} icon={<ShieldAlert size={14} />} label="Den siege holding" coord={den.coord} remaining={den.holdRemainingMs} />
       ))}
       {countdowns.map((c) => (
-        <TrayRow key={c.key} icon={c.icon} label={c.label} coord={c.coord} remaining={c.remainingMs} />
+        <TrayRow key={c.key} icon={c.icon} label={c.label} coord={c.coord} remaining={c.remainingMs} onRush={c.onRush} />
       ))}
       {expeditions.map((expedition) => (
         <TrayRow

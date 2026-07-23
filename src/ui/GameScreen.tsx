@@ -311,6 +311,7 @@ export function GameScreen({
   onTrainCrossBowSniper,
   onRushTrainScouts,
   onRushTrainMilitia,
+  onRushActiveTraining,
   onScoutTile,
   onUpgradeBase,
   onUpgradeReinforcement,
@@ -391,6 +392,7 @@ export function GameScreen({
   onTrainCrossBowSniper: (coord: Axial, quantity: number) => Promise<BuildResult>;
   onRushTrainScouts: (coord: Axial, quantity: number) => Promise<BuildResult>;
   onRushTrainMilitia: (coord: Axial, quantity: number) => Promise<BuildResult>;
+  onRushActiveTraining: (coord: Axial) => Promise<BuildResult>;
   onScoutTile: (coord: Axial) => Promise<BuildResult>;
   onUpgradeBase: () => Promise<BuildResult>;
   onUpgradeReinforcement: () => Promise<BuildResult>;
@@ -1195,6 +1197,11 @@ export function GameScreen({
     if (!selected) return;
     const result = await onRushTrainMilitia(selected, militiaToTrain);
     applyActionResult(result, { keepSelection: true });
+  }
+
+  async function handleRushActiveTraining(coord: Axial) {
+    const result = await onRushActiveTraining(coord);
+    applyActionResult(result);
   }
 
   async function handleScoutTile() {
@@ -2164,8 +2171,22 @@ export function GameScreen({
    * selected, since these used to be visible per-tile via TilePopup but
    * nothing else shows them now that it's gone.
    */
-  function activeCountdownRows(): { key: string; icon: ReactNode; label: string; coord: Axial; remainingMs: number }[] {
-    const rows: { key: string; icon: ReactNode; label: string; coord: Axial; remainingMs: number }[] = [];
+  function activeCountdownRows(): {
+    key: string;
+    icon: ReactNode;
+    label: string;
+    coord: Axial;
+    remainingMs: number;
+    onRush?: () => void;
+  }[] {
+    const rows: {
+      key: string;
+      icon: ReactNode;
+      label: string;
+      coord: Axial;
+      remainingMs: number;
+      onRush?: () => void;
+    }[] = [];
     const buildIcon = <Hammer size={14} />;
     const upgradeIcon = <ArrowUpCircle size={14} />;
     const repairIcon = <Wrench size={14} />;
@@ -2334,6 +2355,12 @@ export function GameScreen({
           label: `Training ${trainingUnitLabel(training.unitType)}`,
           coord: b.coord,
           remainingMs: nextUnitRemainingMs + (training.remaining - 1) * perUnitMs,
+          onRush:
+            training.unitType === "scout" || training.unitType === "militia"
+              ? () => {
+                  void handleRushActiveTraining(b.coord);
+                }
+              : undefined,
         });
       }
     }

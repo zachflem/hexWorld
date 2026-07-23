@@ -2920,6 +2920,49 @@ export default function App() {
    * commotion — "very noisy" per playtesting discussion, unlike the queued
    * path's barely-audible train_scout/train_militia.
    */
+  async function handleRushActiveTraining(coord: Axial): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+
+    const barracks = game.barracksList.find((b) => axialKey(b.coord) === axialKey(coord));
+    if (!barracks) return { ok: false, reason: "No barracks here" };
+    if (!isStructureActive(barracks)) return { ok: false, reason: "Barracks is not operational" };
+
+    const queue = barracks.trainingQueue;
+    if (!queue || queue.remaining <= 0) return { ok: false, reason: "No training in progress" };
+    if (queue.unitType !== "scout" && queue.unitType !== "militia") {
+      return { ok: false, reason: "This unit type cannot be rushed" };
+    }
+
+    const remaining = queue.remaining;
+    let units: UnitsRecord = game.units;
+    if (queue.unitType === "scout") {
+      if (game.units.scoutStockpile + remaining > scoutCapacity(tweaks, game.barracksList)) {
+        return { ok: false, reason: "Not enough scout capacity" };
+      }
+      units = { ...units, scoutStockpile: units.scoutStockpile + remaining };
+    } else {
+      if (game.units.militiaCount + remaining > militiaCapacity(tweaks, game.barracksList)) {
+        return { ok: false, reason: "Not enough militia capacity" };
+      }
+      units = { ...units, militiaCount: units.militiaCount + remaining };
+    }
+
+    const barracksList = game.barracksList.map((b) =>
+      axialKey(b.coord) === axialKey(coord) ? { ...b, trainingQueue: null } : b,
+    );
+    const noiseAction = queue.unitType === "scout" ? "rush_train_scout" : "rush_train_militia";
+    const noise: NoiseRecord = {
+      value: addActionNoise(tweaks, game.noise.value, noiseAction, game.base.level, remaining),
+    };
+
+    await Promise.all([set(UNITS_DB_KEY, units), set(BARRACKS_DB_KEY, barracksList), set(NOISE_DB_KEY, noise)]);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, units, barracksList, noise } } : prev,
+    );
+    return { ok: true };
+  }
+
   async function handleRushTrainScouts(coord: Axial, quantity: number): Promise<BuildResult> {
     const barracksResult = barracksForTraining(coord);
     if (!barracksResult.ok) return barracksResult;
@@ -3807,6 +3850,7 @@ export default function App() {
       onTrainCrossBowSniper={handleTrainCrossBowSniper}
       onRushTrainScouts={handleRushTrainScouts}
       onRushTrainMilitia={handleRushTrainMilitia}
+      onRushActiveTraining={handleRushActiveTraining}
       onScoutTile={handleScoutTile}
       onUpgradeBase={handleUpgradeBase}
       onUpgradeReinforcement={handleUpgradeReinforcement}
