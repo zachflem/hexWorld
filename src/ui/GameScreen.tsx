@@ -122,6 +122,7 @@ import type { DockRecord, DocksRecord } from "../data/docks";
 import type { ScoutSkiffsRecord } from "../data/scoutSkiffs";
 import type { WanderingScoutsRecord } from "../data/wanderingScouts";
 import type { Tweaks } from "../data/tweaksSchema";
+import { resolveWorldGridSize } from "../data/mapSize";
 import type { WorldRecord } from "../data/world";
 import type { BuildResult } from "../App";
 import {
@@ -437,6 +438,7 @@ export function GameScreen({
   onNewPlayer: () => void;
 }) {
   const hexCanvasRef = useRef<HexCanvasHandle>(null);
+  const gridSize = resolveWorldGridSize(world, tweaks);
   /** Same imperative-positioning convention as TileActionSheet's predecessor used — see HoverTooltip.tsx. */
   const hoverTooltipRef = useRef<HoverTooltipHandle>(null);
   const collectPinOverlayRef = useRef<CollectPinOverlayHandle>(null);
@@ -740,15 +742,15 @@ export function GameScreen({
   }
 
   function baseUpgradeOptionFor(): BaseUpgradeOption | null {
-    if (base.upgrade || base.reinforcementAction) return null;
+    if (base.action) return null;
     const targetLevel = base.level + 1;
     const cost = baseUpgradeCost(tweaks, targetLevel);
     return { targetLevel, cost, affordable: affordable(cost), durationMs: baseUpgradeDurationMs(tweaks, targetLevel) };
   }
 
-  /** Timed like every other upgrade (engine/base.ts:baseReinforcementUpgradeDurationMs). Null while base.reinforcementAction is set — see reinforcementActionStatus below. */
+  /** Timed like every other upgrade (engine/base.ts:baseReinforcementUpgradeDurationMs). Null while base.action is set. */
   function reinforcementUpgradeOptionFor(): ReinforcementUpgradeOption | null {
-    if (base.reinforcementAction || base.upgrade) return null;
+    if (base.action) return null;
     const targetLevel = base.reinforcementLevel + 1;
     if (targetLevel > maxReinforcementLevel(base.level)) return null;
     const cost = reinforcementUpgradeCost(tweaks, targetLevel);
@@ -761,9 +763,9 @@ export function GameScreen({
     };
   }
 
-  /** Null once base.currentHp is already at max — nothing to repair — or while base.reinforcementAction is set. */
+  /** Null once base.currentHp is already at max — nothing to repair — or while base.action is set. */
   function baseRepairOptionFor(): RepairOption | null {
-    if (base.reinforcementAction || base.upgrade) return null;
+    if (base.action) return null;
     const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
     if (base.currentHp >= maxHp) return null;
     const cost = baseRepairCost(tweaks, base.currentHp, maxHp, base.reinforcementLevel);
@@ -829,7 +831,7 @@ export function GameScreen({
       outposts,
       territory,
       scoutedTiles,
-      tweaks.game.grid_size,
+      gridSize,
       coord,
     );
     if (!route) return null;
@@ -863,7 +865,7 @@ export function GameScreen({
       outposts,
       territory,
       scoutedTiles,
-      tweaks.game.grid_size,
+      gridSize,
       den.coord,
     );
     if (!route) return null;
@@ -895,7 +897,7 @@ export function GameScreen({
       outposts,
       territory,
       scoutedTiles,
-      tweaks.game.grid_size,
+      gridSize,
       lab.coord,
     );
     if (!route) return null;
@@ -1429,15 +1431,15 @@ export function GameScreen({
     const set = new Set<string>();
     if (baseUpgradeOptionFor()?.affordable) set.add(axialKey(territory.base));
     for (const t of towers) {
-      if (t.buildStartedAt) continue;
+      if (t.buildStartedAt != null) continue;
       if (towerUpgradeOptionFor(t)?.affordable) set.add(axialKey(t.coord));
     }
     for (const b of barracksList) {
-      if (b.buildStartedAt) continue;
+      if (b.buildStartedAt != null) continue;
       if (barracksUpgradeOptionFor(b)?.affordable) set.add(axialKey(b.coord));
     }
     for (const t of extractionTiles) {
-      if (t.buildStartedAt) continue;
+      if (t.buildStartedAt != null) continue;
       if (tierUpgradeFor(t)?.affordable) set.add(axialKey(t.coord));
     }
     return set;
@@ -2388,7 +2390,7 @@ export function GameScreen({
     }
 
     for (const skiff of scoutSkiffs) {
-      if (skiff.buildStartedAt) {
+      if (skiff.buildStartedAt != null) {
         rows.push({
           key: `skiff-${skiff.id}`,
           icon: buildIcon,
@@ -2400,7 +2402,7 @@ export function GameScreen({
     }
 
     for (const scout of wanderingScouts) {
-      if (scout.buildStartedAt) {
+      if (scout.buildStartedAt != null) {
         rows.push({
           key: `wscout-${scout.id}`,
           icon: buildIcon,
@@ -2411,18 +2413,17 @@ export function GameScreen({
       }
     }
 
-    if (base.upgrade) {
-      rows.push({
-        key: "base-upgrade",
-        icon: upgradeIcon,
-        label: `Upgrading base to L${base.upgrade.targetLevel}`,
-        coord: territory.base,
-        remainingMs: remainingMs(base.upgrade.startedAt, baseUpgradeDurationMs(tweaks, base.upgrade.targetLevel), now),
-      });
-    }
-    if (base.reinforcementAction) {
-      const action = base.reinforcementAction;
-      if (action.kind === "upgrade") {
+    if (base.action) {
+      const action = base.action;
+      if (action.kind === "level_upgrade") {
+        rows.push({
+          key: "base-upgrade",
+          icon: upgradeIcon,
+          label: `Upgrading base to L${action.targetLevel}`,
+          coord: territory.base,
+          remainingMs: remainingMs(action.startedAt, baseUpgradeDurationMs(tweaks, action.targetLevel), now),
+        });
+      } else if (action.kind === "reinforcement_upgrade") {
         rows.push({
           key: "base-reinforce",
           icon: upgradeIcon,
@@ -2544,13 +2545,13 @@ export function GameScreen({
     if (axialEquals(coord, territory.base)) {
       const status = base.relocation
         ? "Relocating…"
-        : base.reinforcementAction
-          ? base.reinforcementAction.kind === "upgrade"
-            ? `Upgrading reinforcement to L${base.reinforcementAction.targetLevel}…`
-            : "Repairing…"
-          : base.upgrade
-            ? `Upgrading to L${base.upgrade.targetLevel}…`
-            : "Operational";
+        : base.action
+          ? base.action.kind === "level_upgrade"
+            ? `Upgrading to L${base.action.targetLevel}…`
+            : base.action.kind === "reinforcement_upgrade"
+              ? `Upgrading reinforcement to L${base.action.targetLevel}…`
+              : "Repairing…"
+          : "Operational";
       const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
       return (
         <HoverPanel icon={structureIcon("base", 28)} title={`Base — L${base.level}`} status={status}>
@@ -2792,7 +2793,7 @@ export function GameScreen({
         <HexCanvas
           ref={hexCanvasRef}
           seed={world.seed}
-          gridSize={tweaks.game.grid_size}
+          gridSize={gridSize}
           tweaks={tweaks}
           base={territory.base}
           baseLevel={base.level}

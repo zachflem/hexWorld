@@ -87,7 +87,7 @@ Keep the design docs aligned with the code. Stale docs cause the mismatches we h
 | **Collapsible blocks** | Use `<details>` / `<summary>` for completed milestones, recently resolved, deferred, and ideas (see completed section below) |
 | **Agent git workflow** | See [WORKFLOW.md](WORKFLOW.md). Ask the user which **personal branch** they use; do not assume `goblin` or `krunchee`. Merge finished work to **`dev`**. |
 
-*Last updated: 2026-07-23 (playtesting: #15, #16, #14 expanded)*
+*Last updated: 2026-07-24 (#P2, #P8 resolved; #P4 retired — shared outpost economy)*
 
 ---
 
@@ -97,13 +97,7 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 
 ### Bugs
 
-- **[URGENT] Barracks keeps training while damaged.** (#1) A damaged barracks should stop producing/training the same way a damaged extraction tile stops yielding. **Refs:** [`src/data/barracks.ts`](../src/data/barracks.ts), [`src/engine/barracks.ts`](../src/engine/barracks.ts), `isStructureActive` pattern in [`src/data/extractionTiles.ts`](../src/data/extractionTiles.ts). Status: Open.
-- **Unit training selectable during barracks build timer.** (#3) Should stay locked until `buildStartedAt` clears. **Refs:** [`src/data/barracks.ts`](../src/data/barracks.ts), [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx). Status: Open.
-- **Only one build/upgrade action per structure at a time.** (#4) Base reinforcement-HP track and level upgrade can run concurrently; they should share one in-progress slot (like walls). **Refs:** [`src/engine/base.ts`](../src/engine/base.ts), [`src/data/walls.ts`](../src/data/walls.ts). Status: Open.
-- **[URGENT] Scout skiffs stuck at home dock.** (#6) Never wander off; reproduced at 5× speed for 1+ simulated hour. **Refs:** [`src/engine/scoutSkiffs.ts`](../src/engine/scoutSkiffs.ts), [`src/data/scoutSkiffs.ts`](../src/data/scoutSkiffs.ts). Status: Open.
-- **[URGENT] Extraction tiles yield during build timer.** (#8) Should yield nothing until `buildStartedAt` clears. **Refs:** [`src/engine/tick.ts`](../src/engine/tick.ts), [`src/data/extractionTiles.ts`](../src/data/extractionTiles.ts). Status: Open.
-- **[URGENT] Recalled garrison cannot join expeditions.** (#9) After recall with zero losses, expedition dispatch fails; re-garrison still works. Possibly related to militia dispatch count bug. **Refs:** [`src/App.tsx`](../src/App.tsx), [`src/engine/expeditions.ts`](../src/engine/expeditions.ts), [`src/engine/garrisons.ts`](../src/engine/garrisons.ts). Status: Open.
-- **Base not centered after page refresh.** (#15) On reload, the map viewport shows the base toward the top-left instead of centered. **Investigation:** [`HexCanvas.tsx`](../src/render/HexCanvas.tsx) sets initial `pan` once while `pan === null` (lines ~446–452) using `canvas.width/height`, but `ResizeObserver` resizes the canvas afterward without updating `pan` (~510–514). Likely race: center runs at default canvas size, then layout resize leaves pan stale. **`recenterOnBase()`** already has the correct math — initial load should match it (re-run center after first resize, or derive pan from `container.clientWidth/Height`). Status: Open.
+*(No open bugs — see Recently resolved.)*
 
 ### UI
 
@@ -111,16 +105,20 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 
 ### UX
 
-- **Map size choice during onboarding.** (#10) 48×48 / 96×96 / 128×128; den count and pacing must scale, not just grid resize. **Refs:** [DESIGN.md §3](DESIGN.md), [`src/ui/onboarding/OnboardingScreen.tsx`](../src/ui/onboarding/OnboardingScreen.tsx). Status: Open — see also [#P2](#map-size-selection-p2).
-- **Timer notifications should auto-collapse.** (#14) After 5s realtime, expand full label/countdown then slide to **icon only**; tap/click icon to re-expand. Applies to **both** one-off toasts ([`ToastStack`](../src/ui/hud/Toast.tsx)) **and** countdown rows in [`NotificationTray`](../src/ui/hud/NotificationTray.tsx) (builds, upgrades, repairs, training, expeditions, assaults, recalls, sieges). Player should still see at a glance how many timers are in flight when collapsed. **Refs:** [`NotificationTray.tsx`](../src/ui/hud/NotificationTray.tsx), [`GameScreen.tsx`](../src/ui/GameScreen.tsx) `activeCountdownRows()`. Status: Open.
-
 <details>
 <summary><strong>Recently resolved</strong></summary>
 
+- **Map size choice during onboarding.** (#10, #P2) Resolved 2026-07-23 — 48×48 / 96×96 / 128×128 under **Show Advanced Options**; `WorldRecord.gridSize` persisted; den count and min distances scale via `tweaksForMapSize()`. Profile scenario overrides: `game.grid_size_locked` + `game.world_seed` in tweaks take precedence over onboarding. Replay/new-seed from the in-game New Game dialog keep the save's size; new player re-enters onboarding (map size there). **Refs:** [`src/data/mapSize.ts`](../src/data/mapSize.ts), [`OnboardingScreen.tsx`](../src/ui/onboarding/OnboardingScreen.tsx), [TWEAKS.md § Game / world](TWEAKS.md).
+- **Timer notifications should auto-collapse.** (#14) Resolved 2026-07-23 — shared `CollapsibleNotificationRow`: 5s full expand, slide right to icon peek; tap icon to re-expand. Countdown rows stay peeking; one-off toasts dismiss after 8s collapsed. **Refs:** [`src/ui/hud/CollapsibleNotificationRow.tsx`](../src/ui/hud/CollapsibleNotificationRow.tsx), [`NotificationTray.tsx`](../src/ui/hud/NotificationTray.tsx), [`Toast.tsx`](../src/ui/hud/Toast.tsx).
 - **Early game pacing too slow.** (#12) Resolved 2026-07-23 — small-tier extraction yields raised ~50%; every flat build/upgrade timer shaved 1 minute. **Refs:** [`public/profiles/default/tweaks.jsonc`](../public/profiles/default/tweaks.jsonc), [TWEAKS.md](TWEAKS.md).
 - **Building sprite vertical alignment.** (#7) Resolved 2026-07-23 — bottom-anchored structure icons via [`src/render/structurePlacement.ts`](../src/render/structurePlacement.ts) and `drawPlacedStructureIcon` in [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx).
 - **Extraction upgrade badge and stockpile cue.** (#13) Resolved 2026-07-23 — upgrade badge via `upgradeAvailableKeysFor()`; stockpile urgency on collect pin ([`CollectPinOverlay`](../src/ui/menu/CollectPinOverlay.tsx), [`stockpileState.ts`](../src/render/stockpileState.ts)).
 - **Per-barracks training queues + tray countdowns.** (#5, #16) Resolved 2026-07-23 — one queue per barracks (any unit type); training speed scales with that barracks's level; legacy global queues migrate on load; notification tray shows per-barracks training timers. **Refs:** [`src/engine/barracks.ts`](../src/engine/barracks.ts), [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx).
+- **Structure integrity — damaged/build-timer gates.** (#1, #3, #8) Resolved 2026-07-23 — `isStructureActive` treats `buildStartedAt: 0` as under construction (`== null`, not falsy); extraction tiles and docks yield nothing while building; per-barracks training pauses when damaged or under construction (`advanceBarracksTraining`); training UI and handlers gated via `isStructureActive` / `barracksForTraining`. **Refs:** [`src/engine/formulas.ts`](../src/engine/formulas.ts), [`src/engine/tick.ts`](../src/engine/tick.ts), [`src/engine/barracks.ts`](../src/engine/barracks.ts), [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx).
+- **Scout skiffs stuck at home dock.** (#6) Resolved 2026-07-23 — movement/build gate uses `buildStartedAt != null` (matches `isStructureActive`); tick build-completion aligned. **Refs:** [`src/engine/scoutSkiffs.ts`](../src/engine/scoutSkiffs.ts), [`src/App.tsx`](../src/App.tsx).
+- **Recalled garrison cannot join expeditions.** (#9) Resolved 2026-07-23 — `clampPartyDispatch()` on expedition/den/lab handlers; stale dispatch stepper values no longer fail while garrison clamp succeeds. **Refs:** [`src/engine/garrisons.ts`](../src/engine/garrisons.ts), [`src/App.tsx`](../src/App.tsx).
+- **Only one build/upgrade action per structure at a time.** (#4) Resolved 2026-07-23 — base level upgrade, reinforcement upgrade, and reinforcement repair share one `BaseRecord.action` slot (walls pattern); legacy `upgrade`/`reinforcementAction` fields migrate on load; handlers re-check busy state inside functional `setBoot`. **Refs:** [`src/data/base.ts`](../src/data/base.ts), [`src/engine/base.ts`](../src/engine/base.ts).
+- **Base not centered after page refresh.** (#15) Resolved 2026-07-23 — defer initial center until ResizeObserver reports container size; shared `centerPanOnBase()` with `recenterOnBase()`. **Refs:** [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx).
 
 </details>
 
@@ -130,12 +128,13 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 
 ### Open questions
 
-- **Should extraction tiles run dry?** (#2) Finite pool per tier that depletes and stops yielding, vs yielding forever. Needs design pass on tier upgrades, storage, and auto-flow assumptions. **Refs:** [DESIGN.md §7](DESIGN.md), [TWEAKS.md § Extraction Tiles](TWEAKS.md).
+- **Should extraction tiles run dry?** (#2) Finite pool per tier that depletes and stops yielding, vs yielding forever. **Linked to #P11:** tile **level markers** on each hex should drive stash pool size now and may become the shared basis for finite food/wood/stone pools later. Needs design pass on tier upgrades, storage, and auto-flow assumptions. **Refs:** [DESIGN.md §3](DESIGN.md), [ScrapperEconomy.md](ScrapperEconomy.md), [TWEAKS.md § Extraction Tiles](TWEAKS.md).
 
 <details>
 <summary><strong>Deferred / out of scope</strong></summary>
 
 - **Multiplayer / PvP** — retired concept. **Refs:** [DESIGN.md §15](DESIGN.md).
+- **Trade caravan (#P4)** — retired. Outposts path into the **same shared stockpile** as the main base (`engine/tick.ts`); no separate outpost storage to bridge. Was deferred when outposts had self-contained economies; moot after the unified-economy decision (see [PLAYER_GUIDE.md § Dens & outposts](PLAYER_GUIDE.md)).
 - **Environmental map events** — not planned for current build.
 - **Auto-repair skill for walls** — mentioned as future possibility in [DESIGN.md §15](DESIGN.md).
 
@@ -146,7 +145,7 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 <details>
 <summary><strong>Ideas</strong></summary>
 
-*(Empty — add raw brainstorms here: art directions, mechanic sketches, UX sparks.)*
+*(Empty — see [#P11 Scrapper & scrap stashes](#scrapper-unit--scrap-stashes-p11) in Proposed features.)*
 
 </details>
 
@@ -160,17 +159,9 @@ Features past the Ideas/Questions stage but not yet scheduled as a Milestone. **
 
 In-browser visual editor for balance values; zip import/export of profile folders for deploy. Large scope — likely its own milestone when scheduled. **Refs:** [DESIGN.md §15](DESIGN.md), [TWEAKS.md § Difficulty profiles](TWEAKS.md). **Next step:** design pass on editor scope and security model.
 
-### Map size selection (#P2)
-
-Onboarding choice among 48×48 / 96×96 / 128×128; den count and overall pacing must scale with grid size, not just resize the map. **Refs:** UX [#10](#map-size-choice-during-onboarding-10), onboarding future-slot in [Milestone22.md](Milestone22.md), world-gen. **Next step:** design pass on density formulas.
-
 ### Watchtower intel & alerts (#P3)
 
 Towers gain a distinct intel/alert role: passive lab-clue rolls on tick and horde-approach notifications. Tweak keys exist in schema but have no engine reader. **Refs:** [DESIGN.md §11](DESIGN.md), [Milestone 15 gap](#milestone-15--hidden-lab--win-condition--️-partial), `lab_clues.passive_surfacing.*` in tweaks. **Next step:** promote to milestone or extend M15/M16.
-
-### Trade caravan (#P4)
-
-Tech-tree upgrade path for manual outpost ↔ base resource transfer (manual → bike couriers → electric van), hooking into outposts' separate storage pools. **Refs:** [DESIGN.md §15](DESIGN.md), [TWEAKS.md § Outposts](TWEAKS.md). **Next step:** design tier costs and UI entry point.
 
 ### Touch structure stats (#P5)
 
@@ -184,10 +175,6 @@ Path-style automation across water bodies, beyond each dock depositing directly 
 
 Add manifest `screenshots` entries (wide + mobile) for Chrome's richer install prompt. **Refs:** [Milestone 16](#milestone-16--ui-polish-pass--️-partial), `vite.config.ts` PWA plugin. **Next step:** capture screenshots and add to manifest.
 
-### Extra difficulty profiles (#P8)
-
-Additional sibling packs (e.g. casual, speedrun) under `public/profiles/`, same layout as default/hard. **Refs:** [`public/profiles/index.json`](../public/profiles/index.json), Milestone 23. **Next step:** balance pass + optional partial art overrides.
-
 ### Per-tick horde tile combat (#P9)
 
 Hordes attrition against walls/towers over time on a tile, replacing the current one-shot resolution for tile fights. **Refs:** [TWEAKS.md § Horde System](TWEAKS.md). **Next step:** design pass on combat loop vs performance.
@@ -195,6 +182,10 @@ Hordes attrition against walls/towers over time on a tile, replacing the current
 ### Terrain tile defense (#P10)
 
 Terrain type multiplies tile claim difficulty (e.g. mountains harder than grassland), on top of distance-based defense. **Refs:** [TWEAKS.md § Territory Expansion](TWEAKS.md), [DESIGN.md §6](DESIGN.md). **Next step:** tuning table in tweaks.
+
+### Scrapper unit & scrap stashes (#P11)
+
+Replace passive **steel extraction tiles** with a logistics loop (see [ScrapperEconomy.md](ScrapperEconomy.md)). Includes **expedition travel parity** — mid-route retarget rules aligned with Scrapper hauls. **Decision (Q1):** steel extraction tiles removed entirely; tune early steel costs in tweaks. **Detail:** [ScrapperEconomy.md](ScrapperEconomy.md).
 
 ---
 
@@ -378,7 +369,7 @@ Connectivity check after horde capture; disconnected section loses resources, bu
 
 Den placement at world-gen (fixed level), assault + hold + outpost conversion, horde loss generalized to outposts.
 
-**Testable outcome:** clear den through hold → outpost with separate storage; outpost loss reverts to den.
+**Testable outcome:** clear den through hold → outpost as a second hub (shared stockpile for extraction + reinforcement); outpost loss reverts to den.
 
 </details>
 
@@ -434,7 +425,7 @@ Paged field-manual onboarding, continue-or-new-game prompt, advanced options (di
 <details>
 <summary><strong>Milestone 23 — Difficulty Profiles & Asset Packs — ✅ Complete</strong></summary>
 
-URL slugs, bundled `public/profiles/{slug}/`, partial sprite overrides with default fallback, profile persisted in save.
+URL slugs, bundled `public/profiles/{slug}/`, partial sprite overrides with default fallback, profile persisted in save. Shipped **Standard** (`default`) and **Hard** (`hard`) sibling packs; onboarding difficulty dropdown + `/{slug}` URL. Resolves proposed **#P8** — adding more profiles (e.g. casual, speedrun) is content authoring via the same layout, not a separate feature.
 
 **Testable outcome:** `/hard` loads hard profile; continue prompt on reload; `profiles/index.json` lists difficulties.
 

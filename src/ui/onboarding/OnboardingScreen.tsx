@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Tweaks } from "../../data/tweaksSchema";
+import type { MapSizeOption } from "../../data/mapSize";
+import {
+  DEFAULT_MAP_SIZE,
+  isMapSizeOption,
+  isProfileGridSizeLocked,
+  isProfileSeedLocked,
+  MAP_SIZE_OPTIONS,
+} from "../../data/mapSize";
 import type { Player } from "../../data/player";
-import type { ProfileEntry } from "../../data/profileRegistry";
+import { loadProfile, type ProfileEntry } from "../../data/profileRegistry";
 import { ManualPage } from "./ManualPage";
 import { InlineColorPicker } from "./InlineColorPicker";
 import {
@@ -19,6 +28,7 @@ export type OnboardingResult = {
   player: Player;
   seed?: number;
   profileSlug: string;
+  gridSize: MapSizeOption;
 };
 
 type OnboardingPage =
@@ -64,14 +74,46 @@ export function OnboardingScreen({
   const [seedInput, setSeedInput] = useState("");
   const [seedError, setSeedError] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [gridSize, setGridSize] = useState<MapSizeOption>(DEFAULT_MAP_SIZE);
   const [pendingPlayer, setPendingPlayer] = useState<Player | null>(null);
   const [pendingSeed, setPendingSeed] = useState<number | undefined>(undefined);
   const [pendingProfileSlug, setPendingProfileSlug] = useState(initialProfileSlug);
+  const [pendingGridSize, setPendingGridSize] = useState<MapSizeOption>(DEFAULT_MAP_SIZE);
+  const [profileTweaks, setProfileTweaks] = useState<Tweaks | null>(null);
 
   const trimmedName = name.trim();
   const page = PAGES[pageIndex];
 
   const selectedProfile = profiles.find((p) => p.slug === profileSlug);
+  const gridSizeLocked = profileTweaks != null && isProfileGridSizeLocked(profileTweaks);
+  const seedLocked = profileTweaks != null && isProfileSeedLocked(profileTweaks);
+  const profileGridSize = profileTweaks?.game.grid_size ?? DEFAULT_MAP_SIZE;
+  const profileSeed = profileTweaks?.game.world_seed;
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadProfile(profileSlug)
+      .then((tweaks) => {
+        if (!cancelled) setProfileTweaks(tweaks);
+      })
+      .catch(() => {
+        if (!cancelled) setProfileTweaks(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileSlug]);
+
+  useEffect(() => {
+    if (profileTweaks == null) return;
+    if (isProfileGridSizeLocked(profileTweaks) && isMapSizeOption(profileTweaks.game.grid_size)) {
+      setGridSize(profileTweaks.game.grid_size);
+    }
+    if (profileTweaks.game.world_seed != null) {
+      setSeedInput(String(profileTweaks.game.world_seed));
+      setSeedError(null);
+    }
+  }, [profileTweaks]);
 
   const primaryLabel = useMemo(() => {
     if (page.kind === "cover") return "Begin";
@@ -81,6 +123,7 @@ export function OnboardingScreen({
   }, [page.kind]);
 
   function applySeed(seed: number) {
+    if (seedLocked) return;
     setSeedInput(String(seed));
     setSeedError(null);
     setAdvancedOpen(true);
@@ -88,19 +131,28 @@ export function OnboardingScreen({
 
   const validateRegistration = useCallback((): boolean => {
     if (!trimmedName) return false;
+    if (profileTweaks == null) return false;
 
-    const seedResult = parseSeedInput(seedInput);
-    if (!seedResult.ok) {
-      setSeedError(seedResult.error);
-      return false;
+    let resolvedSeed: number | undefined;
+    if (seedLocked) {
+      resolvedSeed = profileSeed;
+      setSeedError(null);
+    } else {
+      const seedResult = parseSeedInput(seedInput);
+      if (!seedResult.ok) {
+        setSeedError(seedResult.error);
+        return false;
+      }
+      resolvedSeed = seedResult.seed;
+      setSeedError(null);
     }
 
-    setSeedError(null);
     setPendingPlayer({ name: trimmedName, color });
-    setPendingSeed(seedResult.seed);
+    setPendingSeed(resolvedSeed);
     setPendingProfileSlug(profileSlug);
+    setPendingGridSize(gridSize);
     return true;
-  }, [trimmedName, color, seedInput, profileSlug]);
+  }, [trimmedName, color, seedInput, profileSlug, gridSize, profileTweaks, seedLocked, profileSeed]);
 
   const goForward = useCallback(() => {
     if (page.kind === "registration") {
@@ -108,11 +160,11 @@ export function OnboardingScreen({
     }
     if (page.kind === "sendoff") {
       if (!pendingPlayer) return;
-      onCreated({ player: pendingPlayer, seed: pendingSeed, profileSlug: pendingProfileSlug });
+      onCreated({ player: pendingPlayer, seed: pendingSeed, profileSlug: pendingProfileSlug, gridSize: pendingGridSize });
       return;
     }
     setPageIndex((index) => Math.min(index + 1, PAGES.length - 1));
-  }, [page.kind, validateRegistration, pendingPlayer, pendingSeed, pendingProfileSlug, onCreated]);
+  }, [page.kind, validateRegistration, pendingPlayer, pendingSeed, pendingProfileSlug, pendingGridSize, onCreated]);
 
   const goBack = useCallback(() => {
     setPageIndex((index) => Math.max(index - 1, 0));
@@ -174,7 +226,7 @@ export function OnboardingScreen({
           onBack={goBack}
           primaryLabel={primaryLabel}
           onPrimary={goForward}
-          primaryDisabled={!trimmedName}
+          primaryDisabled={!trimmedName || profileTweaks == null}
         >
           <form className="onboarding-registration" onSubmit={handleRegistrationSubmit}>
             <div className="onboarding-registration__field">
@@ -230,23 +282,57 @@ export function OnboardingScreen({
                   </div>
 
                   <div className="onboarding-registration__field">
+                    <label htmlFor="map-size">Map size</label>
+                    {gridSizeLocked ? (
+                      <p className="onboarding-registration__hint" id="map-size">
+                        Fixed by this profile: {profileGridSize}×{profileGridSize}
+                      </p>
+                    ) : (
+                      <>
+                        <select
+                          id="map-size"
+                          className="onboarding-registration__select"
+                          value={gridSize}
+                          onChange={(event) => setGridSize(Number(event.target.value) as MapSizeOption)}
+                        >
+                          {MAP_SIZE_OPTIONS.map((size) => (
+                            <option key={size} value={size}>
+                              {size}×{size}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="onboarding-registration__hint">
+                          Smaller maps have fewer dens and shorter travel distances — good for a quicker run.
+                        </p>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="onboarding-registration__field">
                     <label htmlFor="world-seed">Seed (optional)</label>
                     <input
                       id="world-seed"
                       type="text"
                       inputMode="numeric"
                       value={seedInput}
+                      disabled={seedLocked}
                       onChange={(event) => {
                         setSeedInput(event.target.value);
                         setSeedError(null);
                       }}
                       placeholder="Leave blank for a random map"
                     />
-                    <p className="onboarding-registration__hint">
-                      Share the same seed with someone else to both explore the identical map — no
-                      multiplayer, just the same layout.
-                    </p>
-                    {recentSeeds.length > 0 ? (
+                    {seedLocked ? (
+                      <p className="onboarding-registration__hint">
+                        Fixed by this profile — seed {profileSeed}.
+                      </p>
+                    ) : (
+                      <p className="onboarding-registration__hint">
+                        Share the same seed with someone else to both explore the identical map — no
+                        multiplayer, just the same layout.
+                      </p>
+                    )}
+                    {!seedLocked && recentSeeds.length > 0 ? (
                       <div className="onboarding-registration__recent-seeds">
                         <p className="onboarding-registration__hint">Recent seeds:</p>
                         <div className="onboarding-registration__recent-seeds-list">

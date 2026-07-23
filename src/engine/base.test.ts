@@ -9,15 +9,20 @@ import {
   baseRelocationDurationMs,
   baseRepairCost,
   baseReinforcementHp,
+  baseReinforcementRepairDurationMs,
+  baseReinforcementUpgradeDurationMs,
   baseUpgradeCost,
   baseUpgradeDurationMs,
   baseUpgradeTimeMinutes,
   canRelocateBase,
+  isBaseBusy,
   isBaseRelocationComplete,
   isBaseUpgradeComplete,
   maxReinforcementLevel,
   reinforcementUpgradeCost,
+  resolveBaseAction,
 } from "./base";
+import { initialBase } from "../data/base";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -138,6 +143,59 @@ describe("canRelocateBase", () => {
     expect(canRelocateBase(tweaks, minLevel - 1)).toBe(false);
     expect(canRelocateBase(tweaks, minLevel)).toBe(true);
     expect(canRelocateBase(tweaks, minLevel + 1)).toBe(true);
+  });
+});
+
+describe("isBaseBusy / resolveBaseAction", () => {
+  it("isBaseBusy is true only while base.action is set", () => {
+    const tweaks = loadRealTweaks();
+    const idle = initialBase(tweaks);
+    expect(isBaseBusy(idle)).toBe(false);
+    expect(isBaseBusy({ ...idle, action: { kind: "level_upgrade", targetLevel: 2, startedAt: 0 } })).toBe(true);
+  });
+
+  it("resolves a completed level upgrade and clears action", () => {
+    const tweaks = loadRealTweaks();
+    const startedAt = 1_000_000;
+    const durationMs = baseUpgradeDurationMs(tweaks, 2);
+    const base = {
+      ...initialBase(tweaks),
+      action: { kind: "level_upgrade" as const, targetLevel: 2, startedAt },
+    };
+    expect(resolveBaseAction(tweaks, base, startedAt + durationMs - 1)).toBe(base);
+    const resolved = resolveBaseAction(tweaks, base, startedAt + durationMs);
+    expect(resolved.level).toBe(2);
+    expect(resolved.action).toBeNull();
+  });
+
+  it("resolves a completed reinforcement upgrade and restores HP", () => {
+    const tweaks = loadRealTweaks();
+    const startedAt = 1_000_000;
+    const durationMs = baseReinforcementUpgradeDurationMs(tweaks, 1);
+    const base = {
+      ...initialBase(tweaks),
+      currentHp: 1,
+      action: { kind: "reinforcement_upgrade" as const, targetLevel: 1, startedAt },
+    };
+    const resolved = resolveBaseAction(tweaks, base, startedAt + durationMs);
+    expect(resolved.reinforcementLevel).toBe(1);
+    expect(resolved.currentHp).toBe(baseReinforcementHp(tweaks, 1));
+    expect(resolved.action).toBeNull();
+  });
+
+  it("resolves a completed reinforcement repair", () => {
+    const tweaks = loadRealTweaks();
+    const maxHp = baseReinforcementHp(tweaks, 0);
+    const startedAt = 1_000_000;
+    const durationMs = baseReinforcementRepairDurationMs(tweaks, maxHp / 2, maxHp);
+    const base = {
+      ...initialBase(tweaks),
+      currentHp: maxHp / 2,
+      action: { kind: "reinforcement_repair" as const, startedAt },
+    };
+    const resolved = resolveBaseAction(tweaks, base, startedAt + durationMs);
+    expect(resolved.currentHp).toBe(maxHp);
+    expect(resolved.action).toBeNull();
   });
 });
 

@@ -160,6 +160,20 @@ describe("computeResourceRates", () => {
     expect(rates.food).toBeCloseTo(foodYieldAt(tweaks, seed, tileCoord));
   });
 
+  it("credits nothing for an extraction tile still under construction", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 1;
+    const { pathCoord, tileCoord } = findConnectedPair(seed);
+    const tiles: ExtractionTile[] = [
+      extractionTile({ coord: tileCoord, resource: "food", tier: "small", buildStartedAt: 0 }),
+    ];
+    const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "highway" })];
+
+    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed);
+
+    expect(rates.food).toBe(0);
+  });
+
   it("includes a finished dock's food yield, but not one still under construction", () => {
     const tweaks = loadRealTweaks();
     const finishedRate = dockYieldPerSecond(tweaks, dock());

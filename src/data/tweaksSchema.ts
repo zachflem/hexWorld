@@ -41,6 +41,10 @@ export const tweaksSchema = z.object({
 
   game: z.object({
     grid_size: z.number(),
+    /** When true, onboarding map-size choice is ignored — profile fixes size for a authored scenario. */
+    grid_size_locked: z.boolean().optional(),
+    /** When set, onboarding seed is ignored — profile fixes the world seed for a authored scenario. */
+    world_seed: z.number().int().nonnegative().optional(),
     tick_interval_seconds: z.number(),
     resource_accumulation_precision_seconds: z.number(),
   }),

@@ -29,7 +29,7 @@ A small group arrives in unfamiliar territory. They settle, and immediately clai
 
 ## 3. The World
 
-- **Grid:** 128×128 hexes, procedurally seeded (a seed value fully determines terrain, resources, den placement, and lab location — enables sharing/replaying seeds later, like Minecraft).
+- **Grid:** procedurally seeded hex map — **48×48**, **96×96**, or **128×128** (chosen under onboarding advanced options; default 128). A seed value fully determines terrain, resources, den placement, and lab location for that size — enables sharing/replaying seeds at the same map size.
 - **Coordinate system:** tiles are stored/serialized as **axial coordinates (q, r)** — simple two-integer keys, natural for save files. Algorithms that need them (distance, range queries, horde pathing line-of-travel) convert to cube coordinates internally.
 - **Terrain types:** grassland, forest, mountain, shore, water — each restricts which structures can be built on it.
 - **Transition tiles:** procedurally occur where two terrain types border each other. Either terrain's structures can be built there, at half yield. The game never explains this — scouting one only returns a cryptic hint.
@@ -42,7 +42,7 @@ A small group arrives in unfamiliar territory. They settle, and immediately clai
 No login, no email, no account. On arrival, the player finds a short **field manual** — aged paper, in-world prose, not a terminal UI — and pages through it before play begins:
 
 1. **Cover** — title and hook.
-2. **Registration** — name, inline colour wheel, and (under **Show Advanced Options**, collapsed by default) difficulty profile + optional world seed + recent seeds for replay. Same seed validation as before: blank is random; otherwise a non-negative integer.
+2. **Registration** — name, inline colour wheel, and (under **Show Advanced Options**, collapsed by default) **map size** (48×48 / 96×96 / 128×128 unless the profile sets `grid_size_locked`), difficulty profile, optional world seed (unless the profile sets `world_seed`), and recent seeds for replay. Profile tweaks take precedence for locked scenario fields.
 3. **Story pages** (four brief log entries) — settling the starting territory, how noise draws hordes, the rumoured hidden lab (securing it wins the run; clearing dens is valuable but not required), and a light in-fiction nudge before heading out.
 4. **Send-off** — closing line, then into the game.
 
@@ -107,8 +107,8 @@ The base is a **hub, not a combat unit** — storage, tech tree, and the seat of
 
 - **Base level** gates everything: it caps the maximum level any other structure (tower, extraction tile, wall, storage skill) can reach, and determines the **build slot cap** — a hard limit on the total number of structures (of any kind) the player can have standing at once, forcing genuine placement decisions rather than blanket coverage.
 - **Base upgrades** cost resources and take real time to complete, continuing even while the player is offline.
-- **Base reinforcement** is a separate track — a flat HP pool defending the base tile itself against horde damage, upgradeable independently but capped by base level.
-- **Base relocation** (added during playtesting, base level 3+): move the base to any other known (owned or scouted), empty, dry-land tile. Both cost and the countdown scale with straight-line distance to the destination — it's a countdown-then-teleport, not a march through hostile ground, and the countdown exists specifically so relocation can't be used to instantly dodge an incoming horde. The countdown runs even while offline, same as a base-level upgrade. On completion the destination tile joins owned territory if it wasn't already; nothing else about the base (level, reinforcement, upgrade progress) resets.
+- **Base reinforcement** is a separate track — a flat HP pool defending the base tile itself against horde damage, upgradeable and repairable on real-time timers (offline-safe), capped by base level. **Only one** base level upgrade, reinforcement upgrade, or reinforcement repair can run at a time — the same single-slot rule walls use for tier upgrades vs. durability repair.
+- **Base relocation** (added during playtesting, base level 3+): move the base to any other known (owned or scouted), empty, dry-land tile. Both cost and the countdown scale with straight-line distance to the destination — it's a countdown-then-teleport, not a march through hostile ground, and the countdown exists specifically so relocation can't be used to instantly dodge an incoming horde. The countdown runs even while offline, same as a base-level upgrade. On completion the destination tile joins owned territory if it wasn't already; nothing else about the base (level, reinforcement, in-progress upgrade/repair) resets. Relocation uses its own timer and does not block (or get blocked by) the single action slot above.
 
 ---
 
@@ -159,8 +159,8 @@ Dens are fixed map tiles (not roaming threats), seeded once at world-gen at a ra
 
 A successfully held den **converts into a player-usable Outpost** (`engine/outposts.ts`) — a second, independent economic and defensive hub:
 - **Starting strength scales with the den's level**, not a flat baseline: `reinforcementLevel = max(0, denLevel - 1)`, so a tougher den handed a stronger foothold — clearing a high-level den can start a player above their own base's current reinforcement ceiling, a deliberate reward for the conquest (only *further* upgrades are capped by base level, via `maxOutpostReinforcementLevel`).
-- **Its own reinforcement HP track**, upgradable/repairable the same shape as the main base's (`outpostReinforcementHp`/`outpostReinforcementUpgradeCost`/`outpostRepairCost`), but paid from the outpost's *own* resource pool, not the main base's.
-- **Its own resource economy** — extraction tiles connected to the outpost (same path-connectivity rules as base, `engine/paths.ts`) auto-flow into the outpost's own separate storage, entirely self-contained (§16 covers why this is deliberately one-way for now).
+- **Reinforcement HP track**, upgradable/repairable the same shape as the main base's (`outpostReinforcementHp` / upgrade / repair), paid from the **shared stockpile** (same pool as the main base).
+- **Shared resource economy** — extraction tiles path-connected to an outpost auto-flow into the **same global stockpile** as tiles connected to the main base; base wins when a tile could reach both (`engine/tick.ts`). An outpost is an alternate hub entry point, not a second economy.
 - **A horde overrunning an outpost does not end the game** — unlike the main base, it instead reverts the outpost back to a hostile den (`revertOutpostToDen`, one level below its original — a real setback, but not harder to re-clear than the original siege), which has to be sieged again from scratch. Every live outpost is a defended "hub" exactly like the main base for horde combat purposes (`engine/hordes.ts`'s `HordeHub`), but hordes still only ever *path* toward the main base — an outpost only takes damage if it happens to sit on that route, not because hordes actively hunt it.
 
 **The hidden lab** sits on a single fixed tile somewhere on the map, guarded by a permanently stationed (non-horde) defender tougher than anything else encountered. Its location isn't found through plain scouting — watchtowers and scouting occasionally surface **rumors/clues** narrowing down its general whereabouts.
@@ -182,14 +182,14 @@ A successfully held den **converts into a player-usable Outpost** (`engine/outpo
 - **Base access:** clicking the base tile opens no separate minimap in this design (base is a hub concept, not a nested grid) — base-level actions (upgrades, reinforcement, storage skills) are handled via the same tile-click popup pattern used everywhere else.
 - **Tile interaction:** click any tile to see current intel (if scouted) plus available actions and their costs; hover an unscouted tile to preview only its scout cost.
 - **Confirmations:** costs are always shown before commitment; most actions execute instantly on click; demolishing requires an explicit confirmation given its permanence.
-- **Slide-out panel** (top-right): settings, help/rules reference, and notifications — expected to evolve as development continues.
+- **Top-right HUD:** a fixed column stacks **timer notifications** (builds, upgrades, repairs, training, expeditions, assaults, recalls, sieges) and **one-off toasts** (e.g. den cleared, lab clue). Each row shows its icon on the left, label/coords, and remaining time. After **5 seconds** realtime the label/countdown slides away to the right, leaving a compact **icon peek** at the column edge; tap the icon to expand again. Active countdown rows stay peeking until the timer finishes; ephemeral toasts linger collapsed briefly then dismiss. A separate **slide-out panel** (same corner) holds settings, help/rules reference, and is expected to evolve.
 
 ---
 
 ## 15. Explicitly Out of Scope (this build)
 
 - Multiplayer / PvP (the original concept for this project — fully retired in favor of the single-player PvE design above)
-- **Bidirectional** outpost↔base resource transport — outposts (§13) shipped as a one-way, self-contained economy; moving resources back to base is deferred to a future "trade caravan" tech-tree upgrade (manual → bike couriers → electric van, each tier with its own per-tick resource cost), which can hook into the outpost's already-separate storage pool without touching this milestone's work
+- **Trade caravan** — retired (#P4). Outposts feed the shared stockpile; no outpost↔base transfer layer needed.
 - Water-based transport of resources (moving cargo across water) — a dock's own food output still deposits straight to base, not via a path/highway network the way land tiles do
 - Environmental map events
 - Auto-repair skill for walls (mentioned as a future possibility, slower than manual repair)

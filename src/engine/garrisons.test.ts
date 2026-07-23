@@ -15,6 +15,7 @@ import {
   availableCrossBowSnipers,
   availableJunkyardKnights,
   availableMilitia,
+  clampPartyDispatch,
   garrisonAt,
   garrisonAttackPower,
   garrisonDefense,
@@ -235,6 +236,25 @@ describe("garrisonedCrossBowSniperTotal / availableCrossBowSnipers", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { crossBowSniperCount: 4 })];
     const labAssaults: LabAssaultsRecord = [makeLabAssault({ crossBowSniperCommitted: 1 })];
     expect(availableCrossBowSnipers(units({ crossBowSniperCount: 10 }), garrisons, [], [], [], labAssaults)).toBe(5);
+  });
+});
+
+describe("clampPartyDispatch", () => {
+  it("clamps stale UI counts to the available pool — same behavior as garrison dispatch", () => {
+    const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { militiaCount: 5 })];
+    const expeditions: ExpeditionsRecord = [makeExpedition({ militiaCommitted: 3 })];
+    const clamped = clampPartyDispatch(
+      units({ militiaCount: 10 }),
+      garrisons,
+      expeditions,
+      [],
+      [],
+      [],
+      10,
+      0,
+      0,
+    );
+    expect(clamped).toEqual({ militiaCommitted: 2, junkyardKnightCommitted: 0, crossBowSniperCommitted: 0 });
   });
 });
 

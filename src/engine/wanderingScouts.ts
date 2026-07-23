@@ -39,7 +39,7 @@ export function advanceWanderingScouts(
   const newlyScouted: Axial[] = [];
 
   const nextScouts = scouts.map((scout) => {
-    if (scout.buildStartedAt !== null) return scout;
+    if (scout.buildStartedAt != null) return scout;
 
     let coord = scout.coord;
     let prevCoord = scout.prevCoord;

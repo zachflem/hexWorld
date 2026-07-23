@@ -130,4 +130,15 @@ describe("advanceScoutSkiffs", () => {
     expect(result.skiffs).toEqual(skiffs);
     expect(result.scoutedTiles).toEqual([]);
   });
+
+  it("wanders when buildStartedAt is missing (legacy saves) — same == null gate as isStructureActive", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findWaterCoord(seed);
+    const skiffs = [makeSkiff(start, { buildStartedAt: undefined as unknown as null })];
+
+    const result = advanceScoutSkiffs(tweaks, skiffs, [], seed, gridSize, tweaks.docks.scout_skiff.seconds_per_step * 10);
+
+    expect(axialKey(result.skiffs[0].coord)).not.toBe(axialKey(start));
+  });
 });

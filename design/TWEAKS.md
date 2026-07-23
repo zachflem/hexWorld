@@ -23,7 +23,7 @@ public/profiles/
 
 **How the app picks a profile:**
 - URL path on the game domain: `play.{domain}/{slug}` (e.g. `/hard`). Root `/` uses `default`.
-- Onboarding **Show Advanced Options** (collapsed by default): difficulty dropdown + seed + recent seeds.
+- Onboarding **Show Advanced Options** (collapsed by default): difficulty dropdown, map size (48/96/128), seed + recent seeds — unless the profile locks them (see **Game / world** below).
 - `profileSlug` is persisted in IndexedDB with the save; continue/resume uses the saved profile.
 
 **Asset resolution** (`src/render/assetPaths.ts`): try `profiles/{active}/assets/…` → `profiles/default/assets/…` → flat-colour fallback.
@@ -39,6 +39,18 @@ It's **JSONC** (JSON with `//` comments). Regular `JSON.parse()` chokes on comme
 - use a JSON5 parser instead.
 
 Every profile file uses the **same schema** — difficulty is just different numbers (and optional art) in sibling folders, not a separate format.
+
+### Game / world (`game` block)
+
+| Key | Role |
+|-----|------|
+| `grid_size` | Reference width for balance tuning (128). Also the **forced** map size when `grid_size_locked` is true. |
+| `grid_size_locked` | Optional. When `true`, onboarding map-size choice is ignored — use `grid_size` for authored scenarios. |
+| `world_seed` | Optional. When set, onboarding seed is ignored — fixed seed for authored scenarios. |
+| `tick_interval_seconds` | Engine tick interval. |
+| `resource_accumulation_precision_seconds` | Sub-tick accrual precision. |
+
+Player-chosen map size (when not locked) is stored on the save as `WorldRecord.gridSize`; den count and placement distances scale from the 128 reference via `src/data/mapSize.ts`.
 
 ---
 
@@ -367,7 +379,7 @@ Added during playtesting (2026-07-19) — not in the original DESIGN.md pass.
 - **Cost:** 20 wood + 20 stone + 15 food **per tile of straight-line distance** to the destination (`engine/base.ts:baseRelocationCost`) — not a pathfound route.
 - **Duration:** 60 seconds **per tile of straight-line distance** (`baseRelocationDurationMs`) — a countdown, then a teleport. This is the anti-abuse mechanism: without a real time cost, relocation could be used to instantly dodge an oncoming horde. Runs even while offline, same virtual-clock-threshold pattern as a base-level upgrade.
 - **Worked example:** a 2-tile defensive shuffle costs 40 wood/40 stone/30 food and takes 2 minutes; a 10-tile move to a distant strategic spot costs 200/200/150 and takes 10 minutes.
-- **On completion:** `territory.base` moves to the destination; the destination joins `territory.owned` if it wasn't already. Base level, reinforcement HP/level, and any in-progress base-level upgrade carry over untouched — only the tile coordinate changes.
+- **On completion:** `territory.base` moves to the destination; the destination joins `territory.owned` if it wasn't already. Base level, reinforcement HP/level, and any in-progress base action (level upgrade, reinforcement upgrade, or repair) carry over untouched — only the tile coordinate changes.
 - No noise cost currently defined for relocating.
 
 ---
@@ -377,10 +389,11 @@ Added during playtesting (2026-07-19) — not in the original DESIGN.md pass.
 Separate from base *level* — this is the base tile's health pool against horde attacks.
 
 - **L1 base HP:** 100, fixed.
-- **Reinforcement upgrades:** flat **+25 HP per level**, cost via Formula B (200 wood + 100 stone base). Instant on purchase, and also fully restores `currentHp` to the new max — an upgrade doubles as a full repair.
+- **Reinforcement upgrades:** flat **+25 HP per level**, cost via Formula B (200 wood + 100 stone base). **Timed:** `upgrade_time_minutes_base (3) × targetLevel` — L1→2 takes 3 min, L2→3 takes 6 min, same offline-safe virtual-clock pattern as a base-level upgrade (`baseReinforcementUpgradeDurationMs`). Cost is deducted upfront; the HP/level change lands when the timer completes. An upgrade also fully restores `currentHp` to the new max — so it doubles as a full repair once it finishes. **CORRECTION (2026-07-23, playtesting):** no longer instant on purchase; timers added alongside the 2026-07-23 pacing pass (lowered from 4 min base).
 - **Cap:** max reinforcement level can't exceed current base level — you can't out-armor a base you haven't otherwise developed.
+- **Single action slot:** only one of base level upgrade, reinforcement upgrade, or reinforcement repair can be in progress at a time — same mutual-exclusion rule as a wall's tier upgrade vs. durability repair (`BaseRecord.action`, ROADMAP #4). Base relocation is a separate timer and does not share this slot.
 - **A horde reaching the base fights a one-shot battle, unlike other tiles' "halt and try again":** defense is `currentHp` + any garrison stationed at the base (same additive stacking a tower/wall gets elsewhere). If that defense beats the horde's size, **the horde is destroyed outright** — but the fight still costs `currentHp` equal to the horde's size, so repeated assaults demand repair even if none of them individually break through. If the horde's size instead beats that defense, the base is overrun and the game is lost (DESIGN.md §13) — unchanged from before. Deliberately not a gradual per-tick grind: a horde parked next to the base doesn't slowly whittle it down tick by tick, it either breaks through immediately or is wiped out immediately. First pass, untested.
-- **Repair:** cost scales with the fraction of HP missing, against the same cost_base Formula B uses for reinforcement upgrades at the current reinforcement level (mirrors wall repair's missing-fraction shape) — instant on payment, no timer. Blocked while a horde is still adjacent to the base, same reasoning as structure repair being blocked while a horde still occupies the tile.
+- **Repair:** cost scales with the fraction of HP missing, against the same cost_base Formula B uses for reinforcement upgrades at the current reinforcement level (mirrors wall repair's missing-fraction shape). **Timed:** `missingHp × seconds_per_missing_hp (3)` — repairing from 0/100 HP at L0 takes 5 minutes. Blocked while a horde is still adjacent to the base, same reasoning as structure repair being blocked while a horde still occupies the tile. Shares the single action slot with upgrades above.
 
 ---
 
@@ -482,8 +495,8 @@ Den **level is fixed at world-gen and never changes** — no growth-over-time (d
 A converted den becomes a second, independent economic/defensive hub — a real base, just weaker and more exposed.
 
 - **Starting territory:** `starting_owned_radius: 2` claimed on conversion — same radius as the main base's own starting territory (`engine/fog.ts`'s `OWNED_RADIUS`), so a fresh outpost genuinely reads as a second base, not a token foothold.
-- **Reinforcement HP:** `outpostReinforcementHp(level) = base_hp (65) + hp_gain_per_level (15) × level` — deliberately weaker/cheaper than the main base's own track (100 base_hp, +25/level). **Starting level scales with the den it was cleared from:** `createOutpostFromDen` grants `reinforcementLevel = max(0, denLevel - 1)` — clearing a level-2 den hands over roughly 80 HP; a level-10 den, roughly 200 HP — a direct reward for the siege's difficulty, and deliberately **not** capped by the base-level ceiling that gates every *further* upgrade (`maxOutpostReinforcementLevel(baseLevel) = baseLevel`, same shape as the main base's cap). Upgrade/repair cost (Formula B, `cost_base: 150 wood + 75 stone`) is paid from the **outpost's own resources**, not the main base's stockpile — an outpost defends itself with what it's actually gathered.
-- **Resource economy:** extraction tiles connect to whichever hub (base or outpost) they're path-connected to, base always winning the claim first when a tile could reach either — see `engine/tick.ts`'s `HubEconomy`/`accrueResources`. An outpost's storage (including its own per-resource storage-upgrade track) is entirely self-contained; it never auto-transfers to base. This is deliberate, not a placeholder: the design explicitly keeps outpost↔base transport manual/one-way for now, with a future "trade caravan" tech-tree upgrade (manual → bike couriers → electric van) as the intended bridge — see DESIGN.md §15.
+- **Reinforcement HP:** `outpostReinforcementHp(level) = base_hp (65) + hp_gain_per_level (15) × level` — deliberately weaker/cheaper than the main base's own track (100 base_hp, +25/level). **Starting level scales with the den it was cleared from:** `createOutpostFromDen` grants `reinforcementLevel = max(0, denLevel - 1)` — clearing a level-2 den hands over roughly 80 HP; a level-10 den, roughly 200 HP — a direct reward for the siege's difficulty, and deliberately **not** capped by the base-level ceiling that gates every *further* upgrade (`maxOutpostReinforcementLevel(baseLevel) = baseLevel`, same shape as the main base's cap). Upgrade/repair cost (Formula B, `cost_base: 150 wood + 75 stone`) is paid from the **shared stockpile**, same as the main base.
+- **Resource economy:** extraction tiles connect to whichever hub (base or outpost) they're path-connected to; base always wins the claim first when a tile could reach either — see `engine/tick.ts` `accrueResources`. All hubs drain into the **single shared stockpile** (global storage skills). No separate outpost pool; proposed trade caravan (#P4) is retired.
 - **Loss condition:** an outpost overrun by a horde does **not** end the game — `revertOutpostToDen` reverts it to a hostile den at `max(1, originalDenLevel - 1)` (a real setback, but not harder to re-clear than the original siege) and it has to be sieged again from scratch. See Horde System, above, for how `HordeHub` generalizes the base's loss-condition check to cover every live outpost too.
 
 ---

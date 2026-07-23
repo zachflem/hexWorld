@@ -148,6 +148,31 @@ export function availableCrossBowSnipers(
   );
 }
 
+/** Clamp UI-entered dispatch counts to what's actually free — mirrors handleGarrisonUnits's Math.min before commit. */
+export function clampPartyDispatch(
+  units: UnitsRecord,
+  garrisons: GarrisonsRecord,
+  expeditions: ExpeditionsRecord,
+  denAssaults: DenAssaultsRecord,
+  garrisonRecalls: GarrisonRecallsRecord,
+  labAssaults: LabAssaultsRecord,
+  militiaCommitted: number,
+  junkyardKnightCommitted: number,
+  crossBowSniperCommitted: number,
+): { militiaCommitted: number; junkyardKnightCommitted: number; crossBowSniperCommitted: number } {
+  return {
+    militiaCommitted: Math.min(Math.max(0, Math.floor(militiaCommitted)), availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)),
+    junkyardKnightCommitted: Math.min(
+      Math.max(0, Math.floor(junkyardKnightCommitted)),
+      availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults),
+    ),
+    crossBowSniperCommitted: Math.min(
+      Math.max(0, Math.floor(crossBowSniperCommitted)),
+      availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults),
+    ),
+  };
+}
+
 /** The defense a garrison contributes to its tile — stacks additively on top of any tower/wall there, and across all three garrisonable unit types. */
 export function garrisonDefense(tweaks: Tweaks, garrisons: GarrisonsRecord, coord: Axial): number {
   const garrison = garrisonAt(garrisons, coord);

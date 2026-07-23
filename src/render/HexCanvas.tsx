@@ -50,6 +50,12 @@ import { extractionTierLevel } from "../engine/tiers";
 
 /** Exported so DOM overlays (e.g. HoverTooltip) can compute the same on-screen hex circumradius (BASE_HEX_SIZE * zoom) the canvas itself draws with. */
 export const BASE_HEX_SIZE = 24;
+
+/** Pan offset that places `base` at the center of a view with the given pixel dimensions. */
+export function centerPanOnBase(base: Axial, viewWidth: number, viewHeight: number): { x: number; y: number } {
+  const basePixel = axialToPixel(base, BASE_HEX_SIZE);
+  return { x: viewWidth / 2 - basePixel.x, y: viewHeight / 2 - basePixel.y };
+}
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 3;
 /**
@@ -441,15 +447,8 @@ export const HexCanvas = forwardRef<
   // pinch that happens to end on a single remaining finger doesn't get
   // mistaken for a tap-to-select-tile in handlePointerUp's last branch.
   const multiTouchRef = useRef(false);
-
-  // Center the view on the base tile once we know the canvas size.
-  useEffect(() => {
-    if (pan !== null) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const basePixel = axialToPixel(base, BASE_HEX_SIZE);
-    setPan({ x: canvas.width / 2 - basePixel.x, y: canvas.height / 2 - basePixel.y });
-  }, [pan, base]);
+  /** False once the view has been centered on the base at the container's real layout size — avoids a stale pan from the canvas's default 300×150 backing store before ResizeObserver runs (ROADMAP #15). */
+  const pendingInitialCenterRef = useRef(true);
 
   // Tile textures load async and are cached forever once loaded — this counter
   // just forces the draw effect below to rerun the first time each one resolves.
@@ -479,10 +478,13 @@ export const HexCanvas = forwardRef<
     () => ({
       recenterOnBase() {
         const canvas = canvasRef.current;
-        if (!canvas) return;
-        const basePixel = axialToPixel(base, BASE_HEX_SIZE);
+        const container = containerRef.current;
+        if (!canvas || !container) return;
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
         setZoom(1);
-        setPan({ x: canvas.width / 2 - basePixel.x, y: canvas.height / 2 - basePixel.y });
+        setPan(centerPanOnBase(base, canvas.width, canvas.height));
+        pendingInitialCenterRef.current = false;
       },
       getTileScreenPosition(coord: Axial) {
         if (pan === null) return null;
@@ -511,6 +513,15 @@ export const HexCanvas = forwardRef<
       if (!canvas || !container) return;
       canvas.width = container.clientWidth;
       canvas.height = container.clientHeight;
+      if (
+        pendingInitialCenterRef.current &&
+        container.clientWidth > 0 &&
+        container.clientHeight > 0
+      ) {
+        setPan(centerPanOnBase(base, canvas.width, canvas.height));
+        pendingInitialCenterRef.current = false;
+        return;
+      }
       draw();
     }
 

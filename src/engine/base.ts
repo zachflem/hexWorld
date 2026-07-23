@@ -1,7 +1,8 @@
-import type { BaseRelocationInProgress, BaseUpgradeInProgress } from "../data/base";
+import type { BaseRecord, BaseRelocationInProgress, BaseUpgradeInProgress } from "../data/base";
 import type { ResourceType } from "../data/resources";
 import type { Tweaks } from "../data/tweaksSchema";
 import { formulaBCost } from "./formulas";
+import { isTimerComplete } from "./timers";
 
 /** Cost to upgrade the base to `targetLevel` — Formula B applied to each cost_base resource. */
 export function baseUpgradeCost(tweaks: Tweaks, targetLevel: number): Partial<Record<ResourceType, number>> {
@@ -139,4 +140,41 @@ export function isBaseRelocationComplete(
   now: number,
 ): boolean {
   return now - relocation.startedAt >= baseRelocationDurationMs(tweaks, distanceTiles);
+}
+
+/** True while any timed base action (level/reinforcement upgrade or repair) is running — relocation is separate. */
+export function isBaseBusy(base: BaseRecord): boolean {
+  return base.action != null;
+}
+
+/**
+ * Applies a completed base action — same virtual-clock-threshold pattern as
+ * resolveBaseReinforcementAction did before the single-slot refactor. A
+ * reinforcement upgrade both raises reinforcementLevel and fully restores HP;
+ * a repair only restores HP to the current max.
+ */
+export function resolveBaseAction(tweaks: Tweaks, base: BaseRecord, virtualNow: number): BaseRecord {
+  const action = base.action;
+  if (!action) return base;
+
+  if (action.kind === "level_upgrade") {
+    if (!isBaseUpgradeComplete(tweaks, action, virtualNow)) return base;
+    return { ...base, level: action.targetLevel, action: null };
+  }
+
+  if (action.kind === "reinforcement_upgrade") {
+    const durationMs = baseReinforcementUpgradeDurationMs(tweaks, action.targetLevel);
+    if (!isTimerComplete(action.startedAt, durationMs, virtualNow)) return base;
+    return {
+      ...base,
+      reinforcementLevel: action.targetLevel,
+      currentHp: baseReinforcementHp(tweaks, action.targetLevel),
+      action: null,
+    };
+  }
+
+  const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
+  const durationMs = baseReinforcementRepairDurationMs(tweaks, base.currentHp, maxHp);
+  if (!isTimerComplete(action.startedAt, durationMs, virtualNow)) return base;
+  return { ...base, currentHp: maxHp, action: null };
 }

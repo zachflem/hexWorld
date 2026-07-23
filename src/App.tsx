@@ -9,9 +9,10 @@ import { resetTextureCache } from "./render/tileTextures";
 import { ContinueGamePrompt, profileDisplayName } from "./ui/ContinueGamePrompt";
 import type { OnboardingResult } from "./ui/onboarding/OnboardingScreen";
 import { PLAYER_DB_KEY, type Player } from "./data/player";
-import { WORLD_DB_KEY, generateSeed, type WorldRecord } from "./data/world";
+import { resolveGridSizeForNewGame, resolveSeedForNewGame, resolveWorldGridSize, tweaksForMapSize, DEFAULT_MAP_SIZE } from "./data/mapSize";
+import { WORLD_DB_KEY, generateSeed, normalizeWorldRecord, type WorldRecord } from "./data/world";
 import { TERRITORY_DB_KEY, createStartingTerritory, type TerritoryRecord } from "./data/territory";
-import { BASE_DB_KEY, initialBase, type BaseRecord } from "./data/base";
+import { BASE_DB_KEY, initialBase, type BaseActionInProgress, type BaseRecord, type BaseReinforcementAction, type BaseUpgradeInProgress } from "./data/base";
 import { RESOURCES_DB_KEY, initialResourceAmounts, type ResourceAmounts } from "./data/resources";
 import { CLOCK_DB_KEY, type ClockRecord } from "./data/clock";
 import { EXTRACTION_TILES_DB_KEY, type ExtractionTile } from "./data/extractionTiles";
@@ -63,16 +64,15 @@ import {
 } from "./engine/formulas";
 import {
   baseReinforcementHp,
-  baseReinforcementRepairDurationMs,
-  baseReinforcementUpgradeDurationMs,
-  baseRelocationCost,
   baseRepairCost,
+  baseRelocationCost,
   baseUpgradeCost,
   canRelocateBase,
+  isBaseBusy,
   isBaseRelocationComplete,
-  isBaseUpgradeComplete,
   maxReinforcementLevel,
   reinforcementUpgradeCost,
+  resolveBaseAction,
 } from "./engine/base";
 import { autoClaimTowerRange, isTileScoutable } from "./engine/territory";
 import {
@@ -102,6 +102,7 @@ import {
   availableCrossBowSnipers,
   availableJunkyardKnights,
   availableMilitia,
+  clampPartyDispatch,
   garrisonAt,
   garrisonDefense,
   resolveCapturedGarrisons,
@@ -192,6 +193,30 @@ interface GameState {
   tombstones: TombstonesRecord;
 }
 
+type StoredBaseRecord = Partial<BaseRecord> & {
+  upgrade?: BaseUpgradeInProgress | null;
+  reinforcementAction?: BaseReinforcementAction | null;
+};
+
+/** Maps pre–single-slot saves onto BaseRecord.action; level upgrade wins if both legacy fields were set (race corruption). */
+function migrateBaseAction(stored: StoredBaseRecord): BaseActionInProgress | null {
+  if (stored.action) return stored.action;
+  if (stored.upgrade) {
+    return { kind: "level_upgrade", targetLevel: stored.upgrade.targetLevel, startedAt: stored.upgrade.startedAt };
+  }
+  if (stored.reinforcementAction) {
+    if (stored.reinforcementAction.kind === "upgrade") {
+      return {
+        kind: "reinforcement_upgrade",
+        targetLevel: stored.reinforcementAction.targetLevel,
+        startedAt: stored.reinforcementAction.startedAt,
+      };
+    }
+    return { kind: "reinforcement_repair", startedAt: stored.reinforcementAction.startedAt };
+  }
+  return null;
+}
+
 /**
  * Spreads over initialBase() defaults, not just `?? initialBase(tweaks)` — an
  * existing save from before reinforcementLevel/currentHp existed would
@@ -200,8 +225,8 @@ interface GameState {
  * reinforcementLevel it had already invested in, not the fresh-base
  * baseline, so an old high-reinforcement save doesn't load looking damaged.
  */
-function resolveBase(tweaks: Tweaks, base: BaseRecord | undefined): BaseRecord {
-  const resolved = { ...initialBase(tweaks), ...base };
+function resolveBase(tweaks: Tweaks, base: StoredBaseRecord | undefined): BaseRecord {
+  const resolved = { ...initialBase(tweaks), ...base, action: migrateBaseAction(base ?? {}) };
   if (!base || base.currentHp === undefined) {
     resolved.currentHp = baseReinforcementHp(tweaks, resolved.reinforcementLevel);
   }
@@ -278,7 +303,7 @@ function buildGameState(
   const migrated = migrateLegacyTrainingQueues(data.barracksList ?? [], { ...initialUnits(), ...(data.units as LegacyUnitsRecord | undefined) });
   return {
     player: data.player,
-    world: data.world,
+    world: normalizeWorldRecord(data.world),
     territory: data.territory,
     base: resolveBase(tweaks, data.base),
     resources: data.resources,
@@ -304,7 +329,13 @@ function buildGameState(
     denAssaults: (data.denAssaults ?? []).map((a) => ({ ...a, resolvedIndex: a.resolvedIndex ?? 0 })),
     outposts: data.outposts ?? [],
     garrisonRecalls: data.garrisonRecalls ?? [],
-    lab: data.lab ?? createLab(data.world.seed, tweaks.game.grid_size, data.territory.base, resolvedDens, tweaks),
+    lab: data.lab ?? createLab(
+      data.world.seed,
+      resolveWorldGridSize(data.world, tweaks),
+      data.territory.base,
+      resolvedDens,
+      tweaks,
+    ),
     labAssaults: (data.labAssaults ?? []).map((a) => ({ ...a, resolvedIndex: a.resolvedIndex ?? 0 })),
     research: data.research ?? initialResearch(),
     tombstones: data.tombstones ?? [],
@@ -312,33 +343,9 @@ function buildGameState(
 }
 
 /**
- * Applies a completed reinforcement upgrade or repair — same virtual-clock-
- * threshold pattern as the wall action block in runTick, but for the base's
- * single reinforcementAction slot. An upgrade both raises reinforcementLevel
- * and fully restores HP to the new max (an upgrade doubles as a full
- * repair, so damage never has to be dealt with twice); a repair just
- * restores HP to the (unchanged) current max.
+ * Applies a completed outpost reinforcement upgrade or repair — outposts keep
+ * their own reinforcementAction slot (not merged with base level upgrades).
  */
-function resolveBaseReinforcementAction(tweaks: Tweaks, base: BaseRecord, virtualNow: number): BaseRecord {
-  const action = base.reinforcementAction;
-  if (!action) return base;
-  if (action.kind === "upgrade") {
-    const durationMs = baseReinforcementUpgradeDurationMs(tweaks, action.targetLevel);
-    if (!isTimerComplete(action.startedAt, durationMs, virtualNow)) return base;
-    return {
-      ...base,
-      reinforcementLevel: action.targetLevel,
-      currentHp: baseReinforcementHp(tweaks, action.targetLevel),
-      reinforcementAction: null,
-    };
-  }
-  const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
-  const durationMs = baseReinforcementRepairDurationMs(tweaks, base.currentHp, maxHp);
-  if (!isTimerComplete(action.startedAt, durationMs, virtualNow)) return base;
-  return { ...base, currentHp: maxHp, reinforcementAction: null };
-}
-
-/** Outpost equivalent of resolveBaseReinforcementAction. */
 function resolveOutpostReinforcementAction(tweaks: Tweaks, outpost: OutpostRecord, virtualNow: number): OutpostRecord {
   const action = outpost.reinforcementAction;
   if (!action) return outpost;
@@ -688,32 +695,21 @@ export default function App() {
       };
       const clock: ClockRecord = { lastTickAt: now, virtualNow };
 
-      // Base-level upgrade timer runs even while offline (TWEAKS.md), checked
-      // against the virtual clock (not `now`) so fast-forward speeds it up too.
-      // Spreads over current.game.base so a field like `relocation` — added
-      // after this ternary was first written — isn't silently dropped when a
-      // level-up completes the same tick a relocation happens to be pending.
-      const currentUpgrade = current.game.base.upgrade;
-      let baseAfterUpgrade: BaseRecord = current.game.base;
-      if (currentUpgrade && isBaseUpgradeComplete(current.tweaks, currentUpgrade, virtualNow)) {
-        baseAfterUpgrade = { ...current.game.base, level: currentUpgrade.targetLevel, upgrade: null };
-        pushToast({ message: `Base upgraded to level ${currentUpgrade.targetLevel}` });
+      const baseBeforeAction = current.game.base;
+      const baseAfterAction = resolveBaseAction(current.tweaks, baseBeforeAction, virtualNow);
+      if (baseBeforeAction.action?.kind === "level_upgrade" && !baseAfterAction.action) {
+        pushToast({ message: `Base upgraded to level ${baseAfterAction.level}` });
       }
 
-      // Reinforcement (HP) upgrade/repair timer — same virtual-clock-
-      // threshold pattern, resolved before hordeHubs below reads currentHp
-      // for this tick's combat.
-      const baseAfterReinforcement = resolveBaseReinforcementAction(current.tweaks, baseAfterUpgrade, virtualNow);
-
       // Base relocation timer — same virtual-clock-threshold pattern as the
-      // upgrade check above. This is the one place territory.base is ever
+      // action check above. This is the one place territory.base is ever
       // reassigned; resolved here (before hordeSpawns/advanceHordes/
       // garrisonDefense below) so the rest of this tick's horde logic already
       // sees wherever the base ends up. Everything else (towers, walls,
       // barracks, garrisons, dens) stays exactly where it was — only the
       // base coordinate moves, and the destination tile joins territory.owned
       // if it wasn't already (a base always sits on owned ground).
-      const relocation = baseAfterReinforcement.relocation;
+      const relocation = baseAfterAction.relocation;
       const relocationDistance = relocation ? axialDistance(current.game.territory.base, relocation.destination) : 0;
       const territoryAfterRelocation: TerritoryRecord =
         relocation && isBaseRelocationComplete(current.tweaks, relocation, relocationDistance, virtualNow)
@@ -726,8 +722,8 @@ export default function App() {
           : current.game.territory;
       const base: BaseRecord =
         territoryAfterRelocation !== current.game.territory
-          ? { ...baseAfterReinforcement, relocation: null }
-          : baseAfterReinforcement;
+          ? { ...baseAfterAction, relocation: null }
+          : baseAfterAction;
 
       // Structure upgrade/repair timers — same virtual-clock-threshold
       // pattern as the base-level check above, resolved per structure array.
@@ -798,7 +794,7 @@ export default function App() {
         )
         .map((d) => resolveConstruction(d, dockBuildDurationMs(current.tweaks), virtualNow));
       const scoutSkiffsAfterBuild = current.game.scoutSkiffs.map((s) =>
-        s.buildStartedAt !== null &&
+        s.buildStartedAt != null &&
         isTimerComplete(s.buildStartedAt, current.tweaks.docks.scout_skiff.build_time_minutes * 60_000, virtualNow)
           ? { ...s, buildStartedAt: null }
           : s,
@@ -808,11 +804,11 @@ export default function App() {
         scoutSkiffsAfterBuild,
         current.game.scoutedTiles,
         current.game.world.seed,
-        current.tweaks.game.grid_size,
+        resolveWorldGridSize(current.game.world, current.tweaks),
         elapsedSeconds,
       );
       const wanderingScoutsAfterBuild = current.game.wanderingScouts.map((s) =>
-        s.buildStartedAt !== null &&
+        s.buildStartedAt != null &&
         isTimerComplete(s.buildStartedAt, current.tweaks.units.wandering_scout.build_time_minutes * 60_000, virtualNow)
           ? { ...s, buildStartedAt: null }
           : s,
@@ -822,7 +818,7 @@ export default function App() {
         wanderingScoutsAfterBuild,
         scoutedTilesAfterSkiffs,
         current.game.world.seed,
-        current.tweaks.game.grid_size,
+        resolveWorldGridSize(current.game.world, current.tweaks),
         elapsedSeconds,
       );
 
@@ -868,7 +864,7 @@ export default function App() {
         current.game.world.seed,
         territoryAfterRelocation,
         outpostsAfterYield,
-        current.tweaks.game.grid_size,
+        resolveWorldGridSize(current.game.world, current.tweaks),
         now,
         elapsedSeconds,
       );
@@ -978,7 +974,7 @@ export default function App() {
         current.tweaks,
         towersAfterCapture,
         territory,
-        current.tweaks.game.grid_size,
+        resolveWorldGridSize(current.game.world, current.tweaks),
         hordeOccupiedKeys,
       );
 
@@ -1506,12 +1502,13 @@ export default function App() {
    * current map) — the only thing that varies between them is which player
    * identity and which world seed get reused vs regenerated.
    */
-  async function resetGame(player: Player, seed: number) {
+  async function resetGame(player: Player, seed: number, gridSize: number = DEFAULT_MAP_SIZE) {
     const current = bootRef.current;
     if (current.status !== "ready") return;
     const { tweaks, profileSlug } = current;
-    const world: WorldRecord = { seed };
-    const territory = createStartingTerritory(world.seed, tweaks.game.grid_size);
+    const mapTweaks = tweaksForMapSize(tweaks, gridSize);
+    const world: WorldRecord = { seed, gridSize };
+    const territory = createStartingTerritory(world.seed, gridSize);
     const base = initialBase(tweaks);
     const resources = initialResourceAmounts(tweaks);
     const clock: ClockRecord = { lastTickAt: Date.now(), virtualNow: Date.now() };
@@ -1526,7 +1523,7 @@ export default function App() {
     const storageLevels = initialStorageLevels();
     const storageUpgrades = initialStorageUpgrades();
     const noise = initialNoise(tweaks);
-    const dens = createDens(world.seed, tweaks.game.grid_size, territory.base, tweaks);
+    const dens = createDens(world.seed, gridSize, territory.base, mapTweaks);
     const hordes: HordesRecord = [];
     const expeditions: ExpeditionsRecord = [];
     const gameStatus = initialGameStatus();
@@ -1536,7 +1533,7 @@ export default function App() {
     const denAssaults: DenAssaultsRecord = [];
     const outposts: OutpostsRecord = [];
     const garrisonRecalls: GarrisonRecallsRecord = [];
-    const lab = createLab(world.seed, tweaks.game.grid_size, territory.base, dens, tweaks);
+    const lab = createLab(world.seed, gridSize, territory.base, dens, mapTweaks);
     const labAssaults: LabAssaultsRecord = [];
     const research = initialResearch();
     const tombstones: TombstonesRecord = [];
@@ -1623,12 +1620,13 @@ export default function App() {
     });
   }
 
-  async function handlePlayerCreated({ player, seed, profileSlug }: OnboardingResult) {
+  async function handlePlayerCreated({ player, seed, profileSlug, gridSize }: OnboardingResult) {
     const current = bootRef.current;
     if (current.status !== "ready") return;
 
+    let tweaks = current.tweaks;
     if (profileSlug !== current.profileSlug) {
-      const tweaks = await loadProfile(profileSlug);
+      tweaks = await loadProfile(profileSlug);
       initAssetConfig(profileSlug);
       resetTextureCache();
       const updated = { ...current, tweaks, profileSlug };
@@ -1637,7 +1635,9 @@ export default function App() {
     }
 
     window.history.replaceState(null, "", `/${profileSlug}`);
-    await resetGame(player, seed ?? generateSeed());
+    const effectiveGridSize = resolveGridSizeForNewGame(tweaks, gridSize);
+    const effectiveSeed = resolveSeedForNewGame(tweaks, seed, generateSeed);
+    await resetGame(player, effectiveSeed, effectiveGridSize);
   }
 
   function handleContinueGame() {
@@ -1673,13 +1673,13 @@ export default function App() {
   /** Same player AND same world seed — resets progress but replays the identical map, unlike handleStartNewSeed. Reachable from the New Game dialog on both GameScreen and GameOverScreen. */
   async function handleReplayCurrentGame() {
     if (boot.status !== "ready" || !boot.game) return;
-    await resetGame(boot.game.player, boot.game.world.seed);
+    await resetGame(boot.game.player, boot.game.world.seed, boot.game.world.gridSize ?? DEFAULT_MAP_SIZE);
   }
 
   /** Same player identity, a chosen (freshly-generated or player-entered) world seed. */
   async function handleStartNewSeed(seed: number) {
     if (boot.status !== "ready" || !boot.game) return;
-    await resetGame(boot.game.player, seed);
+    await resetGame(boot.game.player, seed, boot.game.world.gridSize ?? DEFAULT_MAP_SIZE);
   }
 
   /** Drops back to onboarding without touching persisted data yet — nothing is actually overwritten until the new player's form is submitted (handlePlayerCreated). */
@@ -3083,8 +3083,7 @@ export default function App() {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
 
-    if (game.base.upgrade) return { ok: false, reason: "Upgrade already in progress" };
-    if (game.base.reinforcementAction) return { ok: false, reason: "Already busy (reinforcement upgrade or repair in progress)" };
+    if (isBaseBusy(game.base)) return { ok: false, reason: "Already busy (upgrade or repair in progress)" };
 
     const targetLevel = game.base.level + 1;
     const cost = baseUpgradeCost(tweaks, targetLevel);
@@ -3098,16 +3097,20 @@ export default function App() {
     for (const [key, amount] of Object.entries(cost)) {
       resources[key as keyof ResourceAmounts] -= amount ?? 0;
     }
-    const base: BaseRecord = {
-      ...game.base,
-      upgrade: { targetLevel, startedAt: game.clock.virtualNow },
-    };
+    const startedAt = game.clock.virtualNow;
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "upgrade_extraction_tile", game.base.level) };
 
-    await Promise.all([set(RESOURCES_DB_KEY, resources), set(BASE_DB_KEY, base), set(NOISE_DB_KEY, noise)]);
-    setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, base, noise } } : prev,
-    );
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(NOISE_DB_KEY, noise)]);
+    setBoot((prev) => {
+      if (prev.status !== "ready" || !prev.game) return prev;
+      if (isBaseBusy(prev.game.base)) return prev;
+      const base: BaseRecord = {
+        ...prev.game.base,
+        action: { kind: "level_upgrade", targetLevel, startedAt },
+      };
+      void set(BASE_DB_KEY, base);
+      return { ...prev, game: { ...prev.game, resources, base, noise } };
+    });
     return { ok: true };
   }
 
@@ -3124,8 +3127,7 @@ export default function App() {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
 
-    if (game.base.reinforcementAction) return { ok: false, reason: "Already busy (upgrade or repair in progress)" };
-    if (game.base.upgrade) return { ok: false, reason: "Base level upgrade already in progress" };
+    if (isBaseBusy(game.base)) return { ok: false, reason: "Already busy (upgrade or repair in progress)" };
 
     const targetLevel = game.base.reinforcementLevel + 1;
     if (targetLevel > maxReinforcementLevel(game.base.level)) {
@@ -3143,16 +3145,20 @@ export default function App() {
     for (const [key, amount] of Object.entries(cost)) {
       resources[key as keyof ResourceAmounts] -= amount ?? 0;
     }
-    const base: BaseRecord = {
-      ...game.base,
-      reinforcementAction: { kind: "upgrade", targetLevel, startedAt: game.clock.virtualNow },
-    };
+    const startedAt = game.clock.virtualNow;
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "upgrade_extraction_tile", game.base.level) };
 
-    await Promise.all([set(RESOURCES_DB_KEY, resources), set(BASE_DB_KEY, base), set(NOISE_DB_KEY, noise)]);
-    setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, base, noise } } : prev,
-    );
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(NOISE_DB_KEY, noise)]);
+    setBoot((prev) => {
+      if (prev.status !== "ready" || !prev.game) return prev;
+      if (isBaseBusy(prev.game.base)) return prev;
+      const base: BaseRecord = {
+        ...prev.game.base,
+        action: { kind: "reinforcement_upgrade", targetLevel, startedAt },
+      };
+      void set(BASE_DB_KEY, base);
+      return { ...prev, game: { ...prev.game, resources, base, noise } };
+    });
     return { ok: true };
   }
 
@@ -3169,8 +3175,7 @@ export default function App() {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
 
-    if (game.base.reinforcementAction) return { ok: false, reason: "Already busy (upgrade or repair in progress)" };
-    if (game.base.upgrade) return { ok: false, reason: "Base level upgrade already in progress" };
+    if (isBaseBusy(game.base)) return { ok: false, reason: "Already busy (upgrade or repair in progress)" };
 
     const maxHp = baseReinforcementHp(tweaks, game.base.reinforcementLevel);
     if (game.base.currentHp >= maxHp) return { ok: false, reason: "Not damaged" };
@@ -3191,15 +3196,19 @@ export default function App() {
     for (const [key, amount] of Object.entries(cost)) {
       resources[key as keyof ResourceAmounts] -= amount ?? 0;
     }
-    const base: BaseRecord = {
-      ...game.base,
-      reinforcementAction: { kind: "repair", startedAt: game.clock.virtualNow },
-    };
+    const startedAt = game.clock.virtualNow;
 
-    await Promise.all([set(RESOURCES_DB_KEY, resources), set(BASE_DB_KEY, base)]);
-    setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, base } } : prev,
-    );
+    await Promise.all([set(RESOURCES_DB_KEY, resources)]);
+    setBoot((prev) => {
+      if (prev.status !== "ready" || !prev.game) return prev;
+      if (isBaseBusy(prev.game.base)) return prev;
+      const base: BaseRecord = {
+        ...prev.game.base,
+        action: { kind: "reinforcement_repair", startedAt },
+      };
+      void set(BASE_DB_KEY, base);
+      return { ...prev, game: { ...prev.game, resources, base } };
+    });
     return { ok: true };
   }
 
@@ -3312,7 +3321,7 @@ export default function App() {
     if (axialKey(destination) === axialKey(game.territory.base)) {
       return { ok: false, reason: "Already your base" };
     }
-    if (!isWithinMapBounds(destination, tweaks.game.grid_size)) return { ok: false, reason: "Out of bounds" };
+    if (!isWithinMapBounds(destination, resolveWorldGridSize(game.world, tweaks))) return { ok: false, reason: "Out of bounds" };
 
     const ownedKeys = new Set(game.territory.owned.map(axialKey));
     const scoutedKeys = new Set(game.scoutedTiles.map(axialKey));
@@ -3368,7 +3377,7 @@ export default function App() {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
 
-    if (!isWithinMapBounds(target, tweaks.game.grid_size)) return { ok: false, reason: "Out of bounds" };
+    if (!isWithinMapBounds(target, resolveWorldGridSize(game.world, tweaks))) return { ok: false, reason: "Out of bounds" };
 
     const ownedKeys = new Set(game.territory.owned.map(axialKey));
     if (ownedKeys.has(axialKey(target))) return { ok: false, reason: "Already owned" };
@@ -3391,7 +3400,7 @@ export default function App() {
       game.outposts,
       game.territory,
       game.scoutedTiles,
-      tweaks.game.grid_size,
+      resolveWorldGridSize(game.world, tweaks),
       target,
     );
     if (!route) {
@@ -3406,18 +3415,18 @@ export default function App() {
       return { ok: false, reason: "A horde blocks this route" };
     }
 
-    const partySize = militiaCommitted + junkyardKnightCommitted + crossBowSniperCommitted;
-    const countsValid =
-      Number.isInteger(militiaCommitted) &&
-      militiaCommitted >= 0 &&
-      militiaCommitted <= availableMilitia(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
-      Number.isInteger(junkyardKnightCommitted) &&
-      junkyardKnightCommitted >= 0 &&
-      junkyardKnightCommitted <= availableJunkyardKnights(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
-      Number.isInteger(crossBowSniperCommitted) &&
-      crossBowSniperCommitted >= 0 &&
-      crossBowSniperCommitted <= availableCrossBowSnipers(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults);
-    if (!countsValid) return { ok: false, reason: "Invalid unit counts" };
+    const party = clampPartyDispatch(
+      game.units,
+      game.garrisons,
+      game.expeditions,
+      game.denAssaults,
+      game.garrisonRecalls,
+      game.labAssaults,
+      militiaCommitted,
+      junkyardKnightCommitted,
+      crossBowSniperCommitted,
+    );
+    const partySize = party.militiaCommitted + party.junkyardKnightCommitted + party.crossBowSniperCommitted;
     if (partySize <= 0) return { ok: false, reason: "Commit at least one unit" };
 
     const provisionsCost = expeditionProvisionsCost(tweaks, partySize, route.cost);
@@ -3429,9 +3438,9 @@ export default function App() {
       id: `expedition-${axialKey(target)}-${departedAt}`,
       target,
       path: route.path,
-      militiaCommitted,
-      junkyardKnightCommitted,
-      crossBowSniperCommitted,
+      militiaCommitted: party.militiaCommitted,
+      junkyardKnightCommitted: party.junkyardKnightCommitted,
+      crossBowSniperCommitted: party.crossBowSniperCommitted,
       departedAt,
       arriveAt: departedAt + expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, game.research)),
       resolvedIndex: 0,
@@ -3477,7 +3486,7 @@ export default function App() {
       game.outposts,
       game.territory,
       game.scoutedTiles,
-      tweaks.game.grid_size,
+      resolveWorldGridSize(game.world, tweaks),
       den.coord,
     );
     if (!route) {
@@ -3489,18 +3498,18 @@ export default function App() {
       return { ok: false, reason: "A horde blocks this route" };
     }
 
-    const partySize = militiaCommitted + junkyardKnightCommitted + crossBowSniperCommitted;
-    const countsValid =
-      Number.isInteger(militiaCommitted) &&
-      militiaCommitted >= 0 &&
-      militiaCommitted <= availableMilitia(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
-      Number.isInteger(junkyardKnightCommitted) &&
-      junkyardKnightCommitted >= 0 &&
-      junkyardKnightCommitted <= availableJunkyardKnights(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
-      Number.isInteger(crossBowSniperCommitted) &&
-      crossBowSniperCommitted >= 0 &&
-      crossBowSniperCommitted <= availableCrossBowSnipers(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults);
-    if (!countsValid) return { ok: false, reason: "Invalid unit counts" };
+    const party = clampPartyDispatch(
+      game.units,
+      game.garrisons,
+      game.expeditions,
+      game.denAssaults,
+      game.garrisonRecalls,
+      game.labAssaults,
+      militiaCommitted,
+      junkyardKnightCommitted,
+      crossBowSniperCommitted,
+    );
+    const partySize = party.militiaCommitted + party.junkyardKnightCommitted + party.crossBowSniperCommitted;
     if (partySize <= 0) return { ok: false, reason: "Commit at least one unit" };
 
     const provisionsCost = expeditionProvisionsCost(tweaks, partySize, route.cost);
@@ -3513,9 +3522,9 @@ export default function App() {
       denId,
       target: den.coord,
       path: route.path,
-      militiaCommitted,
-      junkyardKnightCommitted,
-      crossBowSniperCommitted,
+      militiaCommitted: party.militiaCommitted,
+      junkyardKnightCommitted: party.junkyardKnightCommitted,
+      crossBowSniperCommitted: party.crossBowSniperCommitted,
       departedAt,
       arriveAt: departedAt + expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, game.research)),
       resolvedIndex: 0,
@@ -3559,7 +3568,7 @@ export default function App() {
       game.outposts,
       game.territory,
       game.scoutedTiles,
-      tweaks.game.grid_size,
+      resolveWorldGridSize(game.world, tweaks),
       game.lab.coord,
     );
     if (!route) {
@@ -3571,20 +3580,18 @@ export default function App() {
       return { ok: false, reason: "A horde blocks this route" };
     }
 
-    const partySize = militiaCommitted + junkyardKnightCommitted + crossBowSniperCommitted;
-    const countsValid =
-      Number.isInteger(militiaCommitted) &&
-      militiaCommitted >= 0 &&
-      militiaCommitted <= availableMilitia(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
-      Number.isInteger(junkyardKnightCommitted) &&
-      junkyardKnightCommitted >= 0 &&
-      junkyardKnightCommitted <=
-        availableJunkyardKnights(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
-      Number.isInteger(crossBowSniperCommitted) &&
-      crossBowSniperCommitted >= 0 &&
-      crossBowSniperCommitted <=
-        availableCrossBowSnipers(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults);
-    if (!countsValid) return { ok: false, reason: "Invalid unit counts" };
+    const party = clampPartyDispatch(
+      game.units,
+      game.garrisons,
+      game.expeditions,
+      game.denAssaults,
+      game.garrisonRecalls,
+      game.labAssaults,
+      militiaCommitted,
+      junkyardKnightCommitted,
+      crossBowSniperCommitted,
+    );
+    const partySize = party.militiaCommitted + party.junkyardKnightCommitted + party.crossBowSniperCommitted;
     if (partySize <= 0) return { ok: false, reason: "Commit at least one unit" };
 
     const provisionsCost = expeditionProvisionsCost(tweaks, partySize, route.cost);
@@ -3596,9 +3603,9 @@ export default function App() {
       id: `labAssault-${departedAt}`,
       target: game.lab.coord,
       path: route.path,
-      militiaCommitted,
-      junkyardKnightCommitted,
-      crossBowSniperCommitted,
+      militiaCommitted: party.militiaCommitted,
+      junkyardKnightCommitted: party.junkyardKnightCommitted,
+      crossBowSniperCommitted: party.crossBowSniperCommitted,
       departedAt,
       arriveAt: departedAt + expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, game.research)),
       resolvedIndex: 0,
@@ -3730,7 +3737,7 @@ export default function App() {
       game.outposts,
       game.territory,
       game.scoutedTiles,
-      tweaks.game.grid_size,
+      resolveWorldGridSize(game.world, tweaks),
       coord,
     );
     if (!route) return { ok: false, reason: "No known route — make sure you have a barracks" };

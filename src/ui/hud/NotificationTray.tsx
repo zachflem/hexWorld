@@ -6,16 +6,18 @@ import type { ExpeditionsRecord } from "../../data/expeditions";
 import type { DenAssaultsRecord } from "../../data/denAssaults";
 import type { LabAssaultsRecord } from "../../data/labAssaults";
 import type { GarrisonRecallsRecord } from "../../data/garrisonRecalls";
-import { Panel } from "../primitives/Panel";
+import { CollapsibleNotificationRow } from "./CollapsibleNotificationRow";
 import { formatDuration } from "../format";
 
 function TrayRow({
+  rowKey,
   icon,
   label,
   coord,
   remaining,
   onRush,
 }: {
+  rowKey: string;
   icon: ReactNode;
   label: string;
   coord: Axial;
@@ -23,8 +25,11 @@ function TrayRow({
   onRush?: () => void;
 }) {
   return (
-    <Panel style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.65rem", fontSize: "0.8rem" }}>
-      {icon}
+    <CollapsibleNotificationRow
+      rowKey={rowKey}
+      icon={icon}
+      panelStyle={{ padding: "0.4rem 0.65rem", fontSize: "0.8rem" }}
+    >
       <span>
         {label} ({coord.q}, {coord.r})
       </span>
@@ -49,7 +54,7 @@ function TrayRow({
         </button>
       )}
       <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.7)" }}>{formatDuration(remaining)}</span>
-    </Panel>
+    </CollapsibleNotificationRow>
   );
 }
 
@@ -82,14 +87,22 @@ export function NotificationTray({
   return (
     <>
       {siegedDens.map((den) => (
-        <TrayRow key={`siege-${den.coord.q},${den.coord.r}`} icon={<ShieldAlert size={14} />} label="Den siege holding" coord={den.coord} remaining={den.holdRemainingMs} />
+        <TrayRow
+          key={`siege-${den.coord.q},${den.coord.r}`}
+          rowKey={`siege-${den.coord.q},${den.coord.r}`}
+          icon={<ShieldAlert size={14} />}
+          label="Den siege holding"
+          coord={den.coord}
+          remaining={den.holdRemainingMs}
+        />
       ))}
       {countdowns.map((c) => (
-        <TrayRow key={c.key} icon={c.icon} label={c.label} coord={c.coord} remaining={c.remainingMs} onRush={c.onRush} />
+        <TrayRow key={c.key} rowKey={c.key} icon={c.icon} label={c.label} coord={c.coord} remaining={c.remainingMs} onRush={c.onRush} />
       ))}
       {expeditions.map((expedition) => (
         <TrayRow
           key={expedition.id}
+          rowKey={expedition.id}
           icon={<Footprints size={14} />}
           label="Expedition"
           coord={expedition.target}
@@ -99,6 +112,7 @@ export function NotificationTray({
       {denAssaults.map((assault) => (
         <TrayRow
           key={assault.id}
+          rowKey={assault.id}
           icon={<Skull size={14} />}
           label="Den assault"
           coord={assault.target}
@@ -108,6 +122,7 @@ export function NotificationTray({
       {labAssaults.map((assault) => (
         <TrayRow
           key={assault.id}
+          rowKey={assault.id}
           icon={<FlaskConical size={14} />}
           label="Lab assault"
           coord={assault.target}
@@ -117,6 +132,7 @@ export function NotificationTray({
       {garrisonRecalls.map((recall) => (
         <TrayRow
           key={recall.id}
+          rowKey={recall.id}
           icon={<Undo2 size={14} />}
           label="Garrison recalling"
           coord={recall.coord}

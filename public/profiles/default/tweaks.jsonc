@@ -34,7 +34,9 @@
   // GAME / WORLD
   // --------------------------------------------------------------------------
   "game": {
-    "grid_size": 128,                 // 128x128 hex grid
+    "grid_size": 128,                 // reference map width; player picks 48/96/128 in onboarding unless grid_size_locked
+    // "grid_size_locked": true,       // scenario profiles: force grid_size, hide onboarding map-size picker
+    // "world_seed": 12345,            // scenario profiles: force this seed, lock onboarding seed field
     "tick_interval_seconds": 10,      // server/client tick — resources & horde movement evaluated every 10s
     "resource_accumulation_precision_seconds": 1 // internally accrues per-second, displayed/committed per tick
   },

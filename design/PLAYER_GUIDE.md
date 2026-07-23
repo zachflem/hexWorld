@@ -11,6 +11,7 @@ This guide describes the game **as it currently plays**.
 When you first open the game (or choose **Start as a new player** after wiping progress), you'll page through a short **field manual** — cover, registration, a few story pages, then a send-off — before the map loads.
 
 On the registration page you'll enter a **name** and a **colour** (used to tint your base and territory outline on the map). Expand **Show Advanced Options** (collapsed by default) for:
+- **Map size** — 48×48 (quick run), 96×96, or 128×128 (default). Smaller maps have fewer dens and shorter distances; the same seed at different sizes is a different world. Custom difficulty profiles can **fix** map size (and seed) for authored scenarios — those fields show as read-only when locked.
 - **Difficulty** — Standard (`default`) or Hard (`hard`); each profile changes balance numbers and may swap some sprites, with missing art falling back to Standard.
 - **Seed** — a number that fully determines the map layout, terrain, and everything on it. Leave it blank for a random map, or enter a specific number to replay a map you (or someone else) has seen before; the same seed always generates the exact same world.
 - **Recent seeds** — your last five seeds, for quick replay.
@@ -36,7 +37,7 @@ All three wipe current progress, so use them deliberately.
 
 ## The world
 
-- The map is a **128×128 grid of hexes**, procedurally generated from your seed.
+- The map is a procedurally generated hex grid (**48×48**, **96×96**, or **128×128** — chosen in advanced registration; default 128), seeded from your world seed.
 - **Terrain types:** grassland, forest, mountain, shore, and water. Each restricts what you can build there.
 - **Transition tiles** occur where two terrain types border each other — either terrain's structures can be built there, but at **half yield**. The game won't tell you this outright; scouting one only gives a cryptic hint that "something's different" about it.
 - **Fog of war:** you start with full visibility of your own territory. Beyond that, visibility fades in rings — heavily shaded just past your border, barely visible past that, and fully hidden further out. Scouted tiles reveal themselves the same way owned tiles do, but stay visually distinct (it's knowledge, not ownership).
@@ -82,7 +83,7 @@ The base is a hub, not a fighting unit — it holds your storage, tech upgrades,
 
 - **Base level** caps how far every other structure type can be upgraded, sets your **build slot cap** (the total number of structures you're allowed to have standing at once — 10 at level 1, +10 per level), and widens how far from your territory you're allowed to attack/claim tiles.
 - **Base upgrades** cost resources and take real time — they keep counting down even while you're offline.
-- **Reinforcement HP** is a separate, upgradeable pool defending the base tile itself. If a horde deals more damage than your current reinforcement HP (plus any garrison stationed there) can absorb, **the base falls and the run ends.** A successful defense still costs HP, so repeated assaults need repair even if none of them individually break through.
+- **Reinforcement HP** is a separate, upgradeable pool defending the base tile itself. Upgrading or repairing it also takes real time (offline-safe). **Only one** base level upgrade, reinforcement upgrade, or reinforcement repair can run at a time — you can't stack a reinforcement job on top of a base-level upgrade. If a horde deals more damage than your current reinforcement HP (plus any garrison stationed there) can absorb, **the base falls and the run ends.** A successful defense still costs HP, so repeated assaults need repair even if none of them individually break through.
 - You can also **relocate your base** to a different owned tile once you meet the base-level requirement (costs resources and time).
 
 ---
@@ -175,6 +176,19 @@ Somewhere out past every zombie den — deliberately farther out than any of the
 **Securing it** works like assaulting a den — commit a party of militia/knights/snipers. The guardian is by far the toughest fight in the game (its defense is set well above even a max-level den, deliberately — this is meant to demand a real, late-game army), and unlike a den there's no hold period afterward: win the fight and the game ends immediately in victory.
 
 Clearing dens is never *required* to win — a lucky, exploration-heavy game could find and secure the lab without ever sieging one. But den-clearing stays valuable in its own right: a guaranteed clue per clear, a new outpost, and the economy/army growth needed to eventually take on the guardian.
+
+---
+
+## Notifications
+
+The **top-right** of the screen shows active timers and short event messages:
+
+- **Timer rows** — one per in-flight build, upgrade, repair, training queue, expedition, assault, recall, or den siege hold. Each shows an icon, what it is, coordinates, and time remaining (plus **Rush** when you can spend power to finish early).
+- **Toasts** — brief one-off notices (e.g. base upgraded, den cleared, new lab clue).
+
+When a row appears it stays **fully expanded for 5 seconds**, then the text/countdown slides away and only the **icon** remains as a small peek along the right edge. **Tap the icon** to expand it again. Timer rows keep peeking until that action finishes; toasts fade out on their own after a short peek.
+
+When several timers are running, collapsed icons stack in that column so you can see at a glance how much is in flight.
 
 ---
 

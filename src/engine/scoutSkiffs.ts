@@ -40,7 +40,7 @@ export function advanceScoutSkiffs(
   const newlyScouted: Axial[] = [];
 
   const nextSkiffs = skiffs.map((skiff) => {
-    if (skiff.buildStartedAt !== null) return skiff;
+    if (skiff.buildStartedAt != null) return skiff;
 
     let coord = skiff.coord;
     let prevCoord = skiff.prevCoord;
