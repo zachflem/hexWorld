@@ -47,13 +47,13 @@ function StatChip({
   /** Hairline rule before this chip so the row reads as one instrument cluster. */
   separator?: boolean;
 }) {
+  const showDelta = delta !== undefined && Math.round(delta) !== 0;
   return (
     <span
       style={{
         display: "inline-flex",
-        flexDirection: "column",
-        alignItems: "flex-start",
-        gap: "0.05rem",
+        alignItems: "center",
+        gap: "0.35rem",
         fontSize: "1rem",
         color: "white",
         lineHeight: 1.15,
@@ -64,24 +64,29 @@ function StatChip({
       }}
       title={title}
     >
-      <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
-        {icon}
-        <span style={{ fontWeight: 600 }}>{value}</span>
+      {icon}
+      <span style={{ position: "relative", fontWeight: 600 }}>
+        {value}
+        {showDelta && (
+          <span
+            style={{
+              position: "absolute",
+              left: "100%",
+              bottom: "70%",
+              marginLeft: "0.15rem",
+              fontSize: "0.72rem",
+              lineHeight: 1,
+              fontWeight: 500,
+              whiteSpace: "nowrap",
+              color: delta > 0 ? "#81c784" : "#ef5350",
+              pointerEvents: "none",
+            }}
+          >
+            {delta > 0 ? "+" : ""}
+            {Math.round(delta)}
+          </span>
+        )}
       </span>
-      {delta !== undefined && Math.round(delta) !== 0 && (
-        <span
-          style={{
-            alignSelf: "flex-end",
-            fontSize: "0.72rem",
-            lineHeight: 1,
-            fontWeight: 500,
-            color: delta > 0 ? "#81c784" : "#ef5350",
-          }}
-        >
-          {delta > 0 ? "+" : ""}
-          {Math.round(delta)}
-        </span>
-      )}
     </span>
   );
 }

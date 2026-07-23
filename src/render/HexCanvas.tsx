@@ -145,6 +145,8 @@ function contrastingInk(hex: string): string {
 /** Imperative handle exposed via ref, since pan/zoom are internal state here — lets a parent (e.g. a "recenter" button in the header) drive the view without lifting that state up. */
 export interface HexCanvasHandle {
   recenterOnBase: () => void;
+  /** Zoom toward the canvas centre by `factor` (>1 in, <1 out), clamped to MIN/MAX_ZOOM. */
+  zoomBy: (factor: number) => void;
   /** Current on-screen pixel position of a tile's center, or null before the initial center-on-base pan has been computed. Recomputed fresh on every call against the latest pan/zoom — safe to call every frame (e.g. to keep a DOM overlay glued to a selected tile). */
   getTileScreenPosition: (coord: Axial) => { x: number; y: number } | null;
 }
@@ -425,6 +427,12 @@ export const HexCanvas = forwardRef<
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<{ x: number; y: number } | null>(null);
+  // Keep latest zoom/pan in refs so imperative zoomBy (hold-to-repeat) doesn't
+  // stack steps on a stale closure between React commits.
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  zoomRef.current = zoom;
+  panRef.current = pan;
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   // Mobile pinch-to-zoom — every currently-touching pointer's latest screen
   // position, keyed by pointerId (pointer events unify mouse/touch/pen, so
@@ -480,12 +488,33 @@ export const HexCanvas = forwardRef<
       recenterOnBase() {
         const canvas = canvasRef.current;
         if (!canvas) return;
+        const currentZoom = zoomRef.current;
         const basePixel = axialToPixel(base, BASE_HEX_SIZE);
-        setZoom(1);
-        setPan({ x: canvas.width / 2 - basePixel.x, y: canvas.height / 2 - basePixel.y });
+        setPan({
+          x: canvas.width / 2 - basePixel.x * currentZoom,
+          y: canvas.height / 2 - basePixel.y * currentZoom,
+        });
+      },
+      zoomBy(factor: number) {
+        const canvas = canvasRef.current;
+        const currentPan = panRef.current;
+        const currentZoom = zoomRef.current;
+        if (!canvas || currentPan === null) return;
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const worldX = (centerX - currentPan.x) / currentZoom;
+        const worldY = (centerY - currentPan.y) / currentZoom;
+        const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, currentZoom * factor));
+        const nextPan = { x: centerX - worldX * nextZoom, y: centerY - worldY * nextZoom };
+        zoomRef.current = nextZoom;
+        panRef.current = nextPan;
+        setPan(nextPan);
+        setZoom(nextZoom);
       },
       getTileScreenPosition(coord: Axial) {
-        if (pan === null) return null;
+        const currentPan = panRef.current;
+        const currentZoom = zoomRef.current;
+        if (currentPan === null) return null;
         const canvas = canvasRef.current;
         if (!canvas) return null;
         // pan/zoom operate in the canvas's own backing-buffer coordinate
@@ -496,10 +525,13 @@ export const HexCanvas = forwardRef<
         // (e.g. up and left, since the header above it pushes it down).
         const rect = canvas.getBoundingClientRect();
         const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
-        return { x: worldPixel.x * zoom + pan.x + rect.left, y: worldPixel.y * zoom + pan.y + rect.top };
+        return {
+          x: worldPixel.x * currentZoom + currentPan.x + rect.left,
+          y: worldPixel.y * currentZoom + currentPan.y + rect.top,
+        };
       },
     }),
-    [base, zoom, pan],
+    [base],
   );
 
   useEffect(() => {

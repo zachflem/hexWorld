@@ -1,5 +1,5 @@
 import { forwardRef } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, MouseEvent, PointerEvent, ReactNode } from "react";
 
 /**
  * Vertically-symmetric hexagon (point at top/bottom) — the shared shape for
@@ -16,6 +16,11 @@ export const HexButton = forwardRef<
   {
     icon: ReactNode;
     onClick?: () => void;
+    onPointerDown?: (event: PointerEvent<HTMLButtonElement>) => void;
+    onPointerUp?: (event: PointerEvent<HTMLButtonElement>) => void;
+    onPointerCancel?: (event: PointerEvent<HTMLButtonElement>) => void;
+    onLostPointerCapture?: (event: PointerEvent<HTMLButtonElement>) => void;
+    onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
     size?: number;
     /** Highlighted state — e.g. the currently-open panel's trigger, or build-mode being active. Ignored when `highlight` is set. */
     active?: boolean;
@@ -26,7 +31,21 @@ export const HexButton = forwardRef<
     style?: CSSProperties;
   }
 >(function HexButton(
-  { icon, onClick, size = HEX_BUTTON_DEFAULT_SIZE, active = false, highlight, disabled = false, title, style },
+  {
+    icon,
+    onClick,
+    onPointerDown,
+    onPointerUp,
+    onPointerCancel,
+    onLostPointerCapture,
+    onContextMenu,
+    size = HEX_BUTTON_DEFAULT_SIZE,
+    active = false,
+    highlight,
+    disabled = false,
+    title,
+    style,
+  },
   ref,
 ) {
   return (
@@ -34,6 +53,11 @@ export const HexButton = forwardRef<
       ref={ref}
       type="button"
       onClick={onClick}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onLostPointerCapture={onLostPointerCapture}
+      onContextMenu={onContextMenu}
       disabled={disabled}
       title={title}
       aria-label={title}

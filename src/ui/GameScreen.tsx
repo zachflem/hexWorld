@@ -163,8 +163,10 @@ import {
 import { ResearchPanel } from "./ResearchPanel";
 import { NotificationTray } from "./hud/NotificationTray";
 import { ResourceHud } from "./hud/ResourceHud";
+import { MapControls } from "./hud/MapControls";
 import { ToastStack, type ToastRecord } from "./hud/Toast";
 import { Panel } from "./primitives/Panel";
+import { StatRow } from "./primitives/StatRow";
 import { PartyDispatchForm } from "./primitives/PartyDispatchForm";
 import { TrainForm } from "./primitives/TrainForm";
 import { GarrisonForm } from "./primitives/GarrisonForm";
@@ -1684,7 +1686,7 @@ export function GameScreen({
             key: o.resource,
             icon: resourceIcon(o.resource),
             title: `${o.resource} → L${o.level}`,
-            detail: formatCost(o.cost),
+            detail: `${formatCost(o.cost)}, cap ${o.capacity}`,
             disabled: !o.affordable,
             upgradeAvailable: o.affordable,
             onClick: () => handleUpgradeStorage(o.resource),
@@ -2446,18 +2448,52 @@ export function GameScreen({
   }
 
   /**
-   * The passive status info that doesn't have a "first glance" home
-   * elsewhere on the map/HUD (unlike tombstones, HP/durability bars, and the
-   * siege countdown, which do) — auto-flow/connected status for extraction
-   * tiles, noise floor contribution, and tower range/damage. Returns null
-   * when the selected tile has none of these, so the sheet's Info tab only
-   * appears when there's something to show. Countdown-style status (base
-   * relocation, every build/upgrade/repair timer) lives in the notification
-   * tray instead — see activeCountdownRows below.
+   * Passive status for the sheet Info tab. Extraction connection, noise floor
+   * contribution, and tower range/damage live here because they have no other
+   * home. Base HP/noise/storage also belong here: the map HP bar is glance-only,
+   * desktop hover is suppressed while the tile is selected, and storage fill vs
+   * caps appear nowhere else on the HUD. Tombstones and siege countdowns stay
+   * map/tray-first. Countdown timers (build/upgrade/repair/relocation) live in
+   * the notification tray — see activeCountdownRows. Returns null when the
+   * selected tile has nothing to show, so the Info tab only appears when needed.
    */
   function infoSheetContent(): ReactNode | null {
     if (!selected) return null;
     const rows: ReactNode[] = [];
+    if (selectedIsBase) {
+      const status = base.relocation
+        ? "Relocating…"
+        : base.reinforcementAction
+          ? base.reinforcementAction.kind === "upgrade"
+            ? `Upgrading reinforcement to L${base.reinforcementAction.targetLevel}…`
+            : "Repairing…"
+          : base.upgrade
+            ? `Upgrading to L${base.upgrade.targetLevel}…`
+            : "Operational";
+      const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
+      rows.push(
+        <div key="base-status">{status}</div>,
+        <StatRow
+          key="base-hp"
+          label={`HP (L${base.reinforcementLevel})`}
+          current={base.currentHp}
+          max={maxHp}
+        />,
+        <div key="base-noise">Noise cap: {noiseCap(tweaks, base.level)}db</div>,
+      );
+      for (const resource of RESOURCE_ORDER) {
+        const level = storageLevels[resource];
+        rows.push(
+          <StatRow
+            key={`storage-${resource}`}
+            icon={resourceIcon(resource, 18)}
+            label={`${capitalize(resource)} · L${level}`}
+            current={resources[resource]}
+            max={storageCapacity(tweaks, level)}
+          />,
+        );
+      }
+    }
     if (selectedTile) {
       rows.push(
         <div key="flow">{selectedConnected ? "Connected — auto-flowing to base" : "Not connected — manual collection only"}</div>,
@@ -2877,6 +2913,11 @@ export function GameScreen({
             onClick: () => toggleOpenPanel("settings"),
           },
         ]}
+      />
+      <MapControls
+        onZoomIn={() => hexCanvasRef.current?.zoomBy(1.1)}
+        onZoomOut={() => hexCanvasRef.current?.zoomBy(1 / 1.1)}
+        onRecenterOnBase={() => hexCanvasRef.current?.recenterOnBase()}
       />
       {openPanel === "garrisons" && (
         <GarrisonsPanel garrisons={garrisons} garrisonRecalls={garrisonRecalls} now={now} onClose={() => setOpenPanel(null)} />

@@ -107,7 +107,7 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 
 ### UI
 
-*(No open UI items — see Recently resolved for #7, #13.)*
+*(No open UI items — see Recently resolved for #7, #13, #15–#17.)*
 
 ### UX
 
@@ -117,6 +117,9 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 <details>
 <summary><strong>Recently resolved</strong></summary>
 
+- **Map camera controls.** (#17) Resolved 2026-07-23 — bottom-left hex stack: zoom in/out (hold to repeat) and recenter on base (keeps current zoom); same recenter as Settings. **Refs:** [`src/ui/hud/MapControls.tsx`](../src/ui/hud/MapControls.tsx), [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx) `zoomBy` / `recenterOnBase`, [PLAYER_GUIDE.md](PLAYER_GUIDE.md).
+- **Resource HUD rate chip layout.** (#16) Resolved 2026-07-23 — net ±/sec chip floats at top-right of the amount instead of wrapping onto a new row and shifting the HUD. **Refs:** [`src/ui/hud/ResourceHud.tsx`](../src/ui/hud/ResourceHud.tsx).
+- **Base sheet missing status.** (#15) Resolved 2026-07-23 — base tile sheet Info tab shows operational status, reinforcement HP, noise cap, and per-resource storage fill vs capacity; Storage upgrade rows show current cap. **Refs:** [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx) `infoSheetContent`, [PLAYER_GUIDE.md](PLAYER_GUIDE.md).
 - **Early game pacing too slow.** (#12) Resolved 2026-07-23 — small-tier extraction yields raised ~50%; every flat build/upgrade timer shaved 1 minute. **Refs:** [`public/profiles/default/tweaks.jsonc`](../public/profiles/default/tweaks.jsonc), [TWEAKS.md](TWEAKS.md).
 - **Building sprite vertical alignment.** (#7) Resolved 2026-07-23 — bottom-anchored structure icons via [`src/render/structurePlacement.ts`](../src/render/structurePlacement.ts) and `drawPlacedStructureIcon` in [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx).
 - **Extraction upgrade badge and stockpile cue.** (#13) Resolved 2026-07-23 — upgrade badge via `upgradeAvailableKeysFor()`; stockpile urgency on collect pin ([`CollectPinOverlay`](../src/ui/menu/CollectPinOverlay.tsx), [`stockpileState.ts`](../src/render/stockpileState.ts)).
@@ -174,7 +177,7 @@ Tech-tree upgrade path for manual outpost ↔ base resource transfer (manual →
 
 ### Touch structure stats (#P5)
 
-Mobile-friendly equivalent of the M20 desktop hover tooltip; Info hex is a partial fallback today. **Refs:** [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx), Milestone 20. **Next step:** UX sketch for touch/long-press vs persistent panel.
+Mobile-friendly equivalent of the M20 desktop hover tooltip; Info hex is a partial fallback today. Base tile sheet **Info** tab now covers base status ([#15](#bugs--testing-feedback)); other structures still need a touch equivalent. **Refs:** [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx), Milestone 20. **Next step:** UX sketch for touch/long-press vs persistent panel.
 
 ### Water resource transport (#P6)
 
