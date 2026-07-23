@@ -65,12 +65,15 @@ import {
 import {
   BASE_HUB_BUSY_REASON,
   STRUCTURE_BUSY_REASON,
-  isBarracksBusy,
-  isDockBusy,
+  hasAnyStructureTask,
+  countDockTasks,
+  isBarracksAtTaskCap,
+  isBaseHubAtTaskCap,
+  isDockAtTaskCap,
   isHordeRepairBlocked,
-  isLandStructureBusy,
+  isLandStructureAtTaskCap,
   isOutpostReinforcementBusy,
-  isWallBusy,
+  isWallAtTaskCap,
 } from "./engine/structureBusy";
 import {
   baseReinforcementHp,
@@ -78,7 +81,6 @@ import {
   baseRelocationCost,
   baseUpgradeCost,
   canRelocateBase,
-  isBaseHubBusy,
   isBaseRelocationComplete,
   maxReinforcementLevel,
   reinforcementUpgradeCost,
@@ -1783,7 +1785,7 @@ export default function App() {
     const tile = game.extractionTiles.find((t) => axialKey(t.coord) === axialKey(coord));
     if (!tile) return { ok: false, reason: "No extraction tile here" };
 
-    if (isLandStructureBusy(tile)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (isLandStructureAtTaskCap(tile, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const target = nextTier(tile.tier);
     if (!target) return { ok: false, reason: "Already at max tier" };
@@ -1827,7 +1829,7 @@ export default function App() {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
 
-    if (isBaseHubBusy(game.base, game.storageUpgrades)) {
+    if (isBaseHubAtTaskCap(game.base, game.storageUpgrades, game.research)) {
       return { ok: false, reason: BASE_HUB_BUSY_REASON };
     }
     if (game.storageUpgrades[resource as ResourceType]) return { ok: false, reason: STRUCTURE_BUSY_REASON };
@@ -1853,7 +1855,7 @@ export default function App() {
     await Promise.all([set(RESOURCES_DB_KEY, resources), set(STORAGE_UPGRADES_DB_KEY, storageUpgrades)]);
     setBoot((prev) => {
       if (prev.status !== "ready" || !prev.game) return prev;
-      if (isBaseHubBusy(prev.game.base, prev.game.storageUpgrades)) return prev;
+      if (isBaseHubAtTaskCap(prev.game.base, prev.game.storageUpgrades, prev.game.research)) return prev;
       if (prev.game.storageUpgrades[resource as ResourceType]) return prev;
       return { ...prev, game: { ...prev.game, resources, storageUpgrades } };
     });
@@ -1985,7 +1987,7 @@ export default function App() {
     const dock = game.docks.find((d) => axialKey(d.coord) === axialKey(coord));
     if (!dock) return { ok: false, reason: "No dock here" };
     if (dock.fishingBoat) return { ok: false, reason: "Fishing boat already built" };
-    if (isDockBusy(dock)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (isDockAtTaskCap(dock, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const cost = tweaks.docks.fishing_boat.cost;
     for (const [key, amount] of Object.entries(cost)) {
@@ -2022,7 +2024,7 @@ export default function App() {
 
     const dock = game.docks.find((d) => axialKey(d.coord) === axialKey(coord));
     if (!dock) return { ok: false, reason: "No dock here" };
-    if (isDockBusy(dock)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (isDockAtTaskCap(dock, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const existingAtDock = game.scoutSkiffs.filter((s) => axialKey(s.homeDockCoord) === axialKey(coord)).length;
     if (existingAtDock >= tweaks.docks.scout_skiff.max_per_dock) {
@@ -2086,7 +2088,7 @@ export default function App() {
 
     const barracks = game.barracksList.find((b) => axialKey(b.coord) === axialKey(coord));
     if (!barracks) return { ok: false, reason: "No barracks here" };
-    if (isBarracksBusy(barracks)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (isBarracksAtTaskCap(barracks, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const existingAtBarracks = game.wanderingScouts.filter((s) => axialKey(s.homeBarracksCoord) === axialKey(coord)).length;
     if (existingAtBarracks >= tweaks.units.wandering_scout.max_per_barracks) {
@@ -2207,7 +2209,7 @@ export default function App() {
     const tile = game.pathTiles.find((t) => axialKey(t.coord) === axialKey(coord));
     if (!tile) return { ok: false, reason: "No path here" };
 
-    if (isLandStructureBusy(tile)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (isLandStructureAtTaskCap(tile, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const target = nextPathTier(tile.tier);
     if (!target) return { ok: false, reason: "Already at max tier" };
@@ -2311,7 +2313,7 @@ export default function App() {
     const tower = game.towers.find((t) => axialKey(t.coord) === axialKey(coord));
     if (!tower) return { ok: false, reason: "No tower here" };
 
-    if (isLandStructureBusy(tower)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (isLandStructureAtTaskCap(tower, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const target = nextTowerLevel(tower.level);
     if (!target) return { ok: false, reason: "Already at max level" };
@@ -2414,7 +2416,7 @@ export default function App() {
     const wall = game.walls.find((w) => axialKey(w.coord) === axialKey(coord));
     if (!wall) return { ok: false, reason: "No wall here" };
 
-    if (isWallBusy(wall)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (isWallAtTaskCap(wall, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const target = nextWallTier(wall.tier);
     if (!target) return { ok: false, reason: "Already at max tier" };
@@ -2455,7 +2457,7 @@ export default function App() {
     const wall = game.walls.find((w) => axialKey(w.coord) === axialKey(coord));
     if (!wall) return { ok: false, reason: "No wall here" };
 
-    if (isWallBusy(wall)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (isWallAtTaskCap(wall, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const maxHp = maxWallDurability(tweaks, wall.tier);
     if (wall.durability >= maxHp) return { ok: false, reason: "Already at full durability" };
@@ -2504,14 +2506,14 @@ export default function App() {
     const structure = extractionTile ?? pathTile ?? tower ?? wall ?? barracks ?? dock;
     if (!structure) return { ok: false, reason: "Nothing to demolish here" };
 
-    if (extractionTile && isLandStructureBusy(extractionTile)) {
+    if (extractionTile && hasAnyStructureTask(extractionTile)) {
       return { ok: false, reason: STRUCTURE_BUSY_REASON };
     }
-    if (pathTile && isLandStructureBusy(pathTile)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
-    if (tower && isLandStructureBusy(tower)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
-    if (wall && isWallBusy(wall)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
-    if (barracks && isBarracksBusy(barracks)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
-    if (dock && isDockBusy(dock)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (pathTile && hasAnyStructureTask(pathTile)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (tower && hasAnyStructureTask(tower)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (wall && hasAnyStructureTask(wall)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (barracks && hasAnyStructureTask(barracks)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (dock && countDockTasks(dock) > 0) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const refund = demolishRefund(tweaks, structure.totalInvested);
     const resources = { ...game.resources };
@@ -2589,7 +2591,7 @@ export default function App() {
     const structure = extractionTile ?? pathTile ?? tower ?? wall ?? barracks;
     if (!structure) return { ok: false, reason: "Nothing to repair here" };
     if (!structure.damaged) return { ok: false, reason: "Not damaged" };
-    if (isHordeRepairBlocked(structure)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (isHordeRepairBlocked(structure, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const cost = repairCost(tweaks, structure.buildCost);
     for (const [resKey, amount] of Object.entries(cost)) {
@@ -2721,7 +2723,7 @@ export default function App() {
     const barracks = game.barracksList.find((b) => axialKey(b.coord) === axialKey(coord));
     if (!barracks) return { ok: false, reason: "No barracks here" };
 
-    if (isBarracksBusy(barracks)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (isBarracksAtTaskCap(barracks, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const target = nextBarracksLevel(barracks.level);
     if (!target) return { ok: false, reason: "Already at max level" };
@@ -2766,7 +2768,7 @@ export default function App() {
     const barracks = boot.game.barracksList.find((b) => axialKey(b.coord) === axialKey(coord));
     if (!barracks) return { ok: false, reason: "No barracks here" };
     if (barracks.trainingQueue) return { ok: false, reason: "Training already in progress at this barracks" };
-    if (isLandStructureBusy(barracks)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (isBarracksAtTaskCap(barracks, boot.game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
     if (!isStructureActive(barracks)) return { ok: false, reason: "Barracks is not operational" };
     return { ok: true, barracks };
   }
@@ -3109,7 +3111,7 @@ export default function App() {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
 
-    if (isBaseHubBusy(game.base, game.storageUpgrades)) {
+    if (isBaseHubAtTaskCap(game.base, game.storageUpgrades, game.research)) {
       return { ok: false, reason: BASE_HUB_BUSY_REASON };
     }
 
@@ -3131,7 +3133,7 @@ export default function App() {
     await Promise.all([set(RESOURCES_DB_KEY, resources), set(NOISE_DB_KEY, noise)]);
     setBoot((prev) => {
       if (prev.status !== "ready" || !prev.game) return prev;
-      if (isBaseHubBusy(prev.game.base, prev.game.storageUpgrades)) return prev;
+      if (isBaseHubAtTaskCap(prev.game.base, prev.game.storageUpgrades, prev.game.research)) return prev;
       const base: BaseRecord = {
         ...prev.game.base,
         action: { kind: "level_upgrade", targetLevel, startedAt },
@@ -3155,7 +3157,7 @@ export default function App() {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
 
-    if (isBaseHubBusy(game.base, game.storageUpgrades)) {
+    if (isBaseHubAtTaskCap(game.base, game.storageUpgrades, game.research)) {
       return { ok: false, reason: BASE_HUB_BUSY_REASON };
     }
 
@@ -3181,7 +3183,7 @@ export default function App() {
     await Promise.all([set(RESOURCES_DB_KEY, resources), set(NOISE_DB_KEY, noise)]);
     setBoot((prev) => {
       if (prev.status !== "ready" || !prev.game) return prev;
-      if (isBaseHubBusy(prev.game.base, prev.game.storageUpgrades)) return prev;
+      if (isBaseHubAtTaskCap(prev.game.base, prev.game.storageUpgrades, prev.game.research)) return prev;
       const base: BaseRecord = {
         ...prev.game.base,
         action: { kind: "reinforcement_upgrade", targetLevel, startedAt },
@@ -3205,7 +3207,7 @@ export default function App() {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
 
-    if (isBaseHubBusy(game.base, game.storageUpgrades)) {
+    if (isBaseHubAtTaskCap(game.base, game.storageUpgrades, game.research)) {
       return { ok: false, reason: BASE_HUB_BUSY_REASON };
     }
 
@@ -3233,7 +3235,7 @@ export default function App() {
     await Promise.all([set(RESOURCES_DB_KEY, resources)]);
     setBoot((prev) => {
       if (prev.status !== "ready" || !prev.game) return prev;
-      if (isBaseHubBusy(prev.game.base, prev.game.storageUpgrades)) return prev;
+      if (isBaseHubAtTaskCap(prev.game.base, prev.game.storageUpgrades, prev.game.research)) return prev;
       const base: BaseRecord = {
         ...prev.game.base,
         action: { kind: "reinforcement_repair", startedAt },
@@ -3350,7 +3352,7 @@ export default function App() {
       return { ok: false, reason: `Requires base level ${tweaks.base_relocation.min_base_level}` };
     }
     if (game.base.relocation) return { ok: false, reason: "Relocation already in progress" };
-    if (isBaseHubBusy(game.base, game.storageUpgrades)) {
+    if (isBaseHubAtTaskCap(game.base, game.storageUpgrades, game.research)) {
       return { ok: false, reason: BASE_HUB_BUSY_REASON };
     }
     if (axialKey(destination) === axialKey(game.territory.base)) {
@@ -3388,7 +3390,7 @@ export default function App() {
     await Promise.all([set(RESOURCES_DB_KEY, resources), set(BASE_DB_KEY, base)]);
     setBoot((prev) => {
       if (prev.status !== "ready" || !prev.game) return prev;
-      if (isBaseHubBusy(prev.game.base, prev.game.storageUpgrades)) return prev;
+      if (isBaseHubAtTaskCap(prev.game.base, prev.game.storageUpgrades, prev.game.research)) return prev;
       return { ...prev, game: { ...prev.game, resources, base } };
     });
     return { ok: true };

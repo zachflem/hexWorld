@@ -15,6 +15,7 @@ const RESEARCH_LABEL: Record<ResearchId, string> = {
   troop_speed_3: "Troop Movement III (2.0x)",
   game_speed_2: "Game Speed II (unlocks 3x)",
   game_speed_3: "Game Speed III (unlocks 5x)",
+  parallel_upgrades: "Parallel Work Orders (2 tasks per structure)",
 };
 
 function ResearchTierRow({
@@ -126,6 +127,11 @@ export function ResearchPanel({
           <SheetSectionLabel>Game Speed</SheetSectionLabel>
           <ResearchTierRow id="game_speed_2" tweaks={tweaks} research={research} resources={resources} now={now} onStartResearch={onStartResearch} />
           <ResearchTierRow id="game_speed_3" tweaks={tweaks} research={research} resources={resources} now={now} onStartResearch={onStartResearch} />
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+          <SheetSectionLabel>Construction</SheetSectionLabel>
+          <ResearchTierRow id="parallel_upgrades" tweaks={tweaks} research={research} resources={resources} now={now} onStartResearch={onStartResearch} />
         </div>
       </div>
     </BottomSheet>

@@ -132,10 +132,13 @@ Docks can't be captured by hordes (hordes can't cross water), so they're a low-r
 
 ## Research
 
-A global tech-tree panel, separate from any building or resource's own storage upgrades — only one research can run at a time. Two independent lines, each with two purchasable tiers on top of a free starting tier:
+A global tech-tree panel, separate from any building or resource's own storage upgrades — only one research can run at a time. Three lines:
 
-- **Troop Speed** — cuts travel time for expeditions and den/lab assaults (up to 2x faster fully researched).
-- **Game Speed** — unlocks faster fast-forward multipliers for simulating ahead (1x by default; researching this unlocks 3x, then 5x).
+- **Troop Speed** — two tiers; cuts travel time for expeditions and den/lab assaults (up to 2x faster fully researched).
+- **Game Speed** — two tiers; unlocks faster fast-forward multipliers for simulating ahead (1x by default; researching this unlocks 3x, then 5x).
+- **Construction → Parallel Work Orders** — mid-game, **15 minutes** to research; raises every structure (and the base hub) from **one timed task at a time to two** — e.g. base level upgrade plus a storage upgrade, or a tower tier upgrade while a horde repair runs on the same tile. Garrison/recall stays instant and never consumes a slot.
+
+By default each tile (and the base hub) can only run one build/upgrade/repair timer at a time until Parallel Work Orders is researched.
 
 Both lines cost resources and take real time to complete, same as any other timed upgrade.
 

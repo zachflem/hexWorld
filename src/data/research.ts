@@ -6,7 +6,12 @@
  * shape, simplified to a single global slot since only one research can run
  * at a time (unlike storage, where every resource can upgrade in parallel).
  */
-export type ResearchId = "troop_speed_2" | "troop_speed_3" | "game_speed_2" | "game_speed_3";
+export type ResearchId =
+  | "troop_speed_2"
+  | "troop_speed_3"
+  | "game_speed_2"
+  | "game_speed_3"
+  | "parallel_upgrades";
 
 export type ResearchRecord = {
   completed: ResearchId[];

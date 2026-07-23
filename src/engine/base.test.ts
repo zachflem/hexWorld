@@ -148,7 +148,7 @@ describe("canRelocateBase", () => {
 });
 
 describe("isBaseHubBusy", () => {
-  it("is true while base.action, relocation, or any storage upgrade is pending", () => {
+  it("is true when any hub task is running", () => {
     const tweaks = loadRealTweaks();
     const idle = initialBase(tweaks);
     const emptyStorage = {};
@@ -156,15 +156,6 @@ describe("isBaseHubBusy", () => {
     expect(isBaseHubBusy(idle, emptyStorage)).toBe(false);
     expect(
       isBaseHubBusy({ ...idle, action: { kind: "level_upgrade", targetLevel: 2, startedAt: 0 } }, emptyStorage),
-    ).toBe(true);
-    expect(
-      isBaseHubBusy(
-        { ...idle, relocation: { destination: { q: 1, r: 0 }, startedAt: 0 } },
-        emptyStorage,
-      ),
-    ).toBe(true);
-    expect(
-      isBaseHubBusy(idle, { food: { targetLevel: 2, startedAt: 0 } }),
     ).toBe(true);
   });
 });

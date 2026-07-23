@@ -1,7 +1,9 @@
 import type { BaseRecord, BaseRelocationInProgress, BaseUpgradeInProgress } from "../data/base";
 import type { ResourceType } from "../data/resources";
 import type { StorageUpgradesRecord } from "../data/storageUpgrades";
-import { hasPendingStorageUpgrade } from "../data/storageUpgrades";
+import { countBaseHubTasks, isBaseHubAtTaskCap } from "./structureBusy";
+
+export { isBaseHubAtTaskCap, countBaseHubTasks } from "./structureBusy";
 import type { Tweaks } from "../data/tweaksSchema";
 import { formulaBCost } from "./formulas";
 import { isTimerComplete } from "./timers";
@@ -150,12 +152,11 @@ export function isBaseBusy(base: BaseRecord): boolean {
 }
 
 /**
- * True when the base hub is committed to a structural task — level upgrade,
- * reinforcement upgrade/repair, storage upgrade, or relocation. Garrison and
- * recall stay available; they are not gated on this.
+ * True when the base hub has at least one timed task running.
+ * @deprecated Prefer isBaseHubAtTaskCap from structureBusy.ts (respects parallel-upgrades research).
  */
 export function isBaseHubBusy(base: BaseRecord, storageUpgrades: StorageUpgradesRecord): boolean {
-  return isBaseBusy(base) || base.relocation != null || hasPendingStorageUpgrade(storageUpgrades);
+  return countBaseHubTasks(base, storageUpgrades) >= 1;
 }
 
 /**

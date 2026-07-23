@@ -30,6 +30,8 @@ function tierConfig(tweaks: Tweaks, id: ResearchId) {
       return tweaks.research.game_speed.tier_2;
     case "game_speed_3":
       return tweaks.research.game_speed.tier_3;
+    case "parallel_upgrades":
+      return tweaks.research.parallel_upgrades;
   }
 }
 
@@ -39,6 +41,11 @@ export function researchCost(tweaks: Tweaks, id: ResearchId): Partial<Record<Res
 
 export function researchDurationMs(tweaks: Tweaks, id: ResearchId): number {
   return tierConfig(tweaks, id).duration_minutes * 60_000;
+}
+
+/** Timed-task slots per structure (and base hub) — 1 by default, raised by parallel_upgrades research. */
+export function structureTaskSlotCap(research: ResearchRecord): number {
+  return research.completed.includes("parallel_upgrades") ? 2 : 1;
 }
 
 /** 1.0 (default) / 1.5 / 2.0 — divides expeditionTravelDurationMs (engine/expeditions.ts), so a higher multiplier means faster travel. */

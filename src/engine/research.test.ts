@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
 import type { ResearchRecord } from "../data/research";
 import { initialResearch } from "../data/research";
-import { isResearchAvailable, researchCost, researchDurationMs, troopSpeedMultiplier, unlockedSpeedRates } from "./research";
+import { isResearchAvailable, researchCost, researchDurationMs, structureTaskSlotCap, troopSpeedMultiplier, unlockedSpeedRates } from "./research";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -33,6 +33,17 @@ describe("isResearchAvailable", () => {
     const withTroopTier2: ResearchRecord = { completed: ["troop_speed_2"], pending: null };
     expect(isResearchAvailable(withTroopTier2, "game_speed_2")).toBe(true);
     expect(isResearchAvailable(withTroopTier2, "game_speed_3")).toBe(false);
+  });
+  it("isResearchAvailable for parallel_upgrades from the start", () => {
+    expect(isResearchAvailable(initialResearch(), "parallel_upgrades")).toBe(true);
+  });
+});
+
+describe("structureTaskSlotCap", () => {
+  it("reads parallel_upgrades cost and duration from tweaks", () => {
+    const tweaks = loadRealTweaks();
+    expect(researchCost(tweaks, "parallel_upgrades")).toEqual(tweaks.research.parallel_upgrades.cost);
+    expect(researchDurationMs(tweaks, "parallel_upgrades")).toBe(15 * 60_000);
   });
 });
 

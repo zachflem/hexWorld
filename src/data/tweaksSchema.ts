@@ -331,6 +331,12 @@ export const tweaksSchema = z.object({
       tier_2: z.object({ rate: z.number(), cost: resourceCostMap, duration_minutes: z.number() }),
       tier_3: z.object({ rate: z.number(), cost: resourceCostMap, duration_minutes: z.number() }),
     }),
+    parallel_upgrades: z.object({
+      cost: resourceCostMap,
+      duration_minutes: z.number(),
+      /** Timed-task slots per structure (and base hub) once researched — default cap is 1. */
+      task_slots: z.number(),
+    }),
   }),
 
   noise: z.object({

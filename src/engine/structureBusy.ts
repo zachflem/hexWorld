@@ -1,9 +1,15 @@
 /**
- * Shared "one timed task at a time" checks for per-tile structures.
+ * Shared timed-task slot checks for per-tile structures.
  * Import these in both App.tsx handlers and GameScreen *OptionFor helpers
- * so UI and engine stay in sync. Base hub uses isBaseHubBusy (engine/base.ts);
- * garrison/recall/collect are deliberately not gated here.
+ * so UI and engine stay in sync. Base hub uses countBaseHubTasks /
+ * isBaseHubAtTaskCap (engine/base.ts); garrison/recall/collect are not gated.
  */
+
+import type { BaseRecord } from "../data/base";
+import type { ResearchRecord } from "../data/research";
+import type { StorageUpgradesRecord } from "../data/storageUpgrades";
+import { countPendingStorageUpgrades } from "../data/storageUpgrades";
+import { structureTaskSlotCap } from "./research";
 
 export const STRUCTURE_BUSY_REASON = "Already busy with another task";
 export const BASE_HUB_BUSY_REASON = "Base is busy with another task";
@@ -14,18 +20,43 @@ export type LandStructureFields = {
   damageRepair?: { startedAt: number } | null;
 };
 
+export function countLandStructureTasks(structure: LandStructureFields): number {
+  let count = 0;
+  if (structure.buildStartedAt != null) count++;
+  if (structure.upgrade != null) count++;
+  if (structure.damageRepair != null) count++;
+  return count;
+}
+
 /** Extraction tile, path, tower — build, tier upgrade, or horde repair. */
+export function isLandStructureAtTaskCap(structure: LandStructureFields, research: ResearchRecord): boolean {
+  return countLandStructureTasks(structure) >= structureTaskSlotCap(research);
+}
+
+/** @deprecated Prefer isLandStructureAtTaskCap — kept for tests migrating to slot counts. */
 export function isLandStructureBusy(structure: LandStructureFields): boolean {
-  return structure.buildStartedAt != null || structure.upgrade != null || structure.damageRepair != null;
+  return countLandStructureTasks(structure) >= 1;
 }
 
 export type WallFields = LandStructureFields & {
   action?: unknown | null;
 };
 
+export function countWallTasks(wall: WallFields): number {
+  let count = 0;
+  if (wall.buildStartedAt != null) count++;
+  if (wall.action != null) count++;
+  if (wall.damageRepair != null) count++;
+  return count;
+}
+
 /** Wall — build, durability upgrade/repair (action slot), or horde repair. */
+export function isWallAtTaskCap(wall: WallFields, research: ResearchRecord): boolean {
+  return countWallTasks(wall) >= structureTaskSlotCap(research);
+}
+
 export function isWallBusy(wall: WallFields): boolean {
-  return wall.buildStartedAt != null || wall.action != null || wall.damageRepair != null;
+  return countWallTasks(wall) >= 1;
 }
 
 export type DockFields = {
@@ -33,18 +64,35 @@ export type DockFields = {
   fishingBoatUpgrade?: unknown | null;
 };
 
-/** Dock — initial build or fishing-boat construction. */
+export function countDockTasks(dock: DockFields): number {
+  let count = 0;
+  if (dock.buildStartedAt != null) count++;
+  if (dock.fishingBoatUpgrade != null) count++;
+  return count;
+}
+
+export function isDockAtTaskCap(dock: DockFields, research: ResearchRecord): boolean {
+  return countDockTasks(dock) >= structureTaskSlotCap(research);
+}
+
 export function isDockBusy(dock: DockFields): boolean {
-  return dock.buildStartedAt != null || dock.fishingBoatUpgrade != null;
+  return countDockTasks(dock) >= 1;
 }
 
 export type BarracksFields = LandStructureFields & {
   trainingQueue?: unknown | null;
 };
 
-/** Barracks — land-structure tasks plus one training queue. */
+export function countBarracksTasks(barracks: BarracksFields): number {
+  return countLandStructureTasks(barracks) + (barracks.trainingQueue != null ? 1 : 0);
+}
+
+export function isBarracksAtTaskCap(barracks: BarracksFields, research: ResearchRecord): boolean {
+  return countBarracksTasks(barracks) >= structureTaskSlotCap(research);
+}
+
 export function isBarracksBusy(barracks: BarracksFields): boolean {
-  return isLandStructureBusy(barracks) || barracks.trainingQueue != null;
+  return countBarracksTasks(barracks) >= 1;
 }
 
 export type OutpostReinforcementFields = {
@@ -55,10 +103,39 @@ export function isOutpostReinforcementBusy(outpost: OutpostReinforcementFields):
   return outpost.reinforcementAction != null;
 }
 
-/** Horde-capture repair on any land structure (wall uses action slot instead of upgrade). */
+/** Horde-capture repair — blocked when every task slot on this tile is in use. */
 export function isHordeRepairBlocked(
   structure: LandStructureFields & { action?: unknown | null },
+  research: ResearchRecord,
+): boolean {
+  if (structure.action != null) {
+    const wallLike = structure as WallFields;
+    return countWallTasks(wallLike) >= structureTaskSlotCap(research);
+  }
+  return isLandStructureAtTaskCap(structure, research);
+}
+
+/** Any in-flight timer on a tile — demolish stays blocked while work is ongoing. */
+export function hasAnyStructureTask(
+  structure: LandStructureFields & { action?: unknown | null; trainingQueue?: unknown | null },
 ): boolean {
   if (structure.action != null) return true;
-  return isLandStructureBusy(structure);
+  if (structure.trainingQueue != null) return true;
+  return countLandStructureTasks(structure) > 0;
+}
+
+export function countBaseHubTasks(base: BaseRecord, storageUpgrades: StorageUpgradesRecord): number {
+  let count = 0;
+  if (base.action != null) count++;
+  if (base.relocation != null) count++;
+  count += countPendingStorageUpgrades(storageUpgrades);
+  return count;
+}
+
+export function isBaseHubAtTaskCap(
+  base: BaseRecord,
+  storageUpgrades: StorageUpgradesRecord,
+  research: ResearchRecord,
+): boolean {
+  return countBaseHubTasks(base, storageUpgrades) >= structureTaskSlotCap(research);
 }

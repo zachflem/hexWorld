@@ -538,6 +538,11 @@
         "cost": { "wood": 650, "stone": 450, "steel": 200 },
         "duration_minutes": 14
       }
+    },
+    "parallel_upgrades": {
+      "cost": { "wood": 450, "stone": 320, "steel": 120 },
+      "duration_minutes": 15,
+      "task_slots": 2
     }
   },
 

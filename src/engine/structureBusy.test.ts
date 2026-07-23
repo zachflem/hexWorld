@@ -1,46 +1,58 @@
 import { describe, expect, it } from "vitest";
+import type { ResearchRecord } from "../data/research";
 import {
-  isBarracksBusy,
-  isDockBusy,
-  isHordeRepairBlocked,
-  isLandStructureBusy,
-  isOutpostReinforcementBusy,
-  isWallBusy,
+  countBarracksTasks,
+  countDockTasks,
+  countLandStructureTasks,
+  countWallTasks,
+  isBarracksAtTaskCap,
+  isDockAtTaskCap,
+  isLandStructureAtTaskCap,
+  isWallAtTaskCap,
 } from "./structureBusy";
 
-describe("structureBusy", () => {
-  it("isLandStructureBusy covers build, upgrade, and horde repair", () => {
-    const idle = {};
-    expect(isLandStructureBusy(idle)).toBe(false);
-    expect(isLandStructureBusy({ buildStartedAt: 0 })).toBe(true);
-    expect(isLandStructureBusy({ upgrade: { targetTier: "medium", startedAt: 0 } })).toBe(true);
-    expect(isLandStructureBusy({ damageRepair: { startedAt: 0 } })).toBe(true);
+const withParallel: ResearchRecord = { completed: ["parallel_upgrades"], pending: null };
+const withoutParallel: ResearchRecord = { completed: [], pending: null };
+
+describe("structureBusy slot counts", () => {
+  it("isLandStructureAtTaskCap respects parallel_upgrades", () => {
+    const oneTask = { upgrade: { targetTier: "medium", startedAt: 0 } };
+    expect(isLandStructureAtTaskCap(oneTask, withoutParallel)).toBe(true);
+    expect(isLandStructureAtTaskCap(oneTask, withParallel)).toBe(false);
   });
 
-  it("isWallBusy includes the unified action slot", () => {
-    expect(isWallBusy({ action: { kind: "upgrade", targetTier: "rock", startedAt: 0 } })).toBe(true);
-    expect(isWallBusy({ buildStartedAt: 0 })).toBe(true);
+  it("isWallAtTaskCap is false with one task and parallel_upgrades", () => {
+    const oneTask = { action: { kind: "repair", startedAt: 0 } };
+    expect(isWallAtTaskCap(oneTask, withParallel)).toBe(false);
+    expect(isWallAtTaskCap(oneTask, withoutParallel)).toBe(true);
   });
 
-  it("isDockBusy covers dock build and fishing boat", () => {
-    expect(isDockBusy({ buildStartedAt: 0 })).toBe(true);
-    expect(isDockBusy({ fishingBoatUpgrade: { startedAt: 0 } })).toBe(true);
+  it("isWallAtTaskCap is true at two tasks even with parallel_upgrades", () => {
+    const twoTasks = {
+      action: { kind: "repair", startedAt: 0 },
+      damageRepair: { startedAt: 1 },
+    };
+    expect(countWallTasks(twoTasks)).toBe(2);
+    expect(isWallAtTaskCap(twoTasks, withParallel)).toBe(true);
   });
 
-  it("isBarracksBusy includes training queue", () => {
-    expect(isBarracksBusy({ trainingQueue: { unitType: "scout", remaining: 1, currentUnitStartedAt: 0 } })).toBe(true);
-    expect(isBarracksBusy({ upgrade: { targetLevel: 2, startedAt: 0 } })).toBe(true);
+  it("isDockAtTaskCap is true at two tasks with parallel_upgrades", () => {
+    const twoTasks = { buildStartedAt: 0, fishingBoatUpgrade: { startedAt: 1 } };
+    expect(countDockTasks(twoTasks)).toBe(2);
+    expect(isDockAtTaskCap(twoTasks, withParallel)).toBe(true);
   });
 
-  it("isHordeRepairBlocked treats wall action like other busy slots", () => {
-    expect(isHordeRepairBlocked({ action: { kind: "repair", startedAt: 0 } })).toBe(true);
-    expect(isHordeRepairBlocked({ upgrade: { targetTier: "medium", startedAt: 0 } })).toBe(true);
+  it("isBarracksAtTaskCap is true at two tasks with parallel_upgrades", () => {
+    const busy = {
+      upgrade: { targetLevel: 2, startedAt: 0 },
+      trainingQueue: { unitType: "scout", remaining: 1, currentUnitStartedAt: 0 },
+    };
+    expect(countBarracksTasks(busy)).toBe(2);
+    expect(isBarracksAtTaskCap(busy, withParallel)).toBe(true);
   });
 
-  it("isOutpostReinforcementBusy mirrors base.action pattern", () => {
-    expect(isOutpostReinforcementBusy({})).toBe(false);
-    expect(isOutpostReinforcementBusy({ reinforcementAction: { kind: "upgrade", targetLevel: 1, startedAt: 0 } })).toBe(
-      true,
-    );
+  it("countLandStructureTasks covers build, upgrade, and horde repair", () => {
+    expect(countLandStructureTasks({})).toBe(0);
+    expect(countLandStructureTasks({ buildStartedAt: 0 })).toBe(1);
   });
 });
