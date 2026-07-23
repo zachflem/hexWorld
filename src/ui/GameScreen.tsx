@@ -1077,7 +1077,7 @@ export function GameScreen({
   }
 
   async function handleQuickCollect(coord: Axial) {
-    const result = await onCollectTile(coord);
+    const result = dockAt(coord) ? await onCollectDock(coord) : await onCollectTile(coord);
     setActionError(result.ok ? null : result.reason);
   }
 
@@ -1366,7 +1366,7 @@ export function GameScreen({
   }, [tweaks, extractionTiles, pathTiles, docks, territory.base, outposts, resources, storageLevels, units, world.seed]);
   const collectableTiles = useMemo(() => {
     const stockpileCap = tweaks.storage.capacity_base_per_resource;
-    return extractionTiles
+    const fromExtraction = extractionTiles
       .filter((tile) => !tile.damaged && isStructureActive(tile) && tile.stockpile > 0)
       .map((tile) => ({
         coord: tile.coord,
@@ -1375,7 +1375,18 @@ export function GameScreen({
         stockpileCap,
         upgradeAvailable: tierUpgradeFor(tile)?.affordable ?? false,
       }));
-  }, [extractionTiles, tweaks, resources]);
+    // Docks stockpile food the same way extraction tiles do — same pin, food icon.
+    const fromDocks = docks
+      .filter((dock) => !dock.buildStartedAt && dock.stockpile > 0)
+      .map((dock) => ({
+        coord: dock.coord,
+        resource: "food" as const,
+        stockpile: dock.stockpile,
+        stockpileCap,
+        upgradeAvailable: false,
+      }));
+    return [...fromExtraction, ...fromDocks];
+  }, [extractionTiles, docks, tweaks, resources]);
   /**
    * Coord keys of every upgradeable structure (base, Tower, Barracks, extraction
    * tile) whose next upgrade is unlocked and affordable right now — reuses the

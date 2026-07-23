@@ -107,8 +107,8 @@ function CollectPin({
 }
 
 /**
- * Floating map-pin buttons above extraction tiles that have stockpiled
- * resources — one-click collect without opening the tile action sheet.
+ * Floating map-pin buttons above extraction tiles and docks that have
+ * stockpiled resources — one-click collect without opening the tile action sheet.
  * Positioned imperatively (same convention as HoverTooltip) so pan/zoom
  * does not re-render all of GameScreen.
  */
@@ -163,7 +163,7 @@ export const CollectPinOverlay = forwardRef<
   });
 
   return (
-    <div ref={containerRef} style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 54 }}>
+    <div ref={containerRef} style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 48 }}>
       {tiles.map((tile) => (
         <CollectPin key={axialKey(tile.coord)} tile={tile} onCollect={onCollect} />
       ))}
