@@ -1,5 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, MouseEvent, PointerEvent, ReactNode } from "react";
+import { createArmedClickGuard } from "./armedClick";
+
+function useArmedClick() {
+  const guardRef = useRef(createArmedClickGuard());
+
+  const arm = useCallback((event: PointerEvent) => {
+    guardRef.current.arm(event.button);
+  }, []);
+
+  const disarm = useCallback(() => {
+    guardRef.current.disarm();
+  }, []);
+
+  const consume = useCallback((event: MouseEvent) => {
+    return guardRef.current.consume(event.detail);
+  }, []);
+
+  return { arm, disarm, consume };
+}
 
 /**
  * Mobile-first bottom sheet shell — full-width and centered on small
@@ -32,6 +51,16 @@ export function BottomSheet({
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [canScrollUp, setCanScrollUp] = useState(false);
   const [canScrollDown, setCanScrollDown] = useState(false);
+  const {
+    arm: armBackdrop,
+    disarm: disarmBackdrop,
+    consume: consumeBackdrop,
+  } = useArmedClick();
+  const {
+    arm: armDialog,
+    disarm: disarmDialog,
+    consume: consumeDialog,
+  } = useArmedClick();
 
   const updateScrollAffordances = useCallback(() => {
     const el = bodyRef.current;
@@ -69,13 +98,26 @@ export function BottomSheet({
     updateScrollAffordances();
   }, [scrollKey, updateScrollAffordances]);
 
+  // Fresh open must not inherit an armed flag from a previous mount cycle.
+  useEffect(() => {
+    if (!open) {
+      disarmBackdrop();
+      disarmDialog();
+    }
+  }, [open, disarmBackdrop, disarmDialog]);
+
   if (!open) return null;
 
   return (
     <>
       <div
         role="presentation"
-        onClick={onClose}
+        onPointerDown={armBackdrop}
+        onPointerCancel={disarmBackdrop}
+        onClick={(event) => {
+          if (!consumeBackdrop(event)) return;
+          onClose();
+        }}
         style={{
           position: "fixed",
           inset: 0,
@@ -88,6 +130,13 @@ export function BottomSheet({
         aria-modal="true"
         aria-label={title}
         className="bottom-sheet"
+        onPointerDownCapture={armDialog}
+        onPointerCancelCapture={disarmDialog}
+        onClickCapture={(event) => {
+          if (consumeDialog(event)) return;
+          event.preventDefault();
+          event.stopPropagation();
+        }}
         style={{
           position: "fixed",
           bottom: 0,
