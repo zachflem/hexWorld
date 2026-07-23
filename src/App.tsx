@@ -2748,7 +2748,8 @@ export default function App() {
   async function handleTrainScouts(coord: Axial, quantity: number): Promise<BuildResult> {
     const barracksResult = barracksForTraining(coord);
     if (!barracksResult.ok) return barracksResult;
-    const { tweaks, game } = boot as Extract<BootState, { status: "ready"; game: GameState }>;
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
 
@@ -2785,7 +2786,8 @@ export default function App() {
   async function handleTrainMilitia(coord: Axial, quantity: number): Promise<BuildResult> {
     const barracksResult = barracksForTraining(coord);
     if (!barracksResult.ok) return barracksResult;
-    const { tweaks, game } = boot as Extract<BootState, { status: "ready"; game: GameState }>;
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
 
@@ -2823,7 +2825,8 @@ export default function App() {
   async function handleTrainJunkyardKnight(coord: Axial, quantity: number): Promise<BuildResult> {
     const barracksResult = barracksForTraining(coord);
     if (!barracksResult.ok) return barracksResult;
-    const { tweaks, game } = boot as Extract<BootState, { status: "ready"; game: GameState }>;
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
     if (barracksResult.barracks.level < tweaks.units.junkyard_knight.min_barracks_level) {
@@ -2869,7 +2872,8 @@ export default function App() {
   async function handleTrainCrossBowSniper(coord: Axial, quantity: number): Promise<BuildResult> {
     const barracksResult = barracksForTraining(coord);
     if (!barracksResult.ok) return barracksResult;
-    const { tweaks, game } = boot as Extract<BootState, { status: "ready"; game: GameState }>;
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
     if (barracksResult.barracks.level < tweaks.units.cross_bow_sniper.min_barracks_level) {
@@ -2966,7 +2970,8 @@ export default function App() {
   async function handleRushTrainScouts(coord: Axial, quantity: number): Promise<BuildResult> {
     const barracksResult = barracksForTraining(coord);
     if (!barracksResult.ok) return barracksResult;
-    const { tweaks, game } = boot as Extract<BootState, { status: "ready"; game: GameState }>;
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
 
@@ -3001,7 +3006,8 @@ export default function App() {
   async function handleRushTrainMilitia(coord: Axial, quantity: number): Promise<BuildResult> {
     const barracksResult = barracksForTraining(coord);
     if (!barracksResult.ok) return barracksResult;
-    const { tweaks, game } = boot as Extract<BootState, { status: "ready"; game: GameState }>;
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
 
