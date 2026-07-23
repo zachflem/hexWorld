@@ -62,7 +62,9 @@ const MAX_ZOOM = 3;
 const CLICK_DRAG_THRESHOLD_PX = 18;
 
 const TERRAIN_COLORS: Record<TerrainType, string> = {
-  water: "#2f6f9f",
+  // Under-texture fill shows through soft AA at hex seams — keep this darker
+  // than the water art so gaps read as deep water, not a bright blue grid.
+  water: "#1a3548",
   shore: "#d9c98a",
   grassland: "#5a9e4f",
   forest: "#2f5a34",

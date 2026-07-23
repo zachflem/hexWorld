@@ -191,7 +191,7 @@ Add manifest `screenshots` entries (wide + mobile) for Chrome's richer install p
 
 ### Extra difficulty profiles (#P8)
 
-Additional sibling packs (e.g. casual, speedrun) under `public/profiles/`, same layout as default/hard. **Refs:** [`public/profiles/index.json`](../public/profiles/index.json), Milestone 23. **Next step:** balance pass + optional partial art overrides.
+Additional sibling packs (e.g. casual, speedrun) under `public/profiles/`, same layout as default/hard. **Refs:** [`public/profiles/index.json`](../public/profiles/index.json), Milestone 23, [#P11](#per-level-structure-sprites-p11). **Next step:** balance pass + optional partial art overrides (including per-level structure files once [#P11](#per-level-structure-sprites-p11) lands).
 
 ### Per-tick horde tile combat (#P9)
 
@@ -200,6 +200,14 @@ Hordes attrition against walls/towers over time on a tile, replacing the current
 ### Terrain tile defense (#P10)
 
 Terrain type multiplies tile claim difficulty (e.g. mountains harder than grassland), on top of distance-based defense. **Refs:** [TWEAKS.md § Territory Expansion](TWEAKS.md), [DESIGN.md §6](DESIGN.md). **Next step:** tuning table in tweaks.
+
+### Per-level structure sprites (#P11)
+
+Distinct map (and UI) art per upgrade level/tier for structures that today share one sprite — extraction small→mid→large, towers L1–4, barracks L1–4, base levels, docks/boats where it reads, etc. Walls and paths already ship tier sprites; extend that pattern with missing-file fallback to the unlevelled/default asset. **Refs:** [DESIGN.md §17](DESIGN.md), [TWEAKS.md § Difficulty profiles](TWEAKS.md), [`src/render/assetPaths.ts`](../src/render/assetPaths.ts), [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx), Milestone 23. **Next step:** naming convention + which structures get unique art vs shared fallback; then promote to milestone when asset set is ready.
+
+### Terrain art replacement (#P12)
+
+**Status:** ✅ Done (2026-07-23). Replaced the itch.io hex basic-set terrain pack in `profiles/default/assets/terrain/` (`grassland`, `forest`, `mountain`, `shore`, `water`) with a new flat pointy-top hex set, converted to the 256×384 footprint layout via [`scripts/convert-flat-terrain-hex.py`](../scripts/convert-flat-terrain-hex.py). Profile override → default → flat-colour path unchanged. **Refs:** [attribution.md](attribution.md), [AGENTS.md](../AGENTS.md), [`src/render/tileTextures.ts`](../src/render/tileTextures.ts). **Maintenance:** future terrain swaps still need the convert script (flat hex + transparent bg → footprint); fill in source/license in attribution when confirmed.
 
 ---
 
@@ -229,6 +237,8 @@ Much of original scope superseded by Milestone 20 (hex-ring menu, HUD chips, tex
 - ✅ Icon-led HUD, settings/notifications panel, terrain/resource art (via M20)
 - ❌ Watchtower intel/alert role (separate from combat range) — see [#P3](#watchtower-intel--alerts-p3)
 - ❌ PWA manifest `screenshots` for rich install UI — see [#P7](#pwa-install-screenshots-p7)
+
+*Related art tracks (not M16 scope):* [#P11](#per-level-structure-sprites-p11); terrain pack swap shipped as [#P12](#terrain-art-replacement-p12).
 
 **Testable outcome:** first-time player understands state and options without external explanation.
 
@@ -442,6 +452,8 @@ Paged field-manual onboarding, continue-or-new-game prompt, advanced options (di
 URL slugs, bundled `public/profiles/{slug}/`, partial sprite overrides with default fallback, profile persisted in save.
 
 **Testable outcome:** `/hard` loads hard profile; continue prompt on reload; `profiles/index.json` lists difficulties.
+
+*Follow-ons (not in M23 scope):* per-level structure sprites [#P11](#per-level-structure-sprites-p11). Terrain art replacement shipped as [#P12](#terrain-art-replacement-p12).
 
 </details>
 
