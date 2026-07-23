@@ -1,5 +1,6 @@
 import type { TerrainType } from "../engine/terrain";
 import type { ResourceType } from "../data/resources";
+import { assetUrlCandidates, type AssetCategory } from "./assetPaths";
 
 type TextureKey = string;
 
@@ -12,10 +13,19 @@ export function onTextureLoad(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
-function load(key: TextureKey, path: string): HTMLImageElement | null {
+export function resetTextureCache(): void {
+  cache.clear();
+}
+
+function loadWithFallbacks(key: TextureKey, urls: string[], index = 0): HTMLImageElement | null {
   const cached = cache.get(key);
   if (cached === "error") return null;
   if (cached) return cached;
+
+  if (index >= urls.length) {
+    cache.set(key, "error");
+    return null;
+  }
 
   const img = new Image();
   img.onload = () => {
@@ -23,18 +33,26 @@ function load(key: TextureKey, path: string): HTMLImageElement | null {
     listeners.forEach((fn) => fn());
   };
   img.onerror = () => {
-    cache.set(key, "error");
+    if (index + 1 < urls.length) {
+      loadWithFallbacks(key, urls, index + 1);
+    } else {
+      cache.set(key, "error");
+    }
   };
-  img.src = path;
+  img.src = urls[index]!;
   return null;
 }
 
+function loadCategory(category: AssetCategory, cacheKey: string, filename: string): HTMLImageElement | null {
+  return loadWithFallbacks(`${category}/${cacheKey}`, assetUrlCandidates(category, filename));
+}
+
 export function getTerrainTexture(type: TerrainType): HTMLImageElement | null {
-  return load(`terrain/${type}`, `/tiles/terrain/${type}.png`);
+  return loadCategory("terrain", type, `${type}.png`);
 }
 
 export function getResourceTexture(type: ResourceType): HTMLImageElement | null {
-  return load(`resources/${type}`, `/tiles/resources/${type}.png`);
+  return loadCategory("resources", type, `${type}.png`);
 }
 
 /**
@@ -44,7 +62,7 @@ export function getResourceTexture(type: ResourceType): HTMLImageElement | null 
  * /tiles/structures/ (e.g. "tower" -> tower.png).
  */
 export function getStructureIconTexture(name: string): HTMLImageElement | null {
-  return load(`structures/${name}-icon`, `/tiles/structures/${name}.png`);
+  return loadCategory("structures", `${name}-icon`, `${name}.png`);
 }
 
 /**
@@ -54,7 +72,7 @@ export function getStructureIconTexture(name: string): HTMLImageElement | null {
  * filename under /tiles/structures/ (e.g. "path-stone" -> path-stone.png).
  */
 export function getPathTileTexture(name: string): HTMLImageElement | null {
-  return load(`structures/${name}-full`, `/tiles/structures/${name}.png`);
+  return loadCategory("structures", `${name}-full`, `${name}.png`);
 }
 
 /**
@@ -64,7 +82,7 @@ export function getPathTileTexture(name: string): HTMLImageElement | null {
  * tile. `name` matches the PNG's filename under /tiles/units/.
  */
 export function getUnitIconTexture(name: string): HTMLImageElement | null {
-  return load(`units/${name}-icon`, `/tiles/units/${name}.png`);
+  return loadCategory("units", `${name}-icon`, `${name}.png`);
 }
 
 /**

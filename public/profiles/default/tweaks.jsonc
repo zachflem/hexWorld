@@ -761,7 +761,5 @@
   // --------------------------------------------------------------------------
   // OPEN ITEMS — NOT YET LOCKED
   // --------------------------------------------------------------------------
-  "_open_items": [
-    "Difficulty profile files (tweaks-hard.json, tweaks-casual.json, etc.) — later feature, structure TBD"
-  ]
+  "_open_items": []
 }

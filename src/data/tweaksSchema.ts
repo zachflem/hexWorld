@@ -34,9 +34,16 @@ const terrainYieldMultiplierSchema = z.object({
 export const tweaksSchema = z.object({
   meta: z.object({
     version: z.string(),
+    slug: z.string(),
     profile_name: z.string(),
     notes: z.string(),
   }),
+
+  assets: z
+    .object({
+      custom_sprites: z.boolean(),
+    })
+    .optional(),
 
   game: z.object({
     grid_size: z.number(),
