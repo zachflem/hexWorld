@@ -1026,10 +1026,16 @@ export function GameScreen({
     };
   }
 
+  /** Surfaces failures; on success collapses the tile action sheet so the map is visible again. */
+  function applyActionResult(result: BuildResult) {
+    setActionError(result.ok ? null : result.reason);
+    if (result.ok) setSelected(null);
+  }
+
   async function handleRelocateBase() {
     if (!selected) return;
     const result = await onRelocateBase(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   function selectTile(coord: Axial) {
@@ -1052,225 +1058,225 @@ export function GameScreen({
   async function handleBuild(resource: ResourceType) {
     if (!selected) return;
     const result = await onBuildExtractionTile(selected, resource);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeTier() {
     if (!selected) return;
     const result = await onUpgradeExtractionTile(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeStorage(resource: ResourceType) {
     const result = await onUpgradeStorage(resource);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleCollect() {
     if (!selected) return;
     const result = await onCollectTile(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildPath() {
     if (!selected) return;
     const result = await onBuildPath(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradePath() {
     if (!selected) return;
     const result = await onUpgradePath(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildTower() {
     if (!selected) return;
     const result = await onBuildTower(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeTower() {
     if (!selected) return;
     const result = await onUpgradeTower(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildWall() {
     if (!selected) return;
     const result = await onBuildWall(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeWall() {
     if (!selected) return;
     const result = await onUpgradeWall(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRepairWall() {
     if (!selected) return;
     const result = await onRepairWall(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleDemolish() {
     if (!selected) return;
     if (!window.confirm("Demolish this structure? You'll only recover a fraction of what you spent on it.")) return;
     const result = await onDemolish(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildBarracks() {
     if (!selected) return;
     const result = await onBuildBarracks(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeBarracks() {
     if (!selected) return;
     const result = await onUpgradeBarracks(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildDock() {
     if (!selected) return;
     const result = await onBuildDock(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildFishingBoat() {
     if (!selected) return;
     const result = await onBuildFishingBoat(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildScoutSkiff() {
     if (!selected) return;
     const result = await onBuildScoutSkiff(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildWanderingScout() {
     if (!selected) return;
     const result = await onBuildWanderingScout(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleCollectDock() {
     if (!selected) return;
     const result = await onCollectDock(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleTrainScouts() {
     const result = await onTrainScouts(scoutsToTrain);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleTrainMilitia() {
     const result = await onTrainMilitia(militiaToTrain);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleTrainJunkyardKnight() {
     const result = await onTrainJunkyardKnight(junkyardKnightToTrain);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleTrainCrossBowSniper() {
     const result = await onTrainCrossBowSniper(crossBowSniperToTrain);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRushTrainScouts() {
     const result = await onRushTrainScouts(scoutsToTrain);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRushTrainMilitia() {
     const result = await onRushTrainMilitia(militiaToTrain);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleScoutTile() {
     if (!selected) return;
     const result = await onScoutTile(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeBase() {
     const result = await onUpgradeBase();
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeReinforcement() {
     const result = await onUpgradeReinforcement();
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleDispatchExpedition() {
     if (!selected) return;
     const result = await onDispatchExpedition(selected, militiaToSend, junkyardKnightToSend, crossBowSniperToSend);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleAssaultDen() {
     if (!selectedDen) return;
     const result = await onAssaultDen(selectedDen.id, militiaToSend, junkyardKnightToSend, crossBowSniperToSend);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleSecureLab() {
     const result = await onSecureLab(militiaToSend, junkyardKnightToSend, crossBowSniperToSend);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleGarrisonMilitia() {
     if (!selected) return;
     const result = await onGarrisonMilitia(selected, militiaToGarrison);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleGarrisonJunkyardKnight() {
     if (!selected) return;
     const result = await onGarrisonJunkyardKnight(selected, junkyardKnightToGarrison);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleGarrisonCrossBowSniper() {
     if (!selected) return;
     const result = await onGarrisonCrossBowSniper(selected, crossBowSniperToGarrison);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRecallMilitia() {
     if (!selected) return;
     const result = await onRecallMilitia(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRepairStructure() {
     if (!selected) return;
     const result = await onRepairStructure(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRepairBase() {
     const result = await onRepairBase();
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeOutpostReinforcement() {
     if (!selectedOutpost) return;
     const result = await onUpgradeOutpostReinforcement(selectedOutpost.id);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRepairOutpost() {
     if (!selectedOutpost) return;
     const result = await onRepairOutpost(selectedOutpost.id);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   /**

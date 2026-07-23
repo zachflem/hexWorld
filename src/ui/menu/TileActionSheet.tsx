@@ -40,6 +40,11 @@ function anyUpgradeAvailable(actions: SheetAction[]): boolean {
   return actions.some((a) => a.upgradeAvailable || (a.subActions && anyUpgradeAvailable(a.subActions)));
 }
 
+/** Usable actions first; disabled (e.g. unaffordable) sink to the bottom. Stable among peers. */
+function usableFirst(actions: SheetAction[]): SheetAction[] {
+  return [...actions].sort((a, b) => Number(!!a.disabled) - Number(!!b.disabled));
+}
+
 /** Derive category tabs from the root action tree. */
 export function deriveSheetTabs(actions: SheetAction[]): SheetTab[] {
   const tabs: SheetTab[] = [];
@@ -52,12 +57,13 @@ export function deriveSheetTabs(actions: SheetAction[]): SheetTab[] {
       continue;
     }
     if (action.subActions && action.subActions.length > 0) {
+      const items = usableFirst(action.subActions);
       tabs.push({
         key: action.key,
         label: action.title,
         kind: "list",
-        items: action.subActions,
-        upgradeAvailable: action.upgradeAvailable || anyUpgradeAvailable(action.subActions),
+        items,
+        upgradeAvailable: action.upgradeAvailable || anyUpgradeAvailable(items),
       });
       continue;
     }
@@ -65,12 +71,13 @@ export function deriveSheetTabs(actions: SheetAction[]): SheetTab[] {
   }
 
   if (leafActions.length > 0) {
+    const items = usableFirst(leafActions);
     tabs.unshift({
       key: "actions",
       label: "Actions",
       kind: "list",
-      items: leafActions,
-      upgradeAvailable: anyUpgradeAvailable(leafActions),
+      items,
+      upgradeAvailable: anyUpgradeAvailable(items),
     });
   }
 
