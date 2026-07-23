@@ -3322,7 +3322,7 @@ export default function App() {
       return { ok: false, reason: "No known route — scout a path there, and make sure you have a barracks" };
     }
 
-    // Same reasoning as handleRepairStructure/handleGarrisonMilitia's
+    // Same reasoning as handleRepairStructure/handleGarrisonUnits's
     // hordeOccupiedKeys guards — committing a party to a route a horde is
     // already standing on is a fight already effectively lost.
     const hordeOccupiedKeys = new Set(game.hordes.map((h) => axialKey(h.path[h.pathIndex])));
@@ -3537,15 +3537,21 @@ export default function App() {
   }
 
   /**
-   * Stations militia on an owned tile — a mobile defense that stacks
-   * additively with any tower/wall there (engine/hordes.ts:hordeTileDefense)
-   * and auto-attacks any horde on itself or a neighbor every tick
+   * Stations any mix of free militia / junkyard knights / cross-bow snipers
+   * on an owned tile — a mobile defense that stacks additively with any
+   * tower/wall there (engine/hordes.ts:hordeTileDefense) and auto-attacks
+   * any horde on itself or a neighbor every tick
    * (engine/hordes.ts:resolveGarrisonAutoAttacks, run from the tick loop
    * below — no manual action needed). Unlike building a structure, this
    * never checks isHexOccupied — a garrison is not a structure and never
    * blocks (or is blocked by) one.
    */
-  async function handleGarrisonMilitia(coord: Axial, count: number): Promise<BuildResult> {
+  async function handleGarrisonUnits(
+    coord: Axial,
+    militiaCount: number,
+    junkyardKnightCount: number,
+    crossBowSniperCount: number,
+  ): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
 
@@ -3556,7 +3562,7 @@ export default function App() {
     // A tile can be back in territory.owned (via an expedition claiming it —
     // engine/expeditions.ts, unlike the tower viewshed auto-claim, doesn't
     // check for a live horde) while a horde is still physically standing on
-    // it. Stationing militia into a fight that's already effectively lost (the
+    // it. Stationing units into a fight that's already effectively lost (the
     // very next tick's resolveGarrisonAutoAttacks would just wipe them with
     // no effect on the horde) makes no sense — same guard as handleRepairStructure.
     const hordeOccupiedKeys = new Set(game.hordes.map((h) => axialKey(h.path[h.pathIndex])));
@@ -3576,92 +3582,43 @@ export default function App() {
     const hostileDenHere = game.dens.some((d) => axialKey(d.coord) === axialKey(coord) && !d.siege);
     if (hostileDenHere) return { ok: false, reason: "A hostile den occupies this tile — assault it first" };
 
-    if (!Number.isInteger(count) || count <= 0 || count > availableMilitia(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults)) {
-      return { ok: false, reason: "Invalid militia count" };
-    }
-
-    const existing = garrisonAt(game.garrisons, coord);
-    const garrisons: GarrisonsRecord = existing
-      ? game.garrisons.map((g) => (axialKey(g.coord) === axialKey(coord) ? { ...g, militiaCount: g.militiaCount + count } : g))
-      : [...game.garrisons, { coord, militiaCount: count, junkyardKnightCount: 0, crossBowSniperCount: 0 }];
-    const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "garrison_militia", game.base.level) };
-
-    await Promise.all([set(GARRISONS_DB_KEY, garrisons), set(NOISE_DB_KEY, noise)]);
-    setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, garrisons, noise } } : prev,
-    );
-    return { ok: true };
-  }
-
-  /** Mirrors handleGarrisonMilitia exactly, for barracks L2's junkyard knights. */
-  async function handleGarrisonJunkyardKnight(coord: Axial, count: number): Promise<BuildResult> {
-    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { tweaks, game } = boot;
-
-    const ownedKeys = new Set(game.territory.owned.map(axialKey));
-    if (!ownedKeys.has(axialKey(coord))) return { ok: false, reason: "Tile not owned" };
-    if (!isBuildableLand(game.world.seed, coord)) return { ok: false, reason: "Cannot garrison on water" };
-
-    const hordeOccupiedKeys = new Set(game.hordes.map((h) => axialKey(h.path[h.pathIndex])));
-    if (hordeOccupiedKeys.has(axialKey(coord))) return { ok: false, reason: "A horde is still on this tile" };
-
-    // Same reasoning as handleGarrisonMilitia's hostileDenHere guard.
-    const hostileDenHere = game.dens.some((d) => axialKey(d.coord) === axialKey(coord) && !d.siege);
-    if (hostileDenHere) return { ok: false, reason: "A hostile den occupies this tile — assault it first" };
-
-    if (
-      !Number.isInteger(count) ||
-      count <= 0 ||
-      count > availableJunkyardKnights(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults)
-    ) {
-      return { ok: false, reason: "Invalid junkyard knight count" };
+    const countsValid =
+      Number.isInteger(militiaCount) &&
+      militiaCount >= 0 &&
+      militiaCount <= availableMilitia(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
+      Number.isInteger(junkyardKnightCount) &&
+      junkyardKnightCount >= 0 &&
+      junkyardKnightCount <=
+        availableJunkyardKnights(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults) &&
+      Number.isInteger(crossBowSniperCount) &&
+      crossBowSniperCount >= 0 &&
+      crossBowSniperCount <=
+        availableCrossBowSnipers(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults);
+    if (!countsValid) return { ok: false, reason: "Invalid unit counts" };
+    if (militiaCount + junkyardKnightCount + crossBowSniperCount <= 0) {
+      return { ok: false, reason: "Station at least one unit" };
     }
 
     const existing = garrisonAt(game.garrisons, coord);
     const garrisons: GarrisonsRecord = existing
       ? game.garrisons.map((g) =>
-          axialKey(g.coord) === axialKey(coord) ? { ...g, junkyardKnightCount: g.junkyardKnightCount + count } : g,
+          axialKey(g.coord) === axialKey(coord)
+            ? {
+                ...g,
+                militiaCount: g.militiaCount + militiaCount,
+                junkyardKnightCount: g.junkyardKnightCount + junkyardKnightCount,
+                crossBowSniperCount: g.crossBowSniperCount + crossBowSniperCount,
+              }
+            : g,
         )
-      : [...game.garrisons, { coord, militiaCount: 0, junkyardKnightCount: count, crossBowSniperCount: 0 }];
-    const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "garrison_militia", game.base.level) };
-
-    await Promise.all([set(GARRISONS_DB_KEY, garrisons), set(NOISE_DB_KEY, noise)]);
-    setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, garrisons, noise } } : prev,
-    );
-    return { ok: true };
-  }
-
-  /** Mirrors handleGarrisonMilitia exactly, for barracks L3's cross-bow snipers. */
-  async function handleGarrisonCrossBowSniper(coord: Axial, count: number): Promise<BuildResult> {
-    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { tweaks, game } = boot;
-
-    const ownedKeys = new Set(game.territory.owned.map(axialKey));
-    if (!ownedKeys.has(axialKey(coord))) return { ok: false, reason: "Tile not owned" };
-    if (!isBuildableLand(game.world.seed, coord)) return { ok: false, reason: "Cannot garrison on water" };
-
-    const hordeOccupiedKeys = new Set(game.hordes.map((h) => axialKey(h.path[h.pathIndex])));
-    if (hordeOccupiedKeys.has(axialKey(coord))) return { ok: false, reason: "A horde is still on this tile" };
-
-    // Same reasoning as handleGarrisonMilitia's hostileDenHere guard.
-    const hostileDenHere = game.dens.some((d) => axialKey(d.coord) === axialKey(coord) && !d.siege);
-    if (hostileDenHere) return { ok: false, reason: "A hostile den occupies this tile — assault it first" };
-
-    if (
-      !Number.isInteger(count) ||
-      count <= 0 ||
-      count > availableCrossBowSnipers(game.units, game.garrisons, game.expeditions, game.denAssaults, game.garrisonRecalls, game.labAssaults)
-    ) {
-      return { ok: false, reason: "Invalid cross-bow sniper count" };
-    }
-
-    const existing = garrisonAt(game.garrisons, coord);
-    const garrisons: GarrisonsRecord = existing
-      ? game.garrisons.map((g) =>
-          axialKey(g.coord) === axialKey(coord) ? { ...g, crossBowSniperCount: g.crossBowSniperCount + count } : g,
-        )
-      : [...game.garrisons, { coord, militiaCount: 0, junkyardKnightCount: 0, crossBowSniperCount: count }];
+      : [
+          {
+            coord,
+            militiaCount,
+            junkyardKnightCount,
+            crossBowSniperCount,
+          },
+        ];
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "garrison_militia", game.base.level) };
 
     await Promise.all([set(GARRISONS_DB_KEY, garrisons), set(NOISE_DB_KEY, noise)]);
@@ -3833,9 +3790,7 @@ export default function App() {
       onDispatchExpedition={handleDispatchExpedition}
       onAssaultDen={handleAssaultDen}
       onSecureLab={handleSecureLab}
-      onGarrisonMilitia={handleGarrisonMilitia}
-      onGarrisonJunkyardKnight={handleGarrisonJunkyardKnight}
-      onGarrisonCrossBowSniper={handleGarrisonCrossBowSniper}
+      onGarrisonUnits={handleGarrisonUnits}
       onRecallMilitia={handleRecallMilitia}
       onBuildDock={handleBuildDock}
       onBuildFishingBoat={handleBuildFishingBoat}

@@ -167,10 +167,9 @@ import { ToastStack, type ToastRecord } from "./hud/Toast";
 import { Panel } from "./primitives/Panel";
 import { PartyDispatchForm } from "./primitives/PartyDispatchForm";
 import { TrainForm } from "./primitives/TrainForm";
-import { QuantityStepper } from "./primitives/QuantityStepper";
-import { SheetButton } from "./primitives/SheetButton";
+import { GarrisonForm } from "./primitives/GarrisonForm";
 import { GlobalHexCluster } from "./menu/GlobalHexCluster";
-import { TileActionSheet, type SheetAction } from "./menu/TileActionSheet";
+import { TileActionSheet, type SheetAction, type SheetQuickAction } from "./menu/TileActionSheet";
 import { HoverTooltip, type HoverTooltipHandle } from "./menu/HoverTooltip";
 import { CollectPinOverlay, type CollectPinOverlayHandle } from "./menu/CollectPinOverlay";
 import { formatCost, formatDuration } from "./format";
@@ -199,7 +198,6 @@ import {
   Swords,
   Target,
   Trash2,
-  Users,
   Wrench,
 } from "lucide-react";
 
@@ -326,9 +324,7 @@ export function GameScreen({
   onDispatchExpedition,
   onAssaultDen,
   onSecureLab,
-  onGarrisonMilitia,
-  onGarrisonJunkyardKnight,
-  onGarrisonCrossBowSniper,
+  onGarrisonUnits,
   onRecallMilitia,
   onBuildDock,
   onBuildFishingBoat,
@@ -422,9 +418,12 @@ export function GameScreen({
     junkyardKnightCommitted: number,
     crossBowSniperCommitted: number,
   ) => Promise<BuildResult>;
-  onGarrisonMilitia: (coord: Axial, count: number) => Promise<BuildResult>;
-  onGarrisonJunkyardKnight: (coord: Axial, count: number) => Promise<BuildResult>;
-  onGarrisonCrossBowSniper: (coord: Axial, count: number) => Promise<BuildResult>;
+  onGarrisonUnits: (
+    coord: Axial,
+    militiaCount: number,
+    junkyardKnightCount: number,
+    crossBowSniperCount: number,
+  ) => Promise<BuildResult>;
   onRecallMilitia: (coord: Axial) => Promise<BuildResult>;
   onBuildDock: (coord: Axial) => Promise<BuildResult>;
   onBuildFishingBoat: (coord: Axial) => Promise<BuildResult>;
@@ -465,8 +464,8 @@ export function GameScreen({
   const [junkyardKnightToTrain, setJunkyardKnightToTrain] = useState(1);
   const [crossBowSniperToTrain, setCrossBowSniperToTrain] = useState(1);
   const [militiaToGarrison, setMilitiaToGarrison] = useState(1);
-  const [junkyardKnightToGarrison, setJunkyardKnightToGarrison] = useState(1);
-  const [crossBowSniperToGarrison, setCrossBowSniperToGarrison] = useState(1);
+  const [junkyardKnightToGarrison, setJunkyardKnightToGarrison] = useState(0);
+  const [crossBowSniperToGarrison, setCrossBowSniperToGarrison] = useState(0);
 
   const ownedKeys = useMemo(() => new Set(territory.owned.map(axialKey)), [territory.owned]);
   const isOwned = (coord: Axial) => ownedKeys.has(axialKey(coord));
@@ -1005,9 +1004,9 @@ export function GameScreen({
   }
 
   /** Surfaces failures; on success collapses the tile action sheet so the map is visible again. */
-  function applyActionResult(result: BuildResult) {
+  function applyActionResult(result: BuildResult, options?: { keepSelection?: boolean }) {
     setActionError(result.ok ? null : result.reason);
-    if (result.ok) setSelected(null);
+    if (result.ok && !options?.keepSelection) setSelected(null);
   }
 
   async function handleRelocateBase() {
@@ -1033,6 +1032,8 @@ export function GameScreen({
     setScoutsToTrain(1);
     setMilitiaToTrain(1);
     setMilitiaToGarrison(1);
+    setJunkyardKnightToGarrison(0);
+    setCrossBowSniperToGarrison(0);
   }
 
   async function handleBuild(resource: ResourceType) {
@@ -1154,34 +1155,70 @@ export function GameScreen({
     applyActionResult(result);
   }
 
-  async function handleTrainScouts() {
-    const result = await onTrainScouts(scoutsToTrain);
-    applyActionResult(result);
+  async function handleTrainScouts(quantity = scoutsToTrain) {
+    const result = await onTrainScouts(quantity);
+    applyActionResult(result, { keepSelection: true });
   }
 
-  async function handleTrainMilitia() {
-    const result = await onTrainMilitia(militiaToTrain);
-    applyActionResult(result);
+  async function handleTrainMilitia(quantity = militiaToTrain) {
+    const result = await onTrainMilitia(quantity);
+    applyActionResult(result, { keepSelection: true });
   }
 
-  async function handleTrainJunkyardKnight() {
-    const result = await onTrainJunkyardKnight(junkyardKnightToTrain);
-    applyActionResult(result);
+  async function handleTrainJunkyardKnight(quantity = junkyardKnightToTrain) {
+    const result = await onTrainJunkyardKnight(quantity);
+    applyActionResult(result, { keepSelection: true });
   }
 
-  async function handleTrainCrossBowSniper() {
-    const result = await onTrainCrossBowSniper(crossBowSniperToTrain);
-    applyActionResult(result);
+  async function handleTrainCrossBowSniper(quantity = crossBowSniperToTrain) {
+    const result = await onTrainCrossBowSniper(quantity);
+    applyActionResult(result, { keepSelection: true });
+  }
+
+  /**
+   * Compact +1 / +5 / Max commits for the Train tab list. Quantities are
+   * gated by maxQuantity (capacity ∩ affordability); a live queue disables
+   * every shortcut so you open the row for status instead.
+   */
+  function trainQuickActions(
+    option: TrainOption | SimpleTrainOption | null,
+    queueStatus: TrainQueueStatus | null,
+    onTrainQuantity: (quantity: number) => void,
+  ): SheetQuickAction[] {
+    const maxQuantity = option?.maxQuantity ?? 0;
+    const blocked = !!queueStatus || maxQuantity <= 0;
+    return [
+      {
+        label: "+1",
+        disabled: blocked || maxQuantity < 1,
+        onClick: () => onTrainQuantity(1),
+      },
+      {
+        label: "+5",
+        disabled: blocked || maxQuantity < 5,
+        onClick: () => onTrainQuantity(5),
+      },
+      {
+        label: "Max",
+        disabled: blocked,
+        onClick: () => onTrainQuantity(maxQuantity),
+      },
+    ];
+  }
+
+  function trainQueueDetail(queueStatus: TrainQueueStatus | null): string | undefined {
+    if (!queueStatus) return undefined;
+    return `${queueStatus.remaining} left · next in ${formatDuration(queueStatus.msUntilNextMs)}`;
   }
 
   async function handleRushTrainScouts() {
     const result = await onRushTrainScouts(scoutsToTrain);
-    applyActionResult(result);
+    applyActionResult(result, { keepSelection: true });
   }
 
   async function handleRushTrainMilitia() {
     const result = await onRushTrainMilitia(militiaToTrain);
-    applyActionResult(result);
+    applyActionResult(result, { keepSelection: true });
   }
 
   async function handleScoutTile() {
@@ -1217,21 +1254,32 @@ export function GameScreen({
     applyActionResult(result);
   }
 
-  async function handleGarrisonMilitia() {
+  async function handleGarrisonUnit(kind: "militia" | "junkyardKnight" | "crossBowSniper") {
     if (!selected) return;
-    const result = await onGarrisonMilitia(selected, militiaToGarrison);
-    applyActionResult(result);
-  }
-
-  async function handleGarrisonJunkyardKnight() {
-    if (!selected) return;
-    const result = await onGarrisonJunkyardKnight(selected, junkyardKnightToGarrison);
-    applyActionResult(result);
-  }
-
-  async function handleGarrisonCrossBowSniper() {
-    if (!selected) return;
-    const result = await onGarrisonCrossBowSniper(selected, crossBowSniperToGarrison);
+    // Clamp against current free pools — quantity state can linger from a
+    // previous tile where a unit type was available (row hidden when free=0).
+    const militia =
+      kind === "militia"
+        ? Math.min(
+            militiaToGarrison,
+            availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults),
+          )
+        : 0;
+    const knights =
+      kind === "junkyardKnight"
+        ? Math.min(
+            junkyardKnightToGarrison,
+            availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults),
+          )
+        : 0;
+    const snipers =
+      kind === "crossBowSniper"
+        ? Math.min(
+            crossBowSniperToGarrison,
+            availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults),
+          )
+        : 0;
+    const result = await onGarrisonUnits(selected, militia, knights, snipers);
     applyActionResult(result);
   }
 
@@ -1836,44 +1884,55 @@ export function GameScreen({
 
       const trainSubActions: SheetAction[] = [];
       if (!selectedBarracks.damaged) {
+        const scoutOption = scoutTrainOptionFor();
         trainSubActions.push({
           key: "train-scouts",
           icon: <Footprints size={18} />,
-          title: "Train scouts",
+          title: "Scouts",
+          detail: trainQueueDetail(scoutQueueStatus),
           formContent: (
             <TrainForm
               label="scouts"
               queueStatus={scoutQueueStatus}
-              option={scoutTrainOptionFor()}
+              option={scoutOption}
               toTrain={scoutsToTrain}
               onChangeToTrain={setScoutsToTrain}
-              onTrain={handleTrainScouts}
+              onTrain={() => handleTrainScouts()}
               onRush={handleRushTrainScouts}
             />
           ),
+          quickActions: trainQuickActions(scoutOption, scoutQueueStatus, (qty) => {
+            void handleTrainScouts(qty);
+          }),
         });
+        const militiaOption = militiaTrainOptionFor();
         trainSubActions.push({
           key: "train-militia",
           icon: <Swords size={18} />,
-          title: "Train militia",
+          title: "Militia",
+          detail: trainQueueDetail(militiaQueueStatus),
           formContent: (
             <TrainForm
               label="militia"
               queueStatus={militiaQueueStatus}
-              option={militiaTrainOptionFor()}
+              option={militiaOption}
               toTrain={militiaToTrain}
               onChangeToTrain={setMilitiaToTrain}
-              onTrain={handleTrainMilitia}
+              onTrain={() => handleTrainMilitia()}
               onRush={handleRushTrainMilitia}
             />
           ),
+          quickActions: trainQuickActions(militiaOption, militiaQueueStatus, (qty) => {
+            void handleTrainMilitia(qty);
+          }),
         });
         const knightOption = junkyardKnightTrainOptionFor(selectedBarracks.level);
-        if (knightOption) {
+        if (knightOption || junkyardKnightQueueStatus) {
           trainSubActions.push({
             key: "train-knights",
             icon: <Shield size={18} />,
-            title: "Train junkyard knights",
+            title: "Junkyard knights",
+            detail: trainQueueDetail(junkyardKnightQueueStatus),
             formContent: (
               <TrainForm
                 label="junkyard knights"
@@ -1881,17 +1940,21 @@ export function GameScreen({
                 option={knightOption}
                 toTrain={junkyardKnightToTrain}
                 onChangeToTrain={setJunkyardKnightToTrain}
-                onTrain={handleTrainJunkyardKnight}
+                onTrain={() => handleTrainJunkyardKnight()}
               />
             ),
+            quickActions: trainQuickActions(knightOption, junkyardKnightQueueStatus, (qty) => {
+              void handleTrainJunkyardKnight(qty);
+            }),
           });
         }
         const sniperOption = crossBowSniperTrainOptionFor(selectedBarracks.level);
-        if (sniperOption) {
+        if (sniperOption || crossBowSniperQueueStatus) {
           trainSubActions.push({
             key: "train-snipers",
             icon: <Target size={18} />,
-            title: "Train cross-bow snipers",
+            title: "Cross-bow snipers",
+            detail: trainQueueDetail(crossBowSniperQueueStatus),
             formContent: (
               <TrainForm
                 label="cross-bow snipers"
@@ -1899,9 +1962,12 @@ export function GameScreen({
                 option={sniperOption}
                 toTrain={crossBowSniperToTrain}
                 onChangeToTrain={setCrossBowSniperToTrain}
-                onTrain={handleTrainCrossBowSniper}
+                onTrain={() => handleTrainCrossBowSniper()}
               />
             ),
+            quickActions: trainQuickActions(sniperOption, crossBowSniperQueueStatus, (qty) => {
+              void handleTrainCrossBowSniper(qty);
+            }),
           });
         }
       }
@@ -2029,34 +2095,6 @@ export function GameScreen({
     return actions;
   }
 
-  /** One unit type in the garrison sheet form — stepper + station action. */
-  function garrisonUnitRow(
-    label: string,
-    available: number,
-    toGarrison: number,
-    onChangeToGarrison: (n: number) => void,
-    onGo: () => void,
-  ): ReactNode {
-    if (available <= 0) return null;
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
-        <span style={{ fontSize: "0.8rem", opacity: 0.75 }}>
-          {label} · {available} free
-        </span>
-        <QuantityStepper
-          label={`${label} to garrison`}
-          value={toGarrison}
-          min={0}
-          max={available}
-          onChange={onChangeToGarrison}
-        />
-        <SheetButton compact disabled={selectedHordeOccupied || toGarrison <= 0} onClick={onGo}>
-          Station {toGarrison > 0 ? toGarrison : ""} {label}
-        </SheetButton>
-      </div>
-    );
-  }
-
   /**
    * Shared popover content for expedition/den-assault/lab-secure — reuses
    * the `PartyDispatchForm` primitive built in Phase 0 for exactly this
@@ -2086,44 +2124,37 @@ export function GameScreen({
     );
   }
 
-  /** Garrison hex's popover content — same qty-input-plus-Go pattern the old TilePopup used, reusing its exact state/handlers (militiaToGarrison etc.) rather than duplicating them. */
+  /** Garrison hex's sheet form — one compact stepper + check-to-station row per unit type. */
   function garrisonFormContent(): ReactNode {
     if (!selected) return null;
     const availMilitia = availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
     const availKnight = availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
     const availSniper = availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
-    const stationedTotal = selectedGarrison
-      ? selectedGarrison.militiaCount + selectedGarrison.junkyardKnightCount + selectedGarrison.crossBowSniperCount
-      : 0;
-    const recalling = recallInProgressFor(selected) !== null;
+    const stationedParts: string[] = [];
+    if (selectedGarrison) {
+      if (selectedGarrison.militiaCount > 0) stationedParts.push(`${selectedGarrison.militiaCount} militia`);
+      if (selectedGarrison.junkyardKnightCount > 0) stationedParts.push(`${selectedGarrison.junkyardKnightCount} knights`);
+      if (selectedGarrison.crossBowSniperCount > 0) stationedParts.push(`${selectedGarrison.crossBowSniperCount} snipers`);
+    }
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.8rem" }}>
-        {stationedTotal > 0 && <span style={{ opacity: 0.8 }}>{stationedTotal} stationed</span>}
-        {garrisonUnitRow("militia", availMilitia, militiaToGarrison, setMilitiaToGarrison, handleGarrisonMilitia)}
-        {garrisonUnitRow(
-          "knights",
-          availKnight,
-          junkyardKnightToGarrison,
-          setJunkyardKnightToGarrison,
-          handleGarrisonJunkyardKnight,
-        )}
-        {garrisonUnitRow(
-          "snipers",
-          availSniper,
-          crossBowSniperToGarrison,
-          setCrossBowSniperToGarrison,
-          handleGarrisonCrossBowSniper,
-        )}
-        {recalling ? (
-          <span>Recalling…</span>
-        ) : (
-          stationedTotal > 0 && (
-            <SheetButton variant="secondary" onClick={handleRecallMilitia}>
-              Recall
-            </SheetButton>
-          )
-        )}
-      </div>
+      <GarrisonForm
+        stationedSummary={stationedParts.length > 0 ? stationedParts.join(" · ") : undefined}
+        militia={{ available: availMilitia, toGarrison: militiaToGarrison, onChange: setMilitiaToGarrison }}
+        junkyardKnight={{
+          available: availKnight,
+          toGarrison: junkyardKnightToGarrison,
+          onChange: setJunkyardKnightToGarrison,
+        }}
+        crossBowSniper={{
+          available: availSniper,
+          toGarrison: crossBowSniperToGarrison,
+          onChange: setCrossBowSniperToGarrison,
+        }}
+        recalling={recallInProgressFor(selected) !== null}
+        hordeOccupied={selectedHordeOccupied}
+        onStation={handleGarrisonUnit}
+        onRecall={handleRecallMilitia}
+      />
     );
   }
 
@@ -2705,7 +2736,7 @@ export function GameScreen({
       availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults) > 0 ||
       availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults) > 0;
     if (canGarrisonHere) {
-      actions.push({ key: "garrison", icon: <Users size={18} />, title: "Garrison", formContent: garrisonFormContent() });
+      actions.push({ key: "garrison", icon: <Flag size={18} />, title: "Garrison", formContent: garrisonFormContent() });
     }
 
     const canDemolishHere = !selectedIsBase && (!!selectedStructure || !!selectedDock);
