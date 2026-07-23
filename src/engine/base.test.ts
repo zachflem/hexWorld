@@ -16,6 +16,7 @@ import {
   baseUpgradeTimeMinutes,
   canRelocateBase,
   isBaseBusy,
+  isBaseHubBusy,
   isBaseRelocationComplete,
   isBaseUpgradeComplete,
   maxReinforcementLevel,
@@ -143,6 +144,28 @@ describe("canRelocateBase", () => {
     expect(canRelocateBase(tweaks, minLevel - 1)).toBe(false);
     expect(canRelocateBase(tweaks, minLevel)).toBe(true);
     expect(canRelocateBase(tweaks, minLevel + 1)).toBe(true);
+  });
+});
+
+describe("isBaseHubBusy", () => {
+  it("is true while base.action, relocation, or any storage upgrade is pending", () => {
+    const tweaks = loadRealTweaks();
+    const idle = initialBase(tweaks);
+    const emptyStorage = {};
+
+    expect(isBaseHubBusy(idle, emptyStorage)).toBe(false);
+    expect(
+      isBaseHubBusy({ ...idle, action: { kind: "level_upgrade", targetLevel: 2, startedAt: 0 } }, emptyStorage),
+    ).toBe(true);
+    expect(
+      isBaseHubBusy(
+        { ...idle, relocation: { destination: { q: 1, r: 0 }, startedAt: 0 } },
+        emptyStorage,
+      ),
+    ).toBe(true);
+    expect(
+      isBaseHubBusy(idle, { food: { targetLevel: 2, startedAt: 0 } }),
+    ).toBe(true);
   });
 });
 

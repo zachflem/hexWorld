@@ -1,5 +1,7 @@
 import type { BaseRecord, BaseRelocationInProgress, BaseUpgradeInProgress } from "../data/base";
 import type { ResourceType } from "../data/resources";
+import type { StorageUpgradesRecord } from "../data/storageUpgrades";
+import { hasPendingStorageUpgrade } from "../data/storageUpgrades";
 import type { Tweaks } from "../data/tweaksSchema";
 import { formulaBCost } from "./formulas";
 import { isTimerComplete } from "./timers";
@@ -145,6 +147,15 @@ export function isBaseRelocationComplete(
 /** True while any timed base action (level/reinforcement upgrade or repair) is running — relocation is separate. */
 export function isBaseBusy(base: BaseRecord): boolean {
   return base.action != null;
+}
+
+/**
+ * True when the base hub is committed to a structural task — level upgrade,
+ * reinforcement upgrade/repair, storage upgrade, or relocation. Garrison and
+ * recall stay available; they are not gated on this.
+ */
+export function isBaseHubBusy(base: BaseRecord, storageUpgrades: StorageUpgradesRecord): boolean {
+  return isBaseBusy(base) || base.relocation != null || hasPendingStorageUpgrade(storageUpgrades);
 }
 
 /**

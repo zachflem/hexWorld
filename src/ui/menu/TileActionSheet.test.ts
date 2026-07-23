@@ -43,6 +43,28 @@ describe("deriveSheetTabs", () => {
     expect(deriveSheetTabs(actions).map((t) => t.key)).toEqual(["build-civil", "actions"]);
   });
 
+  it("gives base garrison its own category tab beside storage", () => {
+    const actions: SheetAction[] = [
+      leaf({ key: "base-upgrade", title: "Upgrade base to L2", upgradeAvailable: true }),
+      {
+        key: "storage-upgrade",
+        icon: null,
+        title: "Storage",
+        subActions: [leaf({ key: "food", title: "food → L2" })],
+      },
+      {
+        key: "garrison",
+        icon: null,
+        title: "Garrison",
+        subActions: [leaf({ key: "garrison-manage", title: "Garrison" })],
+      },
+    ];
+
+    const tabs = deriveSheetTabs(actions);
+    expect(tabs.map((t) => t.key)).toEqual(["upgrades", "storage-upgrade", "garrison"]);
+    expect(tabs[2]?.items?.map((i) => i.key)).toEqual(["garrison-manage"]);
+  });
+
   it("groups reinforcement upgrades under Upgrades even when unaffordable", () => {
     const actions: SheetAction[] = [
       leaf({

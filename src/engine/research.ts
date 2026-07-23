@@ -8,7 +8,12 @@ const RESEARCH_PREREQUISITE: Partial<Record<ResearchId, ResearchId>> = {
   game_speed_3: "game_speed_2",
 };
 
-/** True once every prerequisite for `id` (and `id` itself, if not already) can be started — i.e. not yet completed and its prerequisite (if any) is. */
+/** True while a research timer is running — single global slot. */
+export function isResearchBusy(research: ResearchRecord): boolean {
+  return research.pending != null;
+}
+
+/** True when `id` can be started — not yet completed and any prerequisite tier is done. */
 export function isResearchAvailable(research: ResearchRecord, id: ResearchId): boolean {
   if (research.completed.includes(id)) return false;
   const prerequisite = RESEARCH_PREREQUISITE[id];

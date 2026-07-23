@@ -63,9 +63,18 @@ import {
   baseUpgradeCost,
   baseUpgradeDurationMs,
   canRelocateBase,
+  isBaseHubBusy,
   maxReinforcementLevel,
   reinforcementUpgradeCost,
 } from "../engine/base";
+import {
+  isBarracksBusy,
+  isDockBusy,
+  isHordeRepairBlocked,
+  isLandStructureBusy,
+  isOutpostReinforcementBusy,
+  isWallBusy,
+} from "../engine/structureBusy";
 import { remainingMs } from "../engine/timers";
 import {
   extractionFloorContribution,
@@ -474,6 +483,8 @@ export function GameScreen({
   const scoutedKeys = useMemo(() => new Set(scoutedTiles.map(axialKey)), [scoutedTiles]);
   const isScouted = (coord: Axial) => scoutedKeys.has(axialKey(coord));
 
+  const baseHubBusy = isBaseHubBusy(base, storageUpgrades);
+
   const tileAt = (coord: Axial): ExtractionTile | null =>
     extractionTiles.find((tile) => axialKey(tile.coord) === axialKey(coord)) ?? null;
 
@@ -522,7 +533,7 @@ export function GameScreen({
   }
 
   function tierUpgradeFor(tile: ExtractionTile): TierUpgradeOption | null {
-    if (tile.damaged || tile.upgrade) return null;
+    if (tile.damaged || isLandStructureBusy(tile)) return null;
     const targetTier = nextTier(tile.tier);
     if (!targetTier) return null;
     const cost = tierUpgradeCost(tweaks, tile.resource, targetTier);
@@ -564,7 +575,7 @@ export function GameScreen({
   }
 
   function pathUpgradeOptionFor(tile: PathTile): PathUpgradeOption | null {
-    if (tile.damaged || tile.upgrade) return null;
+    if (tile.damaged || isLandStructureBusy(tile)) return null;
     const targetTier = nextPathTier(tile.tier);
     if (!targetTier) return null;
     const cost = pathUpgradeCost(tweaks, targetTier);
@@ -582,7 +593,7 @@ export function GameScreen({
   }
 
   function towerUpgradeOptionFor(t: Tower): TowerUpgradeOption | null {
-    if (t.damaged || t.upgrade) return null;
+    if (t.damaged || isLandStructureBusy(t)) return null;
     const targetLevel = nextTowerLevel(t.level);
     if (!targetLevel) return null;
     const cost = towerUpgradeCost(tweaks, targetLevel);
@@ -600,7 +611,7 @@ export function GameScreen({
   }
 
   function wallUpgradeOptionFor(w: Wall): WallUpgradeOption | null {
-    if (w.damaged || w.action) return null;
+    if (w.damaged || isWallBusy(w)) return null;
     const targetTier = nextWallTier(w.tier);
     if (!targetTier) return null;
     const cost = wallUpgradeCost(tweaks, targetTier);
@@ -613,7 +624,7 @@ export function GameScreen({
   }
 
   function wallRepairOptionFor(w: Wall): WallRepairOption | null {
-    if (w.damaged || w.action) return null;
+    if (w.damaged || isWallBusy(w)) return null;
     const maxHp = maxWallDurability(tweaks, w.tier);
     if (w.durability >= maxHp) return null;
     const cost = wallRepairCost(w, maxHp);
@@ -645,15 +656,16 @@ export function GameScreen({
     return { cost, affordable: affordable(cost) };
   }
 
-  /** Null once already built or under construction — a dock gets at most one fishing boat. */
+  /** Null once already built or while the dock hub is busy — a dock gets at most one fishing boat. */
   function fishingBoatOptionFor(d: DockRecord): SimpleCostOption | null {
-    if (d.fishingBoat || d.fishingBoatUpgrade) return null;
+    if (d.fishingBoat || isDockBusy(d)) return null;
     const cost = tweaks.docks.fishing_boat.cost;
     return { cost, affordable: affordable(cost) };
   }
 
   /** Null once this dock already has as many skiffs (built or under construction) as tweaks.docks.scout_skiff.max_per_dock allows. */
   function scoutSkiffOptionFor(d: DockRecord): SkiffBuildOption | null {
+    if (isDockBusy(d)) return null;
     const existing = scoutSkiffs.filter((s) => axialKey(s.homeDockCoord) === axialKey(d.coord)).length;
     if (existing >= tweaks.docks.scout_skiff.max_per_dock) return null;
     const cost = tweaks.docks.scout_skiff.cost;
@@ -664,6 +676,7 @@ export function GameScreen({
 
   /** Null once this barracks already has as many wandering scouts (built or under construction) as allowed. */
   function wanderingScoutOptionFor(b: Barracks): WanderingScoutOption | null {
+    if (isBarracksBusy(b)) return null;
     const existing = wanderingScouts.filter((s) => axialKey(s.homeBarracksCoord) === axialKey(b.coord)).length;
     if (existing >= tweaks.units.wandering_scout.max_per_barracks) return null;
     const scoutCost = tweaks.units.wandering_scout.scout_cost;
@@ -679,7 +692,7 @@ export function GameScreen({
   /** Non-null while this barracks's newest wandering scout is still under construction. */
 
   function barracksUpgradeOptionFor(b: Barracks): BarracksUpgradeOption | null {
-    if (b.damaged || b.upgrade) return null;
+    if (b.damaged || isBarracksBusy(b)) return null;
     const targetLevel = nextBarracksLevel(b.level);
     if (!targetLevel) return null;
     const cost = barracksUpgradeCost(tweaks, targetLevel);
@@ -751,15 +764,15 @@ export function GameScreen({
   }
 
   function baseUpgradeOptionFor(): BaseUpgradeOption | null {
-    if (base.action) return null;
+    if (baseHubBusy) return null;
     const targetLevel = base.level + 1;
     const cost = baseUpgradeCost(tweaks, targetLevel);
     return { targetLevel, cost, affordable: affordable(cost), durationMs: baseUpgradeDurationMs(tweaks, targetLevel) };
   }
 
-  /** Timed like every other upgrade (engine/base.ts:baseReinforcementUpgradeDurationMs). Null while base.action is set. */
+  /** Timed like every other upgrade (engine/base.ts:baseReinforcementUpgradeDurationMs). Null while the base hub is busy. */
   function reinforcementUpgradeOptionFor(): ReinforcementUpgradeOption | null {
-    if (base.action) return null;
+    if (baseHubBusy) return null;
     const targetLevel = base.reinforcementLevel + 1;
     if (targetLevel > maxReinforcementLevel(base.level)) return null;
     const cost = reinforcementUpgradeCost(tweaks, targetLevel);
@@ -772,9 +785,9 @@ export function GameScreen({
     };
   }
 
-  /** Null once base.currentHp is already at max — nothing to repair — or while base.action is set. */
+  /** Null once base.currentHp is already at max — nothing to repair — or while the base hub is busy. */
   function baseRepairOptionFor(): RepairOption | null {
-    if (base.action) return null;
+    if (baseHubBusy) return null;
     const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
     if (base.currentHp >= maxHp) return null;
     const cost = baseRepairCost(tweaks, base.currentHp, maxHp, base.reinforcementLevel);
@@ -790,7 +803,7 @@ export function GameScreen({
    * connected tiles feed that same pool, engine/tick.ts:accrueResources).
    */
   function outpostReinforcementUpgradeOptionFor(outpost: OutpostRecord): ReinforcementUpgradeOption | null {
-    if (outpost.reinforcementAction) return null;
+    if (isOutpostReinforcementBusy(outpost)) return null;
     const targetLevel = outpost.reinforcementLevel + 1;
     if (targetLevel > maxOutpostReinforcementLevel(base.level)) return null;
     const cost = outpostReinforcementUpgradeCost(tweaks, targetLevel);
@@ -805,7 +818,7 @@ export function GameScreen({
 
   /** Outpost equivalent of baseRepairOptionFor — null once at max HP or while busy, cost checked against the shared resource pool. */
   function outpostRepairOptionFor(outpost: OutpostRecord): RepairOption | null {
-    if (outpost.reinforcementAction) return null;
+    if (isOutpostReinforcementBusy(outpost)) return null;
     const maxHp = outpostReinforcementHp(tweaks, outpost.reinforcementLevel);
     if (outpost.currentHp >= maxHp) return null;
     const cost = outpostRepairCost(tweaks, outpost.currentHp, maxHp, outpost.reinforcementLevel);
@@ -952,7 +965,7 @@ export function GameScreen({
    * (mountain chokepoint, water-backed approach) is just as valid a target.
    */
   function relocationOptionFor(coord: Axial): RelocationOption | null {
-    if (!canRelocateBase(tweaks, base.level) || base.relocation) return null;
+    if (!canRelocateBase(tweaks, base.level) || baseHubBusy) return null;
     if (axialEquals(coord, territory.base)) return null;
     if (!isOwned(coord) && !isScouted(coord)) return null;
     if (terrainAt(world.seed, coord) === "water") return null;
@@ -1322,7 +1335,7 @@ export function GameScreen({
       buildCost: Partial<Record<ResourceType, number>>;
     } | null,
   ): RepairOption | null {
-    if (!structure || !structure.damaged || structure.damageRepair) return null;
+    if (!structure || !structure.damaged || isHordeRepairBlocked(structure)) return null;
     const cost = repairCost(tweaks, structure.buildCost);
     return { cost, affordable: affordable(cost), durationMinutes: structureRepairDurationMs(tweaks) / 60_000 };
   }
@@ -1574,6 +1587,30 @@ export function GameScreen({
    * Unowned tiles with a damaged structure (#17): scout/expedition only —
    * repair/upgrade once owned again.
    */
+  function canGarrisonAtSelected(): boolean {
+    return (
+      !!selectedGarrison ||
+      availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults) > 0 ||
+      availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults) > 0 ||
+      availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults) > 0
+    );
+  }
+
+  /** Leaf row opening the garrison form — always on base; elsewhere only when units are free or already stationed. */
+  function garrisonSheetAction(): SheetAction | null {
+    if (!selected || !isOwned(selected)) return null;
+    const canStation = canGarrisonAtSelected();
+    if (!selectedIsBase && !canStation) return null;
+    return {
+      key: "garrison-manage",
+      icon: <Flag size={18} />,
+      title: "Garrison",
+      detail: selectedGarrison ? "Units stationed — tap to manage or recall" : undefined,
+      disabled: !canStation,
+      formContent: garrisonFormContent(),
+    };
+  }
+
   function structuralActionsFor(): SheetAction[] {
     if (!selected) return [];
     const actions: SheetAction[] = [];
@@ -1708,7 +1745,7 @@ export function GameScreen({
           key: "storage-upgrade",
           icon: <Archive size={18} />,
           title: "Storage",
-          upgradeAvailable: storageOptions.some((o) => o.inProgress === null && o.affordable),
+          upgradeAvailable: storageOptions.some((o) => o.inProgress === null && !baseHubBusy && o.affordable),
           subActions: storageOptions.map((o) => ({
             key: o.resource,
             icon: resourceIcon(o.resource),
@@ -1718,10 +1755,19 @@ export function GameScreen({
             detail: o.inProgress
               ? formatDuration(o.inProgress.remainingMs)
               : `${formatCost(o.cost)}, ${o.durationMinutes}m`,
-            disabled: o.inProgress !== null || !o.affordable,
-            upgradeAvailable: o.inProgress === null && o.affordable,
+            disabled: o.inProgress !== null || baseHubBusy || !o.affordable,
+            upgradeAvailable: o.inProgress === null && !baseHubBusy && o.affordable,
             onClick: () => handleUpgradeStorage(o.resource),
           })),
+        });
+      }
+      const garrison = garrisonSheetAction();
+      if (garrison) {
+        actions.push({
+          key: "garrison",
+          icon: <Flag size={18} />,
+          title: "Garrison",
+          subActions: [garrison],
         });
       }
       return actions;
@@ -1917,7 +1963,7 @@ export function GameScreen({
         }
 
         const trainSubActions: SheetAction[] = [];
-        if (isStructureActive(selectedBarracks)) {
+        if (isStructureActive(selectedBarracks) && !isLandStructureBusy(selectedBarracks)) {
         const scoutOption = otherTrainingBlocks(selectedBarracks, "scout") ? null : scoutTrainOptionFor();
         trainSubActions.push({
           key: "train-scouts",
@@ -2801,18 +2847,27 @@ export function GameScreen({
       });
     }
 
-    const canGarrisonHere =
-      !!selectedGarrison ||
-      availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults) > 0 ||
-      availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults) > 0 ||
-      availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults) > 0;
-    if (canGarrisonHere) {
-      actions.push({ key: "garrison", icon: <Flag size={18} />, title: "Garrison", formContent: garrisonFormContent() });
+    const garrison = !selectedIsBase ? garrisonSheetAction() : null;
+    if (garrison) {
+      actions.push(garrison);
     }
 
     const canDemolishHere = !selectedIsBase && (!!selectedStructure || !!selectedDock);
+    const demolishBlocked =
+      (selectedTile && isLandStructureBusy(selectedTile)) ||
+      (selectedPath && isLandStructureBusy(selectedPath)) ||
+      (selectedTower && isLandStructureBusy(selectedTower)) ||
+      (selectedWall && isWallBusy(selectedWall)) ||
+      (selectedBarracks && isBarracksBusy(selectedBarracks)) ||
+      (selectedDock && isDockBusy(selectedDock));
     if (canDemolishHere) {
-      actions.push({ key: "demolish", icon: <Trash2 size={18} />, title: "Demolish", onClick: handleDemolish });
+      actions.push({
+        key: "demolish",
+        icon: <Trash2 size={18} />,
+        title: "Demolish",
+        disabled: demolishBlocked,
+        onClick: handleDemolish,
+      });
     }
 
     return actions;

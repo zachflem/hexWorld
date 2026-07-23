@@ -1,7 +1,7 @@
 import type { ResearchId, ResearchRecord } from "../data/research";
 import type { ResourceAmounts, ResourceType } from "../data/resources";
 import type { Tweaks } from "../data/tweaksSchema";
-import { isResearchAvailable, researchCost, researchDurationMs } from "../engine/research";
+import { isResearchAvailable, isResearchBusy, researchCost, researchDurationMs } from "../engine/research";
 import { remainingMs } from "../engine/timers";
 import { UPGRADE_AVAILABLE_BADGE_COLOR } from "../render/HexCanvas";
 import type { BuildResult } from "../App";
@@ -55,7 +55,7 @@ function ResearchTierRow({
   }
 
   const canAfford = Object.entries(cost).every(([res, amount]) => resources[res as ResourceType] >= (amount ?? 0));
-  const blockedByOtherResearch = research.pending !== null;
+  const blockedByOtherResearch = isResearchBusy(research);
   const disabled = !canAfford || blockedByOtherResearch;
   const ready = !disabled;
 
