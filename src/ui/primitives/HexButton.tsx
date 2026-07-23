@@ -3,14 +3,9 @@ import type { CSSProperties, ReactNode } from "react";
 
 /**
  * Vertically-symmetric hexagon (point at top/bottom) — the shared shape for
- * every clickable hex button (global menu cluster, per-tile action ring). In
- * a `size`×`size` box, its vertices sit at (50%,0%), (100%,25%), (100%,75%),
- * (50%,100%), (0%,75%), (0%,25%) — pointy top/bottom, flat vertical left/right
- * sides. For two of these to tile edge-to-edge with no gap (a real honeycomb,
- * not just visually close), the touching-neighbor translation is exactly:
- * horizontal — (±size, 0); the two diagonals — (±0.5·size, ∓0.75·size) and
- * (±0.5·size, ±0.75·size). `GlobalHexCluster.tsx` uses these directly rather
- * than an arbitrary angle/radius, so its bloom is a true tessellation.
+ * clickable hex buttons (global menu stack, etc.). In a `size`×`size` box,
+ * vertices sit at (50%,0%), (100%,25%), (100%,75%), (50%,100%), (0%,75%),
+ * (0%,25%) — pointy top/bottom, flat vertical left/right sides.
  */
 const HEX_CLIP_PATH = "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)";
 
@@ -57,6 +52,8 @@ export const HexButton = forwardRef<
         pointerEvents: "auto",
         transition: "background 0.15s ease, transform 0.15s ease",
         padding: 0,
+        // clip-path clips borders/box-shadow; drop-shadow follows the hex silhouette.
+        filter: "drop-shadow(0 0 0.6px rgba(255, 255, 255, 0.22))",
         ...style,
       }}
     >

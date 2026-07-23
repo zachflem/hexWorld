@@ -124,3 +124,26 @@ code {
     width: 420px;
   }
 }
+
+/* Thin, low-contrast scrollbar — edge fades already signal overflow. */
+.bottom-sheet-body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.bottom-sheet-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.bottom-sheet-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.bottom-sheet-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+}
+
+.bottom-sheet-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
+}

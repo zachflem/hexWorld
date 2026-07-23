@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import type { ResourceType } from "../../data/resources";
 import { formatCost, formatDuration } from "../format";
 import { QuantityStepper } from "./QuantityStepper";
+import { SheetButton } from "./SheetButton";
+import { SheetInfoCard } from "./SheetListItem";
 
 interface UnitSendField {
   available: number;
@@ -57,46 +59,19 @@ export function PartyDispatchForm({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
       {extraInfo && <div style={{ fontSize: "0.85rem", opacity: 0.85 }}>{extraInfo}</div>}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "0.25rem",
-          padding: "0.75rem 0.85rem",
-          borderRadius: 10,
-          background: "rgba(255, 255, 255, 0.05)",
-          border: "1px solid rgba(255, 255, 255, 0.1)",
-          fontSize: "0.85rem",
-        }}
-      >
+      <SheetInfoCard>
         <span>
           Route: {distanceTiles} tile{distanceTiles === 1 ? "" : "s"} (cost {pathCost.toFixed(1)})
         </span>
         <strong>{formatCost(provisionsCost)}</strong>
         <span style={{ opacity: 0.75 }}>ETA {formatDuration(etaMs)}</span>
-      </div>
+      </SheetInfoCard>
       <UnitInput label="militia" field={militia} />
       <UnitInput label="junkyard knights" field={junkyardKnight} />
       <UnitInput label="cross-bow snipers" field={crossBowSniper} />
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={onCommit}
-        style={{
-          width: "100%",
-          border: "none",
-          borderRadius: 10,
-          padding: "0.85rem 1rem",
-          fontSize: "0.95rem",
-          fontWeight: 650,
-          background: disabled ? "rgba(255, 255, 255, 0.12)" : "#2e7d32",
-          color: "white",
-          opacity: disabled ? 0.5 : 1,
-          cursor: disabled ? "default" : "pointer",
-        }}
-      >
+      <SheetButton compact disabled={disabled} onClick={onCommit}>
         {buttonLabel}
-      </button>
+      </SheetButton>
     </div>
   );
 }

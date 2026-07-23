@@ -5,8 +5,8 @@ import type { CSSProperties, ReactNode } from "react";
  * Mobile-first bottom sheet shell — full-width and centered on small
  * viewports; capped and left-docked from 768px up (see `.bottom-sheet` in
  * index.css). Chrome only (header + optional toolbar + scroll body); tabs
- * and content layout belong to the consumer so Settings/Garrisons/etc. can
- * reuse this later without inheriting tile-action UI.
+ * and content layout belong to the consumer (tile actions, global cluster
+ * panels like Settings/Garrisons/Research, etc.).
  */
 export function BottomSheet({
   open,
@@ -102,6 +102,8 @@ export function BottomSheet({
           background: "rgba(20, 20, 22, 0.96)",
           color: "white",
           borderRadius: "12px 12px 0 0",
+          border: "1px solid rgba(255, 255, 255, 0.1)",
+          borderBottom: "none",
           zIndex: 51,
           pointerEvents: "auto",
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
@@ -156,6 +158,7 @@ export function BottomSheet({
         >
           <div
             ref={bodyRef}
+            className="bottom-sheet-body"
             style={{
               position: "absolute",
               inset: 0,

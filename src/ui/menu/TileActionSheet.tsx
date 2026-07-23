@@ -193,32 +193,35 @@ export function TileActionSheet({
       scrollKey={`${activeTab?.key ?? ""}:${openFormKey ?? ""}`}
     >
       {openFormAction ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
-          <button
-            type="button"
-            onClick={() => setOpenFormKey(null)}
-            style={{
-              alignSelf: "flex-start",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.35rem",
-              background: "transparent",
-              border: "none",
-              color: "rgba(255, 255, 255, 0.85)",
-              padding: 0,
-              fontSize: "0.8rem",
-              cursor: "pointer",
-            }}
-          >
-            <ArrowLeft size={16} />
-            Back
-          </button>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <span style={{ display: "inline-flex" }}>{openFormAction.icon}</span>
-            <strong>{openFormAction.title}</strong>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0 }}>
+            <button
+              type="button"
+              onClick={() => setOpenFormKey(null)}
+              aria-label="Back"
+              style={{
+                flexShrink: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "transparent",
+                border: "1px solid rgba(255, 255, 255, 0.25)",
+                color: "white",
+                borderRadius: 8,
+                width: 36,
+                height: 36,
+                padding: 0,
+                cursor: "pointer",
+              }}
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <span style={{ display: "inline-flex", flexShrink: 0 }}>{openFormAction.icon}</span>
+            <strong style={{ fontSize: "0.95rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {openFormAction.title}
+            </strong>
           </div>
-          {openFormAction.detail && <span style={{ opacity: 0.75, fontSize: "0.8rem" }}>{openFormAction.detail}</span>}
-          <div>{openFormAction.formContent}</div>
+          {openFormAction.formContent}
         </div>
       ) : activeTab?.kind === "info" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.85rem" }}>

@@ -9,16 +9,8 @@ import {
   scoutCapacity,
 } from "../../engine/barracks";
 import { garrisonedCrossBowSniperTotal, garrisonedJunkyardKnightTotal, garrisonedMilitiaTotal } from "../../engine/garrisons";
-import { Panel } from "../primitives/Panel";
-
-function UnitRow({ label, count, capacity, garrisoned }: { label: string; count: number; capacity: number; garrisoned?: number }) {
-  return (
-    <div style={{ padding: "0.25rem 0" }}>
-      {label}: {count}/{capacity}
-      {garrisoned !== undefined && garrisoned > 0 && ` (${garrisoned} garrisoned)`}
-    </div>
-  );
-}
+import { BottomSheet } from "../primitives/BottomSheet";
+import { StatRow } from "../primitives/StatRow";
 
 /** Standing-army totals + capacities across the whole territory, at a glance — previously only visible one barracks at a time via the tile popup. */
 export function MilitaryPanel({
@@ -34,36 +26,47 @@ export function MilitaryPanel({
   barracksList: Barracks[];
   onClose: () => void;
 }) {
-  return (
-    <Panel style={{ position: "fixed", right: "1rem", bottom: "4.5rem", width: 300, fontSize: "0.85rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <strong style={{ fontSize: "1rem" }}>Military</strong>
-        <button type="button" onClick={onClose}>
-          Close
-        </button>
-      </div>
+  const scoutCap = scoutCapacity(tweaks, barracksList);
+  const militiaCap = militiaCapacity(tweaks, barracksList);
+  const knightCap = junkyardKnightCapacity(tweaks, barracksList);
+  const sniperCap = crossBowSniperCapacity(tweaks, barracksList);
+  const garrisonedMilitia = garrisonedMilitiaTotal(garrisons);
+  const garrisonedKnights = garrisonedJunkyardKnightTotal(garrisons);
+  const garrisonedSnipers = garrisonedCrossBowSniperTotal(garrisons);
 
-      <div style={{ marginTop: "0.5rem" }}>
-        <UnitRow label="Scouts" count={units.scoutStockpile} capacity={scoutCapacity(tweaks, barracksList)} />
-        <UnitRow
+  return (
+    <BottomSheet open title="Military" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+        <StatRow label="Scouts" current={units.scoutStockpile} max={scoutCap} />
+        <StatRow
           label="Militia"
-          count={units.militiaCount}
-          capacity={militiaCapacity(tweaks, barracksList)}
-          garrisoned={garrisonedMilitiaTotal(garrisons)}
+          current={units.militiaCount}
+          max={militiaCap}
+          displayValue={
+            garrisonedMilitia > 0 ? `${units.militiaCount}/${militiaCap} (${garrisonedMilitia} garrisoned)` : undefined
+          }
         />
-        <UnitRow
+        <StatRow
           label="Junkyard Knights"
-          count={units.junkyardKnightCount}
-          capacity={junkyardKnightCapacity(tweaks, barracksList)}
-          garrisoned={garrisonedJunkyardKnightTotal(garrisons)}
+          current={units.junkyardKnightCount}
+          max={knightCap}
+          displayValue={
+            garrisonedKnights > 0
+              ? `${units.junkyardKnightCount}/${knightCap} (${garrisonedKnights} garrisoned)`
+              : undefined
+          }
         />
-        <UnitRow
+        <StatRow
           label="Cross-Bow Snipers"
-          count={units.crossBowSniperCount}
-          capacity={crossBowSniperCapacity(tweaks, barracksList)}
-          garrisoned={garrisonedCrossBowSniperTotal(garrisons)}
+          current={units.crossBowSniperCount}
+          max={sniperCap}
+          displayValue={
+            garrisonedSnipers > 0
+              ? `${units.crossBowSniperCount}/${sniperCap} (${garrisonedSnipers} garrisoned)`
+              : undefined
+          }
         />
       </div>
-    </Panel>
+    </BottomSheet>
   );
 }

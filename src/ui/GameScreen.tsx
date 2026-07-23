@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { axialDistance, axialEquals, axialKey, type Axial } from "../engine/hexCoords";
 import { isBuildableLand, isTransitionTile, terrainAt } from "../engine/terrain";
@@ -166,6 +166,7 @@ import { Panel } from "./primitives/Panel";
 import { PartyDispatchForm } from "./primitives/PartyDispatchForm";
 import { TrainForm } from "./primitives/TrainForm";
 import { QuantityStepper } from "./primitives/QuantityStepper";
+import { SheetButton } from "./primitives/SheetButton";
 import { GlobalHexCluster } from "./menu/GlobalHexCluster";
 import { TileActionSheet, type SheetAction } from "./menu/TileActionSheet";
 import { HoverTooltip, type HoverTooltipHandle } from "./menu/HoverTooltip";
@@ -461,22 +462,16 @@ export function GameScreen({
   /** Desktop-mouse hover target (HexCanvas's onTileHover) — null on touch devices, which never report hover. Only changes when the hovered tile itself changes (deduped in HexCanvas), not on every mousemove pixel. */
   const [hoveredCoord, setHoveredCoord] = useState<Axial | null>(null);
   const [newGameDialogOpen, setNewGameDialogOpen] = useState(false);
-  /** Which of the global hex cluster's five panel slots (flag/binoculars/gear/chart — hammer is a toggle, not a panel) is open, if any. Only one at a time. */
+  /** Which of the global hex cluster's five panel slots (flag/binoculars/gear/chart — hammer is a toggle, not a panel) is open, if any. Only one at a time. Dismissed via BottomSheet Close/backdrop. */
   const [openPanel, setOpenPanel] = useState<"garrisons" | "scouting" | "military" | "settings" | "research" | null>(null);
   /** Hammer slot — highlights owned/empty/buildable tiles with an affordable build option, see buildModeEligibleKeysFor below. */
   const [buildModeActive, setBuildModeActive] = useState(false);
-  /** Wraps the hex cluster + whichever panel is open — a pointerdown outside both closes the panel (GlobalHexCluster already closes its own bloom the same way, independently); a pointerdown on the cluster itself (e.g. a different slot, or the same slot to toggle closed) is excluded here so it doesn't fight with the slot's own onClick. */
-  const clusterAndPanelsRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!openPanel) return;
-    function handlePointerDown(event: PointerEvent) {
-      if (clusterAndPanelsRef.current && !clusterAndPanelsRef.current.contains(event.target as Node)) {
-        setOpenPanel(null);
-      }
-    }
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [openPanel]);
+
+  /** Open a global cluster panel (or toggle the same slot closed). Clears any tile sheet so only one BottomSheet is up. */
+  function toggleOpenPanel(panel: "garrisons" | "scouting" | "military" | "settings" | "research") {
+    setSelected(null);
+    setOpenPanel((p) => (p === panel ? null : panel));
+  }
   const [actionError, setActionError] = useState<string | null>(null);
   const [militiaToSend, setMilitiaToSend] = useState(1);
   const [junkyardKnightToSend, setJunkyardKnightToSend] = useState(0);
@@ -1046,6 +1041,8 @@ export function GameScreen({
       setSelected(null);
       return;
     }
+    // Tile sheet and global cluster panels share BottomSheet — never stack them.
+    setOpenPanel(null);
     setActionError(null);
     setSelected(coord);
     setMilitiaToSend(1);
@@ -2037,25 +2034,9 @@ export function GameScreen({
           max={available}
           onChange={onChangeToGarrison}
         />
-        <button
-          type="button"
-          disabled={selectedHordeOccupied || toGarrison <= 0}
-          onClick={onGo}
-          style={{
-            width: "100%",
-            border: "none",
-            borderRadius: 10,
-            padding: "0.75rem 1rem",
-            fontSize: "0.9rem",
-            fontWeight: 650,
-            background: selectedHordeOccupied || toGarrison <= 0 ? "rgba(255, 255, 255, 0.12)" : "#2e7d32",
-            color: "white",
-            opacity: selectedHordeOccupied || toGarrison <= 0 ? 0.5 : 1,
-            cursor: selectedHordeOccupied || toGarrison <= 0 ? "default" : "pointer",
-          }}
-        >
+        <SheetButton compact disabled={selectedHordeOccupied || toGarrison <= 0} onClick={onGo}>
           Station {toGarrison > 0 ? toGarrison : ""} {label}
-        </button>
+        </SheetButton>
       </div>
     );
   }
@@ -2121,9 +2102,9 @@ export function GameScreen({
           <span>Recalling…</span>
         ) : (
           stationedTotal > 0 && (
-            <button type="button" onClick={handleRecallMilitia}>
+            <SheetButton variant="secondary" onClick={handleRecallMilitia}>
               Recall
-            </button>
+            </SheetButton>
           )
         )}
       </div>
@@ -2818,7 +2799,6 @@ export function GameScreen({
           onClose={() => setSelected(null)}
         />
       )}
-      <div ref={clusterAndPanelsRef}>
       <GlobalHexCluster
         pinnedSlot={{
           key: "fast-forward",
@@ -2833,21 +2813,21 @@ export function GameScreen({
             icon: <Flag size={20} />,
             title: "Garrisons",
             active: openPanel === "garrisons",
-            onClick: () => setOpenPanel((p) => (p === "garrisons" ? null : "garrisons")),
+            onClick: () => toggleOpenPanel("garrisons"),
           },
           {
             key: "scouting",
             icon: <Binoculars size={20} />,
             title: "Scouting",
             active: openPanel === "scouting",
-            onClick: () => setOpenPanel((p) => (p === "scouting" ? null : "scouting")),
+            onClick: () => toggleOpenPanel("scouting"),
           },
           {
             key: "military",
             icon: <Swords size={20} />,
             title: "Military",
             active: openPanel === "military",
-            onClick: () => setOpenPanel((p) => (p === "military" ? null : "military")),
+            onClick: () => toggleOpenPanel("military"),
           },
           {
             key: "research",
@@ -2855,7 +2835,7 @@ export function GameScreen({
             title: "Research",
             // Also lit up while a research is in progress, not just while the panel is open — mirrors the old floating button's "something's happening" cue.
             active: openPanel === "research" || Boolean(research.pending),
-            onClick: () => setOpenPanel((p) => (p === "research" ? null : "research")),
+            onClick: () => toggleOpenPanel("research"),
           },
           {
             key: "build-mode",
@@ -2869,7 +2849,7 @@ export function GameScreen({
             icon: <Settings size={20} />,
             title: "Settings",
             active: openPanel === "settings",
-            onClick: () => setOpenPanel((p) => (p === "settings" ? null : "settings")),
+            onClick: () => toggleOpenPanel("settings"),
           },
         ]}
       />
@@ -2910,7 +2890,6 @@ export function GameScreen({
           onClose={() => setOpenPanel(null)}
         />
       )}
-      </div>
       <div
         style={{
           position: "fixed",

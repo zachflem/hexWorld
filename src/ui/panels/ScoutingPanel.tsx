@@ -7,7 +7,9 @@ import type { LabRecord } from "../../data/lab";
 import type { Tweaks } from "../../data/tweaksSchema";
 import { scoutCapacity } from "../../engine/barracks";
 import { labClueText } from "../../engine/lab";
-import { Panel } from "../primitives/Panel";
+import { BottomSheet } from "../primitives/BottomSheet";
+import { StatRow } from "../primitives/StatRow";
+import { SheetInfoCard, SheetListItem, SheetSectionLabel } from "../primitives/SheetListItem";
 
 /** Scouting/exploration status + the lab's clue history — previously the clue count/latest hint lived in the HUD header with no history, and skiffs/wandering scouts had no summary view at all. */
 export function ScoutingPanel({
@@ -35,38 +37,29 @@ export function ScoutingPanel({
   }));
 
   return (
-    <Panel style={{ position: "fixed", right: "1rem", bottom: "4.5rem", width: 320, fontSize: "0.85rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <strong style={{ fontSize: "1rem" }}>Scouting</strong>
-        <button type="button" onClick={onClose}>
-          Close
-        </button>
-      </div>
+    <BottomSheet open title="Scouting" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+        <StatRow label="Scouts" current={units.scoutStockpile} max={scoutCapacity(tweaks, barracksList)} />
+        <SheetInfoCard>
+          <span>Scout skiffs: {scoutSkiffs.length}</span>
+          <span>Wandering scouts: {wanderingScouts.length}</span>
+        </SheetInfoCard>
 
-      <div style={{ marginTop: "0.5rem" }}>
-        <div>
-          Scouts: {units.scoutStockpile}/{scoutCapacity(tweaks, barracksList)}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+          <SheetSectionLabel>
+            Lab clues ({lab.cluesCollected}/{tweaks.lab_clues.total_clues})
+          </SheetSectionLabel>
+          {lab.secured ? (
+            <SheetListItem title="Lab secured" detail="You win." />
+          ) : clueHistory.length === 0 ? (
+            <p style={{ margin: 0, opacity: 0.7, fontSize: "0.85rem" }}>No clues collected yet.</p>
+          ) : (
+            clueHistory.map(({ n, text }) => (
+              <SheetListItem key={n} title={`Clue ${n}`} detail={text ?? undefined} />
+            ))
+          )}
         </div>
-        <div>Scout skiffs: {scoutSkiffs.length}</div>
-        <div>Wandering scouts: {wanderingScouts.length}</div>
       </div>
-
-      <div style={{ marginTop: "0.75rem" }}>
-        <div style={{ opacity: 0.8, marginBottom: "0.25rem" }}>
-          Lab clues ({lab.cluesCollected}/{tweaks.lab_clues.total_clues})
-        </div>
-        {lab.secured ? (
-          <p>Lab secured — you win.</p>
-        ) : clueHistory.length === 0 ? (
-          <p style={{ opacity: 0.7 }}>No clues collected yet.</p>
-        ) : (
-          clueHistory.map(({ n, text }) => (
-            <div key={n} style={{ padding: "0.15rem 0" }}>
-              {n}. {text}
-            </div>
-          ))
-        )}
-      </div>
-    </Panel>
+    </BottomSheet>
   );
 }

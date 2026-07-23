@@ -1,5 +1,7 @@
 import type { Player } from "../../data/player";
-import { Panel } from "../primitives/Panel";
+import { BottomSheet } from "../primitives/BottomSheet";
+import { SheetButton } from "../primitives/SheetButton";
+import { SheetInfoCard } from "../primitives/SheetListItem";
 
 /**
  * Absorbs everything that used to live in the `☰` dropdown (now removed in
@@ -23,24 +25,19 @@ export function SettingsPanel({
   onClose: () => void;
 }) {
   return (
-    <Panel style={{ position: "fixed", right: "1rem", bottom: "4.5rem", width: 280, fontSize: "0.85rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <strong style={{ fontSize: "1rem" }}>Settings</strong>
-        <button type="button" onClick={onClose}>
-          Close
-        </button>
-      </div>
-
-      <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        <strong style={{ color: player.color }}>{player.name}</strong>
-        <p style={{ margin: 0, opacity: 0.8 }}>Seed: {seed}</p>
-        <button type="button" onClick={onRecenterOnBase}>
+    <BottomSheet open title="Settings" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+        <SheetInfoCard>
+          <strong style={{ color: player.color, fontSize: "0.95rem" }}>{player.name}</strong>
+          <span style={{ opacity: 0.75 }}>Seed: {seed}</span>
+        </SheetInfoCard>
+        <SheetButton variant="secondary" onClick={onRecenterOnBase}>
           Recenter on Base
-        </button>
-        <button type="button" onClick={onNewGame}>
+        </SheetButton>
+        <SheetButton variant="secondary" onClick={onNewGame}>
           New Game
-        </button>
+        </SheetButton>
       </div>
-    </Panel>
+    </BottomSheet>
   );
 }
