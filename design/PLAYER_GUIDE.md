@@ -8,11 +8,18 @@ This guide describes the game **as it currently plays**.
 
 ## Getting started
 
-When you first open the game, you'll page through a short **field manual** — cover, registration, a few story pages, then a send-off — before the map loads.
+When you first open the game (or choose **Start as a new player** after wiping progress), you'll page through a short **field manual** — cover, registration, a few story pages, then a send-off — before the map loads.
 
-On the registration page you'll enter a **name** and a **colour** (used to tint your base and territory outline on the map). You can optionally enter a **seed** — a number that fully determines the map layout, terrain, and everything on it. Leave it blank for a random map, or enter a specific number to replay a map you (or someone else) has seen before; the same seed always generates the exact same world.
+On the registration page you'll enter a **name** and a **colour** (used to tint your base and territory outline on the map). Expand **Show Advanced Options** (collapsed by default) for:
+- **Difficulty** — Standard (`default`) or Hard (`hard`); each profile changes balance numbers and may swap some sprites, with missing art falling back to Standard.
+- **Seed** — a number that fully determines the map layout, terrain, and everything on it. Leave it blank for a random map, or enter a specific number to replay a map you (or someone else) has seen before; the same seed always generates the exact same world.
+- **Recent seeds** — your last five seeds, for quick replay.
 
-Use **Begin**, **Continue**, **Next**, and **Step Outside** (or arrow keys on non-input pages) to move through the manual. An existing save skips onboarding on reload.
+You can also open a difficulty directly via URL: `play.{domain}/hard` loads the Hard profile before onboarding.
+
+Use **Begin**, **Continue**, **Next**, and **Step Outside** (or arrow keys on non-input pages) to move through the manual.
+
+**Returning with a save:** if you already have progress in this browser, you'll see a notebook-style prompt first — **Yes!** resumes where you left off (same profile as when you saved); **No. Start a New Game** clears the save and opens the field manual for a fresh run.
 
 Progress saves automatically in your browser (IndexedDB) as you play — closing the tab is safe.
 
