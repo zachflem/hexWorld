@@ -34,6 +34,7 @@ const terrainYieldMultiplierSchema = z.object({
 export const tweaksSchema = z.object({
   meta: z.object({
     version: z.string(),
+    slug: z.string(),
     profile_name: z.string(),
     notes: z.string(),
   }),

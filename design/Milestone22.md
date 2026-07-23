@@ -1,12 +1,12 @@
 # Milestone 22 — Onboarding Overhaul: The Field Manual
 
-**Status:** 🚧 Not started — planned, parked behind Milestone 21's bug/UX backlog
+**Status:** ✅ Complete
 
 Implementation plan and design reference for the onboarding rework. See `ROADMAP.md` for the one-line milestone entry; this file holds the detail.
 
 ## Context
 
-The current onboarding screen (`src/ui/OnboardingScreen.tsx`) is a single unstyled `<form>`: name input, colour picker, optional seed field, one "Settle" button. It works but gives a new player zero sense of place — no hook, no explanation of what they're about to do, nothing that sells the premise (small group settling hostile territory, noise draws zombie hordes, a hidden lab holds the cure). The goal is to make first contact with the game feel like **finding an old physical field manual** — not a glowing computer terminal, since in the fiction the player hasn't built any power infrastructure yet when the run starts — read it, then head out into the world.
+The pre-M22 onboarding screen (`src/ui/OnboardingScreen.tsx`, since removed) was a single unstyled `<form>`: name input, colour picker, optional seed field, one "Settle" button. It works but gives a new player zero sense of place — no hook, no explanation of what they're about to do, nothing that sells the premise (small group settling hostile territory, noise draws zombie hordes, a hidden lab holds the cure). The goal is to make first contact with the game feel like **finding an old physical field manual** — not a glowing computer terminal, since in the fiction the player hasn't built any power infrastructure yet when the run starts — read it, then head out into the world.
 
 Requested flow, in order: brief intro/hook → enter player details (existing form, unchanged fields/validation) → several pages of diegetic story content with a page-turning mechanic → hand off into the game exactly as today. Visual language: aged paper, ink text, worn-cover framing — sepia tones, not neon/scanlines. Story portion should be short (3-4 pages), written as an in-world document the character found, not narrator exposition. Must work in both light and dark mode using the app's existing `index.css` custom-property theming pattern. No new dependencies.
 
@@ -15,14 +15,14 @@ Requested flow, in order: brief intro/hook → enter player details (existing fo
 One linear array of pages inside a rewritten `OnboardingScreen.tsx`, one `pageIndex` state, one keyboard listener — not a separate form-mode/booklet-mode split.
 
 1. **Cover** — title + one-line hook, no inputs. Primary button: "Begin".
-2. **Registration** — today's form (name / colour / optional seed), same validation logic, same defaults (`DEFAULT_COLOR = "#863bff"`), just reframed as a manual page. Primary button: "Continue", disabled until name is non-empty (same gate as today's submit button).
-3-5(-6). **Story pages** (3-4 total, diegetic manual/log entries):
+2. **Registration** — name / inline colour wheel; **Show Advanced Options** (collapsed by default) holds difficulty profile, optional seed, and recent seeds (Milestone 23). Same validation logic and defaults (`DEFAULT_COLOR = "#863bff"`), reframed as a manual page. Primary button: "Continue", disabled until name is non-empty (same gate as the old submit button).
+3-6. **Story pages** (four diegetic manual/log entries — "Before You Go" included):
    - "Settling" — the group arrives and claims the ground (DESIGN.md §1/§6).
    - "The Noise" — noise draws hordes, danger scales with activity (§12).
-   - "What We're Looking For" — rumor of a hidden lab holding a cure (§13), framed as legend, not exposition.
-   - (optional 4th) "Before You Go" — a softened, in-fiction nudge (claim ground, stay quiet, watch the treeline) that doubles as a light tutorial without breaking the fourth wall.
+   - "What We're Looking For" — rumor of a hidden lab holding a cure (§13), framed as legend, not exposition; lab-only win, dens optional.
+   - "Before You Go" — a softened, in-fiction nudge (claim ground, stay quiet, watch the treeline) that doubles as a light tutorial without breaking the fourth wall.
    Page counter ("Page n of N") is scoped to just this subset — cover/registration/send-off don't count toward it.
-6/7. **Send-off** — closing line + final button ("Step Outside" or similar) that calls `onCreated(player, seed)` — the only place the existing contract fires, deferred to the end instead of firing right after the form.
+7. **Send-off** — closing line + final button ("Step Outside") that calls `onCreated(player, seed)` — the only place the existing contract fires, deferred to the end instead of firing right after the form.
 
 ```ts
 type OnboardingPage =
@@ -38,7 +38,8 @@ State stays flat: `pageIndex`, plus the existing `name`/`color`/`seedInput`/`see
 
 ## Page-turn interaction
 
-- Footer nav: "← Back" (hidden on cover, not just disabled), page counter (story pages only), primary button (label varies: Begin / Continue / Next / send-off phrase).
+- Footer nav: "← Back" (hidden on cover, not just disabled), page counter (story pages only, `aria-live="polite"`), primary button (label varies: Begin / Continue / Next / send-off phrase).
+- Focus moves to the primary footer button on each page change.
 - Keyboard: `ArrowLeft`/`ArrowRight` advance/retreat on non-input pages (cover, story, send-off) via a `keydown` listener scoped to the mount lifetime. On the registration page, keep the existing `<form onSubmit>` for Enter-to-continue and do **not** bind the global arrow-key listener there, so typing in the name/seed inputs (cursor movement, Enter for autofill etc.) isn't hijacked.
 - Transition: instant-swap with a short (~180ms) opacity/translateY fade keyed on `pageIndex`, wrapped in `@media (prefers-reduced-motion: no-preference)` so motion-sensitive users get a plain instant swap. No page-curl/flip — the rest of the app's screens (WinScreen/GameOverScreen/NewGameDialog) have zero animation, so a subtle fade is the ceiling here, not a skeuomorphic flip.
 
@@ -67,6 +68,8 @@ Anchor to `index.css`'s existing `@media (prefers-color-scheme: dark)` pattern, 
 
 - Paper surface via layered radial gradients for soft foxing/age (no image assets — `public/` only has game sprites).
 - Thick darker-tone outer border (`border: 10px solid var(--manual-paper-edge)`, minimal `border-radius`) + the app's existing `--shadow` token for lift.
+- Body text is explicitly `text-align: left` inside `.onboarding-root` (overrides `#root`'s centered layout).
+- Registration uses a flexible field stack with a reserved `.onboarding-registration__future-slot` for a future map-size control (Milestone 21 UX #10) — no fixed card height.
 - Serif font stack (`Georgia, 'Times New Roman', serif`) scoped only to `.onboarding-root` — a deliberate, scoped exception from the app's sans-serif `--heading`/`--sans`, since serif reads as "printed manual." Explicitly no monospace anywhere (that's the terminal look being avoided).
 - No glow/scanline/text-shadow, no bleeding the app's purple `--accent` into this screen. The `<input type="color">` swatch on the registration page is the one intentional spot of saturated color.
 
@@ -79,8 +82,10 @@ Anchor to `index.css`'s existing `@media (prefers-color-scheme: dark)` pattern, 
 - `src/ui/onboarding/onboarding.css` — the one dedicated stylesheet (imported once from `OnboardingScreen.tsx`): `@keyframes` fade, paper-texture gradients, the light/dark custom properties above.
 
 **Modified:**
-- `src/App.tsx` — only the import path changes (`./ui/onboarding/OnboardingScreen` instead of `./ui/OnboardingScreen`); the render gate (`<OnboardingScreen onCreated={handlePlayerCreated} />`, only rendered when no saved game exists) and `handlePlayerCreated` (`await resetGame(player, seed ?? generateSeed())`) are untouched — contract (`onCreated(player, seed?)` fired exactly once) is identical.
-- `design/ROADMAP.md` — one-line Milestone 22 entry pointing back to this file.
+- `src/App.tsx` — import path `./ui/onboarding/OnboardingScreen`; boot flow now shows `ContinueGamePrompt` when a complete save exists (Milestone 23), then onboarding when starting fresh. `onCreated` carries `{ player, seed?, profileSlug }`.
+- `design/ROADMAP.md` — Milestone 22 marked complete.
+- `design/DESIGN.md` §4 — field-manual onboarding flow.
+- `design/PLAYER_GUIDE.md` — getting-started section updated for the manual flow.
 
 **Removed:** old `src/ui/OnboardingScreen.tsx` (superseded by the subfolder version, not left orphaned).
 
@@ -90,5 +95,12 @@ Manual click-through against `npm run dev` (dev server run by the user, not star
 1. Fresh IndexedDB (private window / clear storage) → confirm cover renders first, click/key through registration (validation matches today's behavior exactly: empty name blocks advance, bad seed text shows the same error) → story pages (counter increments correctly) → send-off → confirm the app enters `GameScreen` with the entered name/colour/seed actually applied, and a supplied seed reproduces the same map on reload.
 2. Keyboard nav: arrow keys advance/retreat on non-input pages; confirm they're inert while a text input on the registration page has focus (no hijacking cursor movement).
 3. Toggle `prefers-color-scheme` (devtools → Rendering → Emulate CSS media) → confirm paper tones swap correctly in both modes with legible contrast.
-4. Existing save (from step 1) → reload → onboarding never renders, `GameScreen` appears immediately.
+4. Existing save (from step 1) → reload → **continue prompt** appears first; **Yes!** resumes `GameScreen` without re-reading the manual; **No. Start a New Game** clears save and shows onboarding.
 5. Emulate `prefers-reduced-motion: reduce` → pages swap instantly, no fade, still fully functional.
+
+## Post-M22 addendum (Milestone 23, same `goblin` branch)
+
+- Difficulty profiles + URL slugs (`/hard`, etc.) and bundled `public/profiles/{slug}/`.
+- Continue-or-new-game prompt (`src/ui/ContinueGamePrompt.tsx`) — no silent auto-resume.
+- Registration advanced block: difficulty, seed, recent seeds (last 5 in IndexedDB).
+- Default sprites moved to `public/profiles/default/assets/` (formerly `public/tiles/`).

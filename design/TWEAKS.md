@@ -2,7 +2,33 @@
 
 This is the plain-English companion to `tweaks.jsonc`. Read this when you've forgotten why a number is what it is, or how a formula is supposed to work.
 
-The live file lives at `public/tweaks.jsonc` (served statically, fetched and validated at app boot — see `src/data/`).
+The canonical **Standard** balance lives at `public/profiles/default/tweaks.jsonc`. A legacy copy at `public/tweaks.jsonc` is kept in sync for reference; the app loads per-profile files at boot (see `src/data/tweaksLoader.ts`).
+
+---
+
+## Difficulty profiles
+
+Each shipped difficulty is a folder under `public/profiles/{slug}/`:
+
+```
+public/profiles/
+  index.json              # registry: slug, display name, description
+  default/
+    tweaks.jsonc          # Standard balance (meta.slug must match folder)
+    assets/               # full default sprite pack (terrain, buildings, units, …)
+  hard/
+    tweaks.jsonc          # tighter economy / faster hordes (example)
+    assets/               # optional partial overrides only — missing files fall back to default
+```
+
+**How the app picks a profile:**
+- URL path on the game domain: `play.{domain}/{slug}` (e.g. `/hard`). Root `/` uses `default`.
+- Onboarding **Show Advanced Options** (collapsed by default): difficulty dropdown + seed + recent seeds.
+- `profileSlug` is persisted in IndexedDB with the save; continue/resume uses the saved profile.
+
+**Asset resolution** (`src/render/assetPaths.ts`): try `profiles/{active}/assets/…` → `profiles/default/assets/…` → flat-colour fallback.
+
+**Adding a profile:** create the folder, set `meta.slug` in `tweaks.jsonc` to match, register in `index.json`, add any partial `assets/`. Zip import/export for new profiles is deferred to a future admin tweaks GUI.
 
 ---
 
@@ -12,7 +38,7 @@ It's **JSONC** (JSON with `//` comments). Regular `JSON.parse()` chokes on comme
 - strip comments before parsing (`strip-json-comments` npm package), or
 - use a JSON5 parser instead.
 
-Later, difficulty options ("normal", "hard", "casual", "speedrun") will just be sibling files (`tweaks-hard.jsonc`, etc.) with different numbers — same structure.
+Every profile file uses the **same schema** — difficulty is just different numbers (and optional art) in sibling folders, not a separate format.
 
 ---
 
@@ -483,8 +509,7 @@ A converted den becomes a second, independent economic/defensive hub — a real 
 
 ## Open Items (Not Yet Locked)
 
-1. **Difficulty profile files** — structure for `tweaks-hard.jsonc` etc. hasn't been designed yet; current file is the single "normal" baseline.
-2. **Terrain-based tile defense (Milestone 10)** — tile defense is currently distance-only (`territory_expansion.tile_defense_per_distance`); a terrain multiplier (mountains harder to take, etc.) was considered but deferred.
+1. **Terrain-based tile defense (Milestone 10)** — tile defense is currently distance-only (`territory_expansion.tile_defense_per_distance`); a terrain multiplier (mountains harder to take, etc.) was considered but deferred.
 
 ---
 

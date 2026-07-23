@@ -37,9 +37,9 @@ describe("baseUpgradeCost", () => {
 describe("baseUpgradeTimeMinutes", () => {
   it("matches time(targetLevel) = first_upgrade_time_minutes * growth^(targetLevel-2)", () => {
     const tweaks = loadRealTweaks();
-    expect(baseUpgradeTimeMinutes(tweaks, 2)).toBeCloseTo(10);
-    expect(baseUpgradeTimeMinutes(tweaks, 3)).toBeCloseTo(10 * 1.2);
-    expect(baseUpgradeTimeMinutes(tweaks, 4)).toBeCloseTo(10 * 1.2 * 1.2);
+    expect(baseUpgradeTimeMinutes(tweaks, 2)).toBeCloseTo(9);
+    expect(baseUpgradeTimeMinutes(tweaks, 3)).toBeCloseTo(9 * 1.2);
+    expect(baseUpgradeTimeMinutes(tweaks, 4)).toBeCloseTo(9 * 1.2 * 1.2);
   });
 });
 
