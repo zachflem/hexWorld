@@ -37,7 +37,9 @@ export function ManualPage({
       : null;
 
   return (
-    <article className="onboarding-manual" aria-labelledby={title ? headingId : undefined}>
+    <div className="onboarding-notebook">
+      <div className="onboarding-notebook__binding" aria-hidden="true" />
+      <article className="onboarding-manual" aria-labelledby={title ? headingId : undefined}>
       {title ? (
         <header className="onboarding-manual__header">
           <h1 id={headingId} className="onboarding-manual__title">
@@ -81,6 +83,7 @@ export function ManualPage({
           </button>
         </div>
       </footer>
-    </article>
+      </article>
+    </div>
   );
 }

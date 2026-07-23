@@ -1,8 +1,8 @@
 /** Diegetic copy for the field-manual onboarding flow. Keep prose here, not in components. */
 
-export const COVER_TITLE = "Field Manual";
+export const COVER_TITLE = "Field Notes";
 export const COVER_HOOK =
-  "Found wedged under a pack strap — pages foxed with age, ink still legible. Someone walked this ground before us.";
+  "Pulled from a spiral pad in the old lab — coffee rings, smudged ink, someone's handwriting still legible. They walked this ground before us.";
 
 export const SENDOFF_LINE =
   "The treeline is quiet for now. Whatever waits out there won't stay that way once we start building.";
