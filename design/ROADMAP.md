@@ -4,6 +4,7 @@
 
 - [About this project](#about-this-project)
 - [Roadmap maintenance](#roadmap-maintenance)
+  - [Documentation sync](#documentation-sync)
 - [Bugs & testing feedback](#bugs--testing-feedback)
   - [Bugs](#bugs)
   - [UI](#ui)
@@ -53,6 +54,25 @@ This document tracks **what to build next** (playtesting backlog first), **open 
 3. **Proposed → Milestone** when there is a clear checklist and testable outcome — assign next number (**24**), move or mark item *Promoted to M24*, add checklist in Milestones.
 4. **Structured detail stays out of ROADMAP** (even in Proposed): file layouts, schemas, page sequences, step-by-step agent instructions, verification scripts, code snippets → `design/MilestoneN.md`, created when the feature **promotes to a Milestone** or when an agent is explicitly commissioned to plan one. Do not let proposed entries grow into pseudo-milestone docs; promote instead.
 
+### Documentation sync
+
+Keep the design docs aligned with the code. Stale docs cause the mismatches we have been cleaning up (e.g. old onboarding flow, win-condition wording).
+
+| Doc | Update when… | Voice / content |
+|-----|--------------|-----------------|
+| **[DESIGN.md](DESIGN.md)** | Systems, mechanics, scope, architecture, or in-fiction rules change | Authoritative *design intent* — why systems exist, how they interact, what's in/out of scope |
+| **[PLAYER_GUIDE.md](PLAYER_GUIDE.md)** | **Player-visible** behavior changes — controls, flows, UI labels, what the player can do | Plain English for players; describes the game *as it currently plays* |
+| **[TWEAKS.md](TWEAKS.md)** | Balance numbers or formulas change | Plain-English companion to `tweaks.jsonc`; note corrections with date/reason |
+| **ROADMAP.md** | Backlog status, milestones, proposed features | What to build next; not a substitute for DESIGN or PLAYER_GUIDE |
+
+**When to update (agents and devs):**
+
+- **Bug fix** that changes player-visible behavior → PLAYER_GUIDE if a section describes the old behavior; DESIGN only if mechanics changed.
+- **New or changed mechanic** → DESIGN.md first (or alongside code); PLAYER_GUIDE when the feature is player-facing and shipped.
+- **Balance-only change** → profile `tweaks.jsonc` + TWEAKS.md; ROADMAP backlog item → Resolved. Usually no PLAYER_GUIDE change unless yields/costs are spelled out there.
+- **Milestone ✅** → before marking complete, check whether DESIGN and/or PLAYER_GUIDE need a pass; include doc updates in the same PR/merge as the code when they apply.
+- **Do not duplicate** — ROADMAP tracks *status*; DESIGN holds *systems*; PLAYER_GUIDE holds *how to play*; TWEAKS holds *numbers*. Link between them instead of copying paragraphs.
+
 ### Other rules
 
 | Topic | Rule |
@@ -62,7 +82,7 @@ This document tracks **what to build next** (playtesting backlog first), **open 
 | **Proposed IDs** | `#P1`, `#P2`, … (P = proposed) |
 | **`[URGENT]`** | Prefix when play is blocked or game state is misleading |
 | **Balance fixes** | Backlog → `public/profiles/{slug}/tweaks.jsonc` → note in [TWEAKS.md](TWEAKS.md) → Resolved |
-| **Milestone DoD** | Mark ✅ only when every checklist item is done and verified; run `npm test` + `npm run build` |
+| **Milestone DoD** | Mark ✅ only when every checklist item is done and verified; `npm test` + `npm run build`; update [DESIGN.md](DESIGN.md) / [PLAYER_GUIDE.md](PLAYER_GUIDE.md) when the change affects them (see Documentation sync above) |
 | **Detail files** | Agent-generated plans with schemas, layouts, verification → [Milestone22.md](Milestone22.md) is the template; ROADMAP entry stays brief + link |
 | **Collapsible blocks** | Use `<details>` / `<summary>` for completed milestones, recently resolved, deferred, and ideas (see completed section below) |
 | **Agent git workflow** | See [WORKFLOW.md](WORKFLOW.md). Ask the user which **personal branch** they use; do not assume `goblin` or `krunchee`. Merge finished work to **`dev`**. |
