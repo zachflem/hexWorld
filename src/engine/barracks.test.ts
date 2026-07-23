@@ -4,9 +4,10 @@ import stripJsonComments from "strip-json-comments";
 import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
 import type { Barracks } from "../data/barracks";
+import type { UnitsRecord } from "../data/units";
 import {
+  advanceBarracksTraining,
   barracksBuildCost,
-  barracksTrainingCapacity,
   barracksUpgradeCost,
   barracksUpgradeDurationMs,
   crossBowSniperCapacity,
@@ -14,6 +15,7 @@ import {
   militiaCapacity,
   nextBarracksLevel,
   scoutCapacity,
+  trainingUnitDurationMs,
 } from "./barracks";
 
 function loadRealTweaks() {
@@ -121,21 +123,70 @@ describe("junkyardKnightCapacity / crossBowSniperCapacity", () => {
   });
 });
 
-describe("barracksTrainingCapacity", () => {
-  it("excludes damaged and under-construction barracks", () => {
-    const list: Barracks[] = [
-      { coord: { q: 0, r: 0 }, level: 3, totalInvested: {}, upgrade: null, buildCost: {}, damaged: true },
-      { coord: { q: 1, r: 0 }, level: 2, totalInvested: {}, upgrade: null, buildCost: {}, damaged: false, buildStartedAt: 0 },
-      { coord: { q: 2, r: 0 }, level: 4, totalInvested: {}, upgrade: null, buildCost: {}, damaged: false, buildStartedAt: null },
-    ];
-    expect(barracksTrainingCapacity(list)).toBe(4);
+describe("advanceBarracksTraining", () => {
+  const baseBarracks = (overrides: Partial<Barracks> = {}): Barracks => ({
+    coord: { q: 0, r: 0 },
+    level: 2,
+    totalInvested: {},
+    upgrade: null,
+    buildCost: {},
+    damaged: false,
+    ...overrides,
   });
 
-  it("is 0 when every barracks is non-functional", () => {
-    const list: Barracks[] = [
-      { coord: { q: 0, r: 0 }, level: 3, totalInvested: {}, upgrade: null, buildCost: {}, damaged: true },
-      { coord: { q: 1, r: 0 }, level: 2, totalInvested: {}, upgrade: null, buildCost: {}, damaged: false, buildStartedAt: 1000 },
+  const units = (): UnitsRecord => ({
+    scoutStockpile: 0,
+    militiaCount: 0,
+    junkyardKnightCount: 0,
+    crossBowSniperCount: 0,
+  });
+
+  it("delivers scouts from an active barracks queue", () => {
+    const tweaks = loadRealTweaks();
+    const perUnitMs = trainingUnitDurationMs(tweaks, "scout", 2);
+    const startedAt = 1000;
+    const list = [
+      baseBarracks({
+        trainingQueue: { unitType: "scout", remaining: 2, currentUnitStartedAt: startedAt },
+      }),
     ];
-    expect(barracksTrainingCapacity(list)).toBe(0);
+    const result = advanceBarracksTraining(tweaks, list, units(), startedAt + perUnitMs);
+    expect(result.units.scoutStockpile).toBe(1);
+    expect(result.barracksList[0].trainingQueue).toEqual({
+      unitType: "scout",
+      remaining: 1,
+      currentUnitStartedAt: startedAt + perUnitMs,
+    });
+  });
+
+  it("pauses training while the barracks is damaged or under construction", () => {
+    const tweaks = loadRealTweaks();
+    const perUnitMs = trainingUnitDurationMs(tweaks, "militia", 2);
+    const startedAt = 1000;
+    const queue = { unitType: "militia" as const, remaining: 1, currentUnitStartedAt: startedAt };
+    const damaged = advanceBarracksTraining(
+      tweaks,
+      [baseBarracks({ damaged: true, trainingQueue: queue })],
+      units(),
+      startedAt + perUnitMs * 2,
+    );
+    expect(damaged.units.militiaCount).toBe(0);
+    expect(damaged.barracksList[0].trainingQueue).toEqual(queue);
+
+    const building = advanceBarracksTraining(
+      tweaks,
+      [baseBarracks({ buildStartedAt: 0, trainingQueue: queue })],
+      units(),
+      startedAt + perUnitMs * 2,
+    );
+    expect(building.units.militiaCount).toBe(0);
+    expect(building.barracksList[0].trainingQueue).toEqual(queue);
+  });
+
+  it("uses each barracks's own level for training speed, not a pooled count", () => {
+    const tweaks = loadRealTweaks();
+    const l1Ms = trainingUnitDurationMs(tweaks, "scout", 1);
+    const l4Ms = trainingUnitDurationMs(tweaks, "scout", 4);
+    expect(l4Ms).toBeCloseTo(l1Ms / 4);
   });
 });

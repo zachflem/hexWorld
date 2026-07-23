@@ -29,8 +29,8 @@ import {
 import { NOISE_DB_KEY, initialNoise, type NoiseRecord } from "./data/noise";
 import { TOWERS_DB_KEY, type Tower } from "./data/towers";
 import { WALLS_DB_KEY, type Wall } from "./data/walls";
-import { BARRACKS_DB_KEY, type Barracks } from "./data/barracks";
-import { UNITS_DB_KEY, initialUnits, type UnitsRecord } from "./data/units";
+import { BARRACKS_DB_KEY, type Barracks, type TrainingUnitType } from "./data/barracks";
+import { UNITS_DB_KEY, initialUnits, type LegacyUnitsRecord, type UnitsRecord } from "./data/units";
 import { GARRISONS_DB_KEY, type GarrisonsRecord } from "./data/garrisons";
 import { SCOUTED_TILES_DB_KEY, type ScoutedTiles } from "./data/scoutedTiles";
 import { DENS_DB_KEY, createDens, resolveDen, type DenRecord, type DensRecord } from "./data/dens";
@@ -59,6 +59,7 @@ import {
   scaledCostMap,
   structureRepairDurationMs,
   totalStructureCount,
+  isStructureActive,
 } from "./engine/formulas";
 import {
   baseReinforcementHp,
@@ -132,9 +133,9 @@ import {
   wallUpgradeDurationMs,
 } from "./engine/walls";
 import {
+  advanceBarracksTraining,
   barracksBuildCost,
   barracksBuildDurationMs,
-  barracksTrainingCapacity,
   barracksUpgradeCost,
   barracksUpgradeDurationMs,
   crossBowSniperCapacity,
@@ -146,14 +147,9 @@ import {
 import {
   applyUpkeepTick,
   crossBowSniperTrainCost,
-  crossBowSniperTrainDurationMs,
   junkyardKnightTrainCost,
-  junkyardKnightTrainDurationMs,
   militiaTrainCost,
-  militiaTrainDurationMs,
-  resolveTrainingQueue,
   scoutTrainCost,
-  scoutTrainDurationMs,
 } from "./engine/units";
 import { GameScreen } from "./ui/GameScreen";
 import type { ToastRecord } from "./ui/hud/Toast";
@@ -212,6 +208,36 @@ function resolveBase(tweaks: Tweaks, base: BaseRecord | undefined): BaseRecord {
   return resolved;
 }
 
+/** Moves pre-#5 player-global training queues onto the first idle active barracks. */
+function migrateLegacyTrainingQueues(
+  barracksList: Barracks[],
+  rawUnits: LegacyUnitsRecord,
+): { barracksList: Barracks[]; units: UnitsRecord } {
+  const units: UnitsRecord = {
+    scoutStockpile: rawUnits.scoutStockpile ?? 0,
+    militiaCount: rawUnits.militiaCount ?? 0,
+    junkyardKnightCount: rawUnits.junkyardKnightCount ?? 0,
+    crossBowSniperCount: rawUnits.crossBowSniperCount ?? 0,
+  };
+
+  const legacyQueues: { unitType: TrainingUnitType; queue: NonNullable<LegacyUnitsRecord["scoutQueue"]> }[] = [];
+  if (rawUnits.scoutQueue) legacyQueues.push({ unitType: "scout", queue: rawUnits.scoutQueue });
+  if (rawUnits.militiaQueue) legacyQueues.push({ unitType: "militia", queue: rawUnits.militiaQueue });
+  if (rawUnits.junkyardKnightQueue) legacyQueues.push({ unitType: "junkyard_knight", queue: rawUnits.junkyardKnightQueue });
+  if (rawUnits.crossBowSniperQueue) legacyQueues.push({ unitType: "cross_bow_sniper", queue: rawUnits.crossBowSniperQueue });
+
+  let nextBarracks = barracksList;
+  for (const { unitType, queue } of legacyQueues) {
+    const idx = nextBarracks.findIndex((b) => isStructureActive(b) && !b.trainingQueue);
+    if (idx < 0) break;
+    nextBarracks = nextBarracks.map((b, i) =>
+      i === idx ? { ...b, trainingQueue: { unitType, remaining: queue.remaining, currentUnitStartedAt: queue.currentUnitStartedAt } } : b,
+    );
+  }
+
+  return { barracksList: nextBarracks, units };
+}
+
 function buildGameState(
   tweaks: Tweaks,
   data: {
@@ -249,6 +275,7 @@ function buildGameState(
   },
 ): GameState {
   const resolvedDens = (data.dens ?? []).map(resolveDen);
+  const migrated = migrateLegacyTrainingQueues(data.barracksList ?? [], { ...initialUnits(), ...(data.units as LegacyUnitsRecord | undefined) });
   return {
     player: data.player,
     world: data.world,
@@ -260,8 +287,8 @@ function buildGameState(
     pathTiles: data.pathTiles ?? [],
     towers: data.towers ?? [],
     walls: data.walls ?? [],
-    barracksList: data.barracksList ?? [],
-    units: { ...initialUnits(), ...data.units },
+    barracksList: migrated.barracksList,
+    units: migrated.units,
     garrisons: data.garrisons ?? [],
     scoutedTiles: data.scoutedTiles ?? [],
     storageLevels: data.storageLevels,
@@ -735,7 +762,7 @@ export default function App() {
         )
         .map((t) => resolveDamageRepair(t, current.tweaks, virtualNow))
         .map((t) => resolveConstruction(t, towerBuildDurationMs(current.tweaks), virtualNow));
-      const barracksList = current.game.barracksList
+      let barracksList = current.game.barracksList
         .map((b) =>
           b.upgrade &&
           isTimerComplete(b.upgrade.startedAt, barracksUpgradeDurationMs(current.tweaks, b.upgrade.targetLevel), virtualNow)
@@ -826,54 +853,11 @@ export default function App() {
         research = { completed: [...research.completed, research.pending.id], pending: null };
       }
 
-      // Unit training queues — closed-form trickle delivery (engine/units.ts).
-      // More/higher-level (non-damaged) barracks means faster training, not
-      // just more capacity — barracksTrainingCapacity is level-weighted.
-      // Paused while no active barracks remain (all damaged or under construction).
-      const trainingCapacity = barracksTrainingCapacity(barracksList);
-      const scoutQueueResult =
-        trainingCapacity > 0
-          ? resolveTrainingQueue(
-              unitsAfterUpkeep.scoutQueue,
-              scoutTrainDurationMs(current.tweaks, trainingCapacity),
-              virtualNow,
-            )
-          : { queue: unitsAfterUpkeep.scoutQueue, delivered: 0 };
-      const militiaQueueResult =
-        trainingCapacity > 0
-          ? resolveTrainingQueue(
-              unitsAfterUpkeep.militiaQueue,
-              militiaTrainDurationMs(current.tweaks, trainingCapacity),
-              virtualNow,
-            )
-          : { queue: unitsAfterUpkeep.militiaQueue, delivered: 0 };
-      const junkyardKnightQueueResult =
-        trainingCapacity > 0
-          ? resolveTrainingQueue(
-              unitsAfterUpkeep.junkyardKnightQueue,
-              junkyardKnightTrainDurationMs(current.tweaks, trainingCapacity),
-              virtualNow,
-            )
-          : { queue: unitsAfterUpkeep.junkyardKnightQueue, delivered: 0 };
-      const crossBowSniperQueueResult =
-        trainingCapacity > 0
-          ? resolveTrainingQueue(
-              unitsAfterUpkeep.crossBowSniperQueue,
-              crossBowSniperTrainDurationMs(current.tweaks, trainingCapacity),
-              virtualNow,
-            )
-          : { queue: unitsAfterUpkeep.crossBowSniperQueue, delivered: 0 };
-      const units: UnitsRecord = {
-        ...unitsAfterUpkeep,
-        scoutStockpile: unitsAfterUpkeep.scoutStockpile + scoutQueueResult.delivered,
-        scoutQueue: scoutQueueResult.queue,
-        militiaCount: unitsAfterUpkeep.militiaCount + militiaQueueResult.delivered,
-        militiaQueue: militiaQueueResult.queue,
-        junkyardKnightCount: unitsAfterUpkeep.junkyardKnightCount + junkyardKnightQueueResult.delivered,
-        junkyardKnightQueue: junkyardKnightQueueResult.queue,
-        crossBowSniperCount: unitsAfterUpkeep.crossBowSniperCount + crossBowSniperQueueResult.delivered,
-        crossBowSniperQueue: crossBowSniperQueueResult.queue,
-      };
+      // Per-barracks training queues — one slot each, speed scales with that
+      // barracks's level (engine/barracks.ts:advanceBarracksTraining).
+      const trainingResult = advanceBarracksTraining(current.tweaks, barracksList, unitsAfterUpkeep, virtualNow);
+      barracksList = trainingResult.barracksList;
+      const units = trainingResult.units;
 
       const hordesAfterSpawn = checkHordeSpawns(
         current.tweaks,
@@ -2752,13 +2736,21 @@ export default function App() {
     return { ok: true };
   }
 
-  async function handleTrainScouts(quantity: number): Promise<BuildResult> {
+  function barracksForTraining(coord: Axial): { ok: true; barracks: Barracks } | { ok: false; reason: string } {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { tweaks, game } = boot;
+    const barracks = boot.game.barracksList.find((b) => axialKey(b.coord) === axialKey(coord));
+    if (!barracks) return { ok: false, reason: "No barracks here" };
+    if (!isStructureActive(barracks)) return { ok: false, reason: "Barracks is not operational" };
+    if (barracks.trainingQueue) return { ok: false, reason: "Training already in progress at this barracks" };
+    return { ok: true, barracks };
+  }
+
+  async function handleTrainScouts(coord: Axial, quantity: number): Promise<BuildResult> {
+    const barracksResult = barracksForTraining(coord);
+    if (!barracksResult.ok) return barracksResult;
+    const { tweaks, game } = boot as Extract<BootState, { status: "ready"; game: GameState }>;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
-    if (game.units.scoutQueue) return { ok: false, reason: "Training already in progress" };
-    if (barracksTrainingCapacity(game.barracksList) <= 0) return { ok: false, reason: "No active barracks available" };
 
     const capacity = scoutCapacity(tweaks, game.barracksList);
     if (game.units.scoutStockpile + quantity > capacity) return { ok: false, reason: "Not enough scout capacity" };
@@ -2776,26 +2768,26 @@ export default function App() {
     for (const [key, amount] of Object.entries(cost)) {
       resources[key as keyof ResourceAmounts] -= amount;
     }
-    const units: UnitsRecord = {
-      ...game.units,
-      scoutQueue: { remaining: quantity, currentUnitStartedAt: game.clock.virtualNow },
-    };
+    const barracksList = game.barracksList.map((b) =>
+      axialKey(b.coord) === axialKey(coord)
+        ? { ...b, trainingQueue: { unitType: "scout" as const, remaining: quantity, currentUnitStartedAt: game.clock.virtualNow } }
+        : b,
+    );
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "train_scout", game.base.level) };
 
-    await Promise.all([set(RESOURCES_DB_KEY, resources), set(UNITS_DB_KEY, units), set(NOISE_DB_KEY, noise)]);
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(BARRACKS_DB_KEY, barracksList), set(NOISE_DB_KEY, noise)]);
     setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, units, noise } } : prev,
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, barracksList, noise } } : prev,
     );
     return { ok: true };
   }
 
-  async function handleTrainMilitia(quantity: number): Promise<BuildResult> {
-    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { tweaks, game } = boot;
+  async function handleTrainMilitia(coord: Axial, quantity: number): Promise<BuildResult> {
+    const barracksResult = barracksForTraining(coord);
+    if (!barracksResult.ok) return barracksResult;
+    const { tweaks, game } = boot as Extract<BootState, { status: "ready"; game: GameState }>;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
-    if (game.units.militiaQueue) return { ok: false, reason: "Training already in progress" };
-    if (barracksTrainingCapacity(game.barracksList) <= 0) return { ok: false, reason: "No active barracks available" };
 
     const capacity = militiaCapacity(tweaks, game.barracksList);
     if (game.units.militiaCount + quantity > capacity) return { ok: false, reason: "Not enough militia capacity" };
@@ -2813,27 +2805,30 @@ export default function App() {
     for (const [key, amount] of Object.entries(cost)) {
       resources[key as keyof ResourceAmounts] -= amount;
     }
-    const units: UnitsRecord = {
-      ...game.units,
-      militiaQueue: { remaining: quantity, currentUnitStartedAt: game.clock.virtualNow },
-    };
+    const barracksList = game.barracksList.map((b) =>
+      axialKey(b.coord) === axialKey(coord)
+        ? { ...b, trainingQueue: { unitType: "militia" as const, remaining: quantity, currentUnitStartedAt: game.clock.virtualNow } }
+        : b,
+    );
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "train_militia", game.base.level) };
 
-    await Promise.all([set(RESOURCES_DB_KEY, resources), set(UNITS_DB_KEY, units), set(NOISE_DB_KEY, noise)]);
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(BARRACKS_DB_KEY, barracksList), set(NOISE_DB_KEY, noise)]);
     setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, units, noise } } : prev,
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, barracksList, noise } } : prev,
     );
     return { ok: true };
   }
 
   /** Mirrors handleTrainMilitia exactly, gated by junkyardKnightCapacity's barracks L2 level gate — see engine/barracks.ts. No rush-train variant (calm queue only). */
-  async function handleTrainJunkyardKnight(quantity: number): Promise<BuildResult> {
-    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { tweaks, game } = boot;
+  async function handleTrainJunkyardKnight(coord: Axial, quantity: number): Promise<BuildResult> {
+    const barracksResult = barracksForTraining(coord);
+    if (!barracksResult.ok) return barracksResult;
+    const { tweaks, game } = boot as Extract<BootState, { status: "ready"; game: GameState }>;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
-    if (game.units.junkyardKnightQueue) return { ok: false, reason: "Training already in progress" };
-    if (barracksTrainingCapacity(game.barracksList) <= 0) return { ok: false, reason: "No active barracks available" };
+    if (barracksResult.barracks.level < tweaks.units.junkyard_knight.min_barracks_level) {
+      return { ok: false, reason: "This barracks is not high enough level for junkyard knights" };
+    }
 
     const capacity = junkyardKnightCapacity(tweaks, game.barracksList);
     if (game.units.junkyardKnightCount + quantity > capacity) {
@@ -2853,27 +2848,33 @@ export default function App() {
     for (const [key, amount] of Object.entries(cost)) {
       resources[key as keyof ResourceAmounts] -= amount;
     }
-    const units: UnitsRecord = {
-      ...game.units,
-      junkyardKnightQueue: { remaining: quantity, currentUnitStartedAt: game.clock.virtualNow },
-    };
+    const barracksList = game.barracksList.map((b) =>
+      axialKey(b.coord) === axialKey(coord)
+        ? {
+            ...b,
+            trainingQueue: { unitType: "junkyard_knight" as const, remaining: quantity, currentUnitStartedAt: game.clock.virtualNow },
+          }
+        : b,
+    );
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "train_militia", game.base.level) };
 
-    await Promise.all([set(RESOURCES_DB_KEY, resources), set(UNITS_DB_KEY, units), set(NOISE_DB_KEY, noise)]);
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(BARRACKS_DB_KEY, barracksList), set(NOISE_DB_KEY, noise)]);
     setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, units, noise } } : prev,
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, barracksList, noise } } : prev,
     );
     return { ok: true };
   }
 
   /** Mirrors handleTrainMilitia exactly, gated by crossBowSniperCapacity's barracks L3 level gate — see engine/barracks.ts. No rush-train variant (calm queue only). */
-  async function handleTrainCrossBowSniper(quantity: number): Promise<BuildResult> {
-    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { tweaks, game } = boot;
+  async function handleTrainCrossBowSniper(coord: Axial, quantity: number): Promise<BuildResult> {
+    const barracksResult = barracksForTraining(coord);
+    if (!barracksResult.ok) return barracksResult;
+    const { tweaks, game } = boot as Extract<BootState, { status: "ready"; game: GameState }>;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
-    if (game.units.crossBowSniperQueue) return { ok: false, reason: "Training already in progress" };
-    if (barracksTrainingCapacity(game.barracksList) <= 0) return { ok: false, reason: "No active barracks available" };
+    if (barracksResult.barracks.level < tweaks.units.cross_bow_sniper.min_barracks_level) {
+      return { ok: false, reason: "This barracks is not high enough level for cross-bow snipers" };
+    }
 
     const capacity = crossBowSniperCapacity(tweaks, game.barracksList);
     if (game.units.crossBowSniperCount + quantity > capacity) {
@@ -2893,15 +2894,19 @@ export default function App() {
     for (const [key, amount] of Object.entries(cost)) {
       resources[key as keyof ResourceAmounts] -= amount;
     }
-    const units: UnitsRecord = {
-      ...game.units,
-      crossBowSniperQueue: { remaining: quantity, currentUnitStartedAt: game.clock.virtualNow },
-    };
+    const barracksList = game.barracksList.map((b) =>
+      axialKey(b.coord) === axialKey(coord)
+        ? {
+            ...b,
+            trainingQueue: { unitType: "cross_bow_sniper" as const, remaining: quantity, currentUnitStartedAt: game.clock.virtualNow },
+          }
+        : b,
+    );
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "train_militia", game.base.level) };
 
-    await Promise.all([set(RESOURCES_DB_KEY, resources), set(UNITS_DB_KEY, units), set(NOISE_DB_KEY, noise)]);
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(BARRACKS_DB_KEY, barracksList), set(NOISE_DB_KEY, noise)]);
     setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, units, noise } } : prev,
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, barracksList, noise } } : prev,
     );
     return { ok: true };
   }
@@ -2915,12 +2920,12 @@ export default function App() {
    * commotion — "very noisy" per playtesting discussion, unlike the queued
    * path's barely-audible train_scout/train_militia.
    */
-  async function handleRushTrainScouts(quantity: number): Promise<BuildResult> {
-    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { tweaks, game } = boot;
+  async function handleRushTrainScouts(coord: Axial, quantity: number): Promise<BuildResult> {
+    const barracksResult = barracksForTraining(coord);
+    if (!barracksResult.ok) return barracksResult;
+    const { tweaks, game } = boot as Extract<BootState, { status: "ready"; game: GameState }>;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
-    if (barracksTrainingCapacity(game.barracksList) <= 0) return { ok: false, reason: "No active barracks available" };
 
     const capacity = scoutCapacity(tweaks, game.barracksList);
     if (game.units.scoutStockpile + quantity > capacity) return { ok: false, reason: "Not enough scout capacity" };
@@ -2950,12 +2955,12 @@ export default function App() {
     return { ok: true };
   }
 
-  async function handleRushTrainMilitia(quantity: number): Promise<BuildResult> {
-    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { tweaks, game } = boot;
+  async function handleRushTrainMilitia(coord: Axial, quantity: number): Promise<BuildResult> {
+    const barracksResult = barracksForTraining(coord);
+    if (!barracksResult.ok) return barracksResult;
+    const { tweaks, game } = boot as Extract<BootState, { status: "ready"; game: GameState }>;
 
     if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
-    if (barracksTrainingCapacity(game.barracksList) <= 0) return { ok: false, reason: "No active barracks available" };
 
     const capacity = militiaCapacity(tweaks, game.barracksList);
     if (game.units.militiaCount + quantity > capacity) return { ok: false, reason: "Not enough militia capacity" };

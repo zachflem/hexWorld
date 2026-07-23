@@ -1,4 +1,4 @@
-import type { TrainingQueue, UnitsRecord } from "../data/units";
+import type { UnitsRecord } from "../data/units";
 import type { Tweaks } from "../data/tweaksSchema";
 
 export function scoutTrainCost(tweaks: Tweaks): Record<string, number> {
@@ -18,32 +18,30 @@ export function crossBowSniperTrainCost(tweaks: Tweaks): Record<string, number> 
 }
 
 /**
- * More (non-damaged) barracks means more training capacity, not just more
- * standing-army capacity — 2 L1 barracks train at 2x the pace of 1, scaling
- * the per-unit duration down rather than giving each barracks its own
- * separate queue (the simpler of the two options discussed, and
- * `units.scoutQueue`/`militiaQueue` staying singular — one shared,
- * player-wide queue — matches how capacity already pools across barracks,
- * TWEAKS.md). `trainingCapacity` (engine/barracks.ts:barracksTrainingCapacity)
- * is a level-weighted sum, not a raw barracks count, so a higher-level
- * barracks also trains faster on its own — a lone L4 barracks matches the
- * throughput of 4 L1s. Floored at 1 so a momentarily-barracks-less state
- * (e.g. mid-demolish) can't divide by zero or speed training up.
+ * Per-unit training duration at a single barracks — scales inversely with
+ * that barracks's own level (not a pooled count across every barracks).
+ * Floored at 1 so a malformed level-0 record can't divide by zero.
  */
-export function scoutTrainDurationMs(tweaks: Tweaks, trainingCapacity: number): number {
-  return (tweaks.units.scout.train_time_seconds * 1000) / Math.max(1, trainingCapacity);
+export function scoutTrainDurationMs(tweaks: Tweaks, barracksLevel: number): number {
+  return (tweaks.units.scout.train_time_seconds * 1000) / Math.max(1, barracksLevel);
 }
 
-export function militiaTrainDurationMs(tweaks: Tweaks, trainingCapacity: number): number {
-  return (tweaks.units.militia.train_time_seconds * 1000) / Math.max(1, trainingCapacity);
+export function militiaTrainDurationMs(tweaks: Tweaks, barracksLevel: number): number {
+  return (tweaks.units.militia.train_time_seconds * 1000) / Math.max(1, barracksLevel);
 }
 
-export function junkyardKnightTrainDurationMs(tweaks: Tweaks, trainingCapacity: number): number {
-  return (tweaks.units.junkyard_knight.train_time_seconds * 1000) / Math.max(1, trainingCapacity);
+export function junkyardKnightTrainDurationMs(tweaks: Tweaks, barracksLevel: number): number {
+  return (tweaks.units.junkyard_knight.train_time_seconds * 1000) / Math.max(1, barracksLevel);
 }
 
-export function crossBowSniperTrainDurationMs(tweaks: Tweaks, trainingCapacity: number): number {
-  return (tweaks.units.cross_bow_sniper.train_time_seconds * 1000) / Math.max(1, trainingCapacity);
+export function crossBowSniperTrainDurationMs(tweaks: Tweaks, barracksLevel: number): number {
+  return (tweaks.units.cross_bow_sniper.train_time_seconds * 1000) / Math.max(1, barracksLevel);
+}
+
+/** Shared trickle-delivery shape used by Barracks.trainingQueue resolution. */
+export interface TrainingQueueProgress {
+  remaining: number;
+  currentUnitStartedAt: number;
 }
 
 /**
@@ -55,10 +53,10 @@ export function crossBowSniperTrainDurationMs(tweaks: Tweaks, trainingCapacity: 
  * resolves multi-tile movement rather than simulating tick by tick.
  */
 export function resolveTrainingQueue(
-  queue: TrainingQueue | null,
+  queue: TrainingQueueProgress | null,
   perUnitDurationMs: number,
   now: number,
-): { queue: TrainingQueue | null; delivered: number } {
+): { queue: TrainingQueueProgress | null; delivered: number } {
   if (!queue) return { queue: null, delivered: 0 };
 
   const wholeUnits = Math.floor((now - queue.currentUnitStartedAt) / perUnitDurationMs);

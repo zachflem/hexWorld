@@ -37,7 +37,6 @@ import {
 import {
   barracksBuildCost,
   barracksBuildDurationMs,
-  barracksTrainingCapacity,
   barracksUpgradeCost,
   barracksUpgradeDurationMs,
   crossBowSniperCapacity as crossBowSniperCapacityFor,
@@ -45,16 +44,14 @@ import {
   militiaCapacity as militiaCapacityFor,
   nextBarracksLevel,
   scoutCapacity as scoutCapacityFor,
+  trainingUnitDurationMs,
+  trainingUnitLabel,
 } from "../engine/barracks";
 import {
   crossBowSniperTrainCost,
-  crossBowSniperTrainDurationMs,
   junkyardKnightTrainCost,
-  junkyardKnightTrainDurationMs,
   militiaTrainCost,
-  militiaTrainDurationMs,
   scoutTrainCost,
-  scoutTrainDurationMs,
 } from "../engine/units";
 import {
   baseReinforcementHp,
@@ -105,7 +102,7 @@ import type { ExtractionTile } from "../data/extractionTiles";
 import type { PathTile } from "../data/pathTiles";
 import type { Tower } from "../data/towers";
 import type { Wall } from "../data/walls";
-import type { Barracks } from "../data/barracks";
+import type { Barracks, TrainingUnitType } from "../data/barracks";
 import type { UnitsRecord } from "../data/units";
 import type { GarrisonsRecord } from "../data/garrisons";
 import type { ScoutedTiles } from "../data/scoutedTiles";
@@ -388,12 +385,12 @@ export function GameScreen({
   onDemolish: (coord: Axial) => Promise<BuildResult>;
   onBuildBarracks: (coord: Axial) => Promise<BuildResult>;
   onUpgradeBarracks: (coord: Axial) => Promise<BuildResult>;
-  onTrainScouts: (quantity: number) => Promise<BuildResult>;
-  onTrainMilitia: (quantity: number) => Promise<BuildResult>;
-  onTrainJunkyardKnight: (quantity: number) => Promise<BuildResult>;
-  onTrainCrossBowSniper: (quantity: number) => Promise<BuildResult>;
-  onRushTrainScouts: (quantity: number) => Promise<BuildResult>;
-  onRushTrainMilitia: (quantity: number) => Promise<BuildResult>;
+  onTrainScouts: (coord: Axial, quantity: number) => Promise<BuildResult>;
+  onTrainMilitia: (coord: Axial, quantity: number) => Promise<BuildResult>;
+  onTrainJunkyardKnight: (coord: Axial, quantity: number) => Promise<BuildResult>;
+  onTrainCrossBowSniper: (coord: Axial, quantity: number) => Promise<BuildResult>;
+  onRushTrainScouts: (coord: Axial, quantity: number) => Promise<BuildResult>;
+  onRushTrainMilitia: (coord: Axial, quantity: number) => Promise<BuildResult>;
   onScoutTile: (coord: Axial) => Promise<BuildResult>;
   onUpgradeBase: () => Promise<BuildResult>;
   onUpgradeReinforcement: () => Promise<BuildResult>;
@@ -739,52 +736,6 @@ export function GameScreen({
     for (const [key, amount] of Object.entries(perUnitCost)) totalCost[key as ResourceType] = amount * crossBowSniperToTrain;
     return { totalCost, affordable: affordable(totalCost), maxQuantity };
   }
-
-  const trainingCapacity = barracksTrainingCapacity(barracksList);
-
-  const scoutQueueStatus: TrainQueueStatus | null = units.scoutQueue
-    ? {
-        remaining: units.scoutQueue.remaining,
-        msUntilNextMs: remainingMs(
-          units.scoutQueue.currentUnitStartedAt,
-          scoutTrainDurationMs(tweaks, trainingCapacity),
-          now,
-        ),
-      }
-    : null;
-
-  const militiaQueueStatus: TrainQueueStatus | null = units.militiaQueue
-    ? {
-        remaining: units.militiaQueue.remaining,
-        msUntilNextMs: remainingMs(
-          units.militiaQueue.currentUnitStartedAt,
-          militiaTrainDurationMs(tweaks, trainingCapacity),
-          now,
-        ),
-      }
-    : null;
-
-  const junkyardKnightQueueStatus: TrainQueueStatus | null = units.junkyardKnightQueue
-    ? {
-        remaining: units.junkyardKnightQueue.remaining,
-        msUntilNextMs: remainingMs(
-          units.junkyardKnightQueue.currentUnitStartedAt,
-          junkyardKnightTrainDurationMs(tweaks, trainingCapacity),
-          now,
-        ),
-      }
-    : null;
-
-  const crossBowSniperQueueStatus: TrainQueueStatus | null = units.crossBowSniperQueue
-    ? {
-        remaining: units.crossBowSniperQueue.remaining,
-        msUntilNextMs: remainingMs(
-          units.crossBowSniperQueue.currentUnitStartedAt,
-          crossBowSniperTrainDurationMs(tweaks, trainingCapacity),
-          now,
-        ),
-      }
-    : null;
 
   function baseUpgradeOptionFor(): BaseUpgradeOption | null {
     if (base.upgrade || base.reinforcementAction) return null;
@@ -1156,22 +1107,26 @@ export function GameScreen({
   }
 
   async function handleTrainScouts(quantity = scoutsToTrain) {
-    const result = await onTrainScouts(quantity);
+    if (!selected) return;
+    const result = await onTrainScouts(selected, quantity);
     applyActionResult(result, { keepSelection: true });
   }
 
   async function handleTrainMilitia(quantity = militiaToTrain) {
-    const result = await onTrainMilitia(quantity);
+    if (!selected) return;
+    const result = await onTrainMilitia(selected, quantity);
     applyActionResult(result, { keepSelection: true });
   }
 
   async function handleTrainJunkyardKnight(quantity = junkyardKnightToTrain) {
-    const result = await onTrainJunkyardKnight(quantity);
+    if (!selected) return;
+    const result = await onTrainJunkyardKnight(selected, quantity);
     applyActionResult(result, { keepSelection: true });
   }
 
   async function handleTrainCrossBowSniper(quantity = crossBowSniperToTrain) {
-    const result = await onTrainCrossBowSniper(quantity);
+    if (!selected) return;
+    const result = await onTrainCrossBowSniper(selected, quantity);
     applyActionResult(result, { keepSelection: true });
   }
 
@@ -1183,10 +1138,11 @@ export function GameScreen({
   function trainQuickActions(
     option: TrainOption | SimpleTrainOption | null,
     queueStatus: TrainQueueStatus | null,
+    otherTrainingBlocked: boolean,
     onTrainQuantity: (quantity: number) => void,
   ): SheetQuickAction[] {
     const maxQuantity = option?.maxQuantity ?? 0;
-    const blocked = !!queueStatus || maxQuantity <= 0;
+    const blocked = !!queueStatus || otherTrainingBlocked || maxQuantity <= 0;
     return [
       {
         label: "+1",
@@ -1211,13 +1167,33 @@ export function GameScreen({
     return `${queueStatus.remaining} left · next in ${formatDuration(queueStatus.msUntilNextMs)}`;
   }
 
+  function trainQueueStatusFor(barracks: Barracks | null, unitType: TrainingUnitType): TrainQueueStatus | null {
+    const queue = barracks?.trainingQueue;
+    if (!queue || queue.remaining <= 0 || queue.unitType !== unitType) return null;
+    return {
+      remaining: queue.remaining,
+      msUntilNextMs: remainingMs(
+        queue.currentUnitStartedAt,
+        trainingUnitDurationMs(tweaks, unitType, barracks.level),
+        now,
+      ),
+    };
+  }
+
+  function otherTrainingBlocks(barracks: Barracks | null, unitType: TrainingUnitType): boolean {
+    const queue = barracks?.trainingQueue;
+    return queue != null && queue.remaining > 0 && queue.unitType !== unitType;
+  }
+
   async function handleRushTrainScouts() {
-    const result = await onRushTrainScouts(scoutsToTrain);
+    if (!selected) return;
+    const result = await onRushTrainScouts(selected, scoutsToTrain);
     applyActionResult(result, { keepSelection: true });
   }
 
   async function handleRushTrainMilitia() {
-    const result = await onRushTrainMilitia(militiaToTrain);
+    if (!selected) return;
+    const result = await onRushTrainMilitia(selected, militiaToTrain);
     applyActionResult(result, { keepSelection: true });
   }
 
@@ -1338,6 +1314,10 @@ export function GameScreen({
   const selectedTower = selected ? towerAt(selected) : null;
   const selectedWall = selected ? wallAt(selected) : null;
   const selectedBarracks = selected ? barracksAt(selected) : null;
+  const scoutQueueStatus = trainQueueStatusFor(selectedBarracks, "scout");
+  const militiaQueueStatus = trainQueueStatusFor(selectedBarracks, "militia");
+  const junkyardKnightQueueStatus = trainQueueStatusFor(selectedBarracks, "junkyard_knight");
+  const crossBowSniperQueueStatus = trainQueueStatusFor(selectedBarracks, "cross_bow_sniper");
   const selectedDock = selected ? dockAt(selected) : null;
   const selectedIsBase = selected ? axialEquals(selected, territory.base) : false;
   const selectedDen: DenRecord | null = selected ? (dens.find((d) => axialEquals(d.coord, selected)) ?? null) : null;
@@ -1884,7 +1864,7 @@ export function GameScreen({
 
       const trainSubActions: SheetAction[] = [];
       if (isStructureActive(selectedBarracks)) {
-        const scoutOption = scoutTrainOptionFor();
+        const scoutOption = otherTrainingBlocks(selectedBarracks, "scout") ? null : scoutTrainOptionFor();
         trainSubActions.push({
           key: "train-scouts",
           icon: <Footprints size={18} />,
@@ -1901,11 +1881,11 @@ export function GameScreen({
               onRush={handleRushTrainScouts}
             />
           ),
-          quickActions: trainQuickActions(scoutOption, scoutQueueStatus, (qty) => {
+          quickActions: trainQuickActions(scoutOption, scoutQueueStatus, otherTrainingBlocks(selectedBarracks, "scout"), (qty) => {
             void handleTrainScouts(qty);
           }),
         });
-        const militiaOption = militiaTrainOptionFor();
+        const militiaOption = otherTrainingBlocks(selectedBarracks, "militia") ? null : militiaTrainOptionFor();
         trainSubActions.push({
           key: "train-militia",
           icon: <Swords size={18} />,
@@ -1922,11 +1902,13 @@ export function GameScreen({
               onRush={handleRushTrainMilitia}
             />
           ),
-          quickActions: trainQuickActions(militiaOption, militiaQueueStatus, (qty) => {
+          quickActions: trainQuickActions(militiaOption, militiaQueueStatus, otherTrainingBlocks(selectedBarracks, "militia"), (qty) => {
             void handleTrainMilitia(qty);
           }),
         });
-        const knightOption = junkyardKnightTrainOptionFor(selectedBarracks.level);
+        const knightOption = otherTrainingBlocks(selectedBarracks, "junkyard_knight")
+          ? null
+          : junkyardKnightTrainOptionFor(selectedBarracks.level);
         if (knightOption || junkyardKnightQueueStatus) {
           trainSubActions.push({
             key: "train-knights",
@@ -1943,12 +1925,19 @@ export function GameScreen({
                 onTrain={() => handleTrainJunkyardKnight()}
               />
             ),
-            quickActions: trainQuickActions(knightOption, junkyardKnightQueueStatus, (qty) => {
-              void handleTrainJunkyardKnight(qty);
-            }),
+            quickActions: trainQuickActions(
+              knightOption,
+              junkyardKnightQueueStatus,
+              otherTrainingBlocks(selectedBarracks, "junkyard_knight"),
+              (qty) => {
+                void handleTrainJunkyardKnight(qty);
+              },
+            ),
           });
         }
-        const sniperOption = crossBowSniperTrainOptionFor(selectedBarracks.level);
+        const sniperOption = otherTrainingBlocks(selectedBarracks, "cross_bow_sniper")
+          ? null
+          : crossBowSniperTrainOptionFor(selectedBarracks.level);
         if (sniperOption || crossBowSniperQueueStatus) {
           trainSubActions.push({
             key: "train-snipers",
@@ -1965,9 +1954,14 @@ export function GameScreen({
                 onTrain={() => handleTrainCrossBowSniper()}
               />
             ),
-            quickActions: trainQuickActions(sniperOption, crossBowSniperQueueStatus, (qty) => {
-              void handleTrainCrossBowSniper(qty);
-            }),
+            quickActions: trainQuickActions(
+              sniperOption,
+              crossBowSniperQueueStatus,
+              otherTrainingBlocks(selectedBarracks, "cross_bow_sniper"),
+              (qty) => {
+                void handleTrainCrossBowSniper(qty);
+              },
+            ),
           });
         }
       }
@@ -2328,6 +2322,18 @@ export function GameScreen({
           label: "Repairing barracks",
           coord: b.coord,
           remainingMs: remainingMs(b.damageRepair.startedAt, structureRepairDurationMs(tweaks), now),
+        });
+      }
+      const training = b.trainingQueue;
+      if (training && training.remaining > 0 && isStructureActive(b)) {
+        const perUnitMs = trainingUnitDurationMs(tweaks, training.unitType, b.level);
+        const nextUnitRemainingMs = remainingMs(training.currentUnitStartedAt, perUnitMs, now);
+        rows.push({
+          key: `barracks-train-${key}`,
+          icon: <GraduationCap size={14} />,
+          label: `Training ${trainingUnitLabel(training.unitType)}`,
+          coord: b.coord,
+          remainingMs: nextUnitRemainingMs + (training.remaining - 1) * perUnitMs,
         });
       }
     }

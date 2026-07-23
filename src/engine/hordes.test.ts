@@ -409,10 +409,6 @@ describe("resolveGarrisonAutoAttacks", () => {
     militiaCount,
     junkyardKnightCount: 0,
     crossBowSniperCount: 0,
-    scoutQueue: null,
-    militiaQueue: null,
-    junkyardKnightQueue: null,
-    crossBowSniperQueue: null,
   });
 
   function horde(overrides: Partial<HordeRecord> = {}): HordeRecord {

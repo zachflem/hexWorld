@@ -99,10 +99,6 @@ const units = (overrides: Partial<UnitsRecord> = {}): UnitsRecord => ({
   militiaCount: 0,
   junkyardKnightCount: 0,
   crossBowSniperCount: 0,
-  scoutQueue: null,
-  militiaQueue: null,
-  junkyardKnightQueue: null,
-  crossBowSniperQueue: null,
   ...overrides,
 });
 

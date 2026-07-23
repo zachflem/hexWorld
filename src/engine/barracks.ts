@@ -1,8 +1,16 @@
-import type { Barracks } from "../data/barracks";
+import type { Barracks, TrainingUnitType } from "../data/barracks";
 import { MAX_BARRACKS_LEVEL } from "../data/barracks";
+import type { UnitsRecord } from "../data/units";
 import type { ResourceType } from "../data/resources";
 import type { Tweaks } from "../data/tweaksSchema";
 import { formulaACost, formulaBCost, isStructureActive } from "./formulas";
+import {
+  crossBowSniperTrainDurationMs,
+  junkyardKnightTrainDurationMs,
+  militiaTrainDurationMs,
+  resolveTrainingQueue,
+  scoutTrainDurationMs,
+} from "./units";
 
 export function barracksBuildCost(tweaks: Tweaks, n: number): Record<string, number> {
   const cost: Record<string, number> = {};
@@ -79,15 +87,76 @@ export function crossBowSniperCapacity(tweaks: Tweaks, barracksList: Barracks[])
   );
 }
 
+export function trainingUnitDurationMs(tweaks: Tweaks, unitType: TrainingUnitType, barracksLevel: number): number {
+  switch (unitType) {
+    case "scout":
+      return scoutTrainDurationMs(tweaks, barracksLevel);
+    case "militia":
+      return militiaTrainDurationMs(tweaks, barracksLevel);
+    case "junkyard_knight":
+      return junkyardKnightTrainDurationMs(tweaks, barracksLevel);
+    case "cross_bow_sniper":
+      return crossBowSniperTrainDurationMs(tweaks, barracksLevel);
+  }
+}
+
+export function trainingUnitLabel(unitType: TrainingUnitType): string {
+  switch (unitType) {
+    case "scout":
+      return "scouts";
+    case "militia":
+      return "militia";
+    case "junkyard_knight":
+      return "junkyard knights";
+    case "cross_bow_sniper":
+      return "cross-bow snipers";
+  }
+}
+
 /**
- * Training-throughput weight: each active barracks contributes its own
- * level, not just a flat "1" per barracks — a lone L4 barracks trains 4x as
- * fast as a lone L1, the same "per level, summed across barracks" pattern
- * militiaCapacity/scoutCapacity already use for standing capacity above.
- * Damaged or still-under-construction barracks contribute nothing, same
- * rule as everywhere else a non-functional structure is excluded
- * (engine/formulas.ts:isStructureActive).
+ * Resolves every active barracks' trainingQueue and delivers completed units
+ * into the shared standing-army counts. Damaged or still-under-construction
+ * barracks pause their queue (same rule as #1 — no training throughput while
+ * non-functional) without discarding progress.
  */
-export function barracksTrainingCapacity(barracksList: Barracks[]): number {
-  return barracksList.reduce((sum, b) => (isStructureActive(b) ? sum + b.level : sum), 0);
+export function advanceBarracksTraining(
+  tweaks: Tweaks,
+  barracksList: Barracks[],
+  units: UnitsRecord,
+  virtualNow: number,
+): { barracksList: Barracks[]; units: UnitsRecord } {
+  let nextUnits = units;
+  const nextBarracks = barracksList.map((barracks) => {
+    const queue = barracks.trainingQueue;
+    if (!queue || !isStructureActive(barracks)) return barracks;
+
+    const result = resolveTrainingQueue(queue, trainingUnitDurationMs(tweaks, queue.unitType, barracks.level), virtualNow);
+    if (result.delivered > 0) {
+      switch (queue.unitType) {
+        case "scout":
+          nextUnits = { ...nextUnits, scoutStockpile: nextUnits.scoutStockpile + result.delivered };
+          break;
+        case "militia":
+          nextUnits = { ...nextUnits, militiaCount: nextUnits.militiaCount + result.delivered };
+          break;
+        case "junkyard_knight":
+          nextUnits = { ...nextUnits, junkyardKnightCount: nextUnits.junkyardKnightCount + result.delivered };
+          break;
+        case "cross_bow_sniper":
+          nextUnits = { ...nextUnits, crossBowSniperCount: nextUnits.crossBowSniperCount + result.delivered };
+          break;
+      }
+    }
+
+    return result.queue === queue
+      ? barracks
+      : {
+          ...barracks,
+          trainingQueue: result.queue
+            ? { unitType: queue.unitType, remaining: result.queue.remaining, currentUnitStartedAt: result.queue.currentUnitStartedAt }
+            : null,
+        };
+  });
+
+  return { barracksList: nextBarracks, units: nextUnits };
 }
