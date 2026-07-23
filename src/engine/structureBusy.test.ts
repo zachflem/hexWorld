@@ -7,6 +7,7 @@ import {
   countWallTasks,
   isBarracksAtTaskCap,
   isDockAtTaskCap,
+  isHordeRepairBlocked,
   isLandStructureAtTaskCap,
   isWallAtTaskCap,
 } from "./structureBusy";
@@ -54,5 +55,15 @@ describe("structureBusy slot counts", () => {
   it("countLandStructureTasks covers build, upgrade, and horde repair", () => {
     expect(countLandStructureTasks({})).toBe(0);
     expect(countLandStructureTasks({ buildStartedAt: 0 })).toBe(1);
+  });
+
+  it("isHordeRepairBlocked ignores stale upgrade timers on damaged structures", () => {
+    expect(
+      isHordeRepairBlocked({
+        damaged: true,
+        upgrade: { targetLevel: 2, startedAt: 0 },
+      }),
+    ).toBe(false);
+    expect(isHordeRepairBlocked({ damaged: true, damageRepair: { startedAt: 0 } })).toBe(true);
   });
 });

@@ -86,7 +86,7 @@ import {
   reinforcementUpgradeCost,
   resolveBaseAction,
 } from "./engine/base";
-import { autoClaimTowerRange, isTileScoutable } from "./engine/territory";
+import { autoClaimTowerRange, canRepairHordeDamagedTile, isTileScoutable } from "./engine/territory";
 import {
   expeditionPathIndexAt,
   expeditionProvisionsCost,
@@ -2572,7 +2572,10 @@ export default function App() {
     const key = axialKey(coord);
 
     const ownedKeys = new Set(game.territory.owned.map(axialKey));
-    if (!ownedKeys.has(key)) return { ok: false, reason: "Tile not owned" };
+    const gridSize = resolveWorldGridSize(game.world, tweaks);
+    if (!canRepairHordeDamagedTile(tweaks, game.towers, game.territory, coord, gridSize)) {
+      return { ok: false, reason: "Tile not owned" };
+    }
 
     // A tile can be back in territory.owned (via an expedition claiming it —
     // engine/expeditions.ts, unlike the tower viewshed auto-claim, doesn't
@@ -2591,7 +2594,7 @@ export default function App() {
     const structure = extractionTile ?? pathTile ?? tower ?? wall ?? barracks;
     if (!structure) return { ok: false, reason: "Nothing to repair here" };
     if (!structure.damaged) return { ok: false, reason: "Not damaged" };
-    if (isHordeRepairBlocked(structure, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (isHordeRepairBlocked(structure)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const cost = repairCost(tweaks, structure.buildCost);
     for (const [resKey, amount] of Object.entries(cost)) {
@@ -2631,6 +2634,10 @@ export default function App() {
     const walls = wall ? repair(game.walls) : game.walls;
     const barracksList = barracks ? repair(game.barracksList) : game.barracksList;
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "repair_wall", game.base.level) };
+    const territory =
+      ownedKeys.has(key)
+        ? game.territory
+        : { ...game.territory, owned: [...game.territory.owned, coord] };
 
     await Promise.all([
       set(RESOURCES_DB_KEY, resources),
@@ -2640,10 +2647,24 @@ export default function App() {
       set(WALLS_DB_KEY, walls),
       set(BARRACKS_DB_KEY, barracksList),
       set(NOISE_DB_KEY, noise),
+      ...(ownedKeys.has(key) ? [] : [set(TERRITORY_DB_KEY, territory)]),
     ]);
     setBoot((prev) =>
       prev.status === "ready" && prev.game
-        ? { ...prev, game: { ...prev.game, resources, extractionTiles, pathTiles, towers, walls, barracksList, noise } }
+        ? {
+            ...prev,
+            game: {
+              ...prev.game,
+              resources,
+              extractionTiles,
+              pathTiles,
+              towers,
+              walls,
+              barracksList,
+              noise,
+              territory,
+            },
+          }
         : prev,
     );
     return { ok: true };

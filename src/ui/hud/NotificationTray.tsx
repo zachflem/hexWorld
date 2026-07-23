@@ -9,6 +9,27 @@ import type { GarrisonRecallsRecord } from "../../data/garrisonRecalls";
 import { CollapsibleNotificationRow } from "./CollapsibleNotificationRow";
 import { formatDuration } from "../format";
 
+const coordLinkStyle: React.CSSProperties = {
+  padding: 0,
+  margin: 0,
+  border: "none",
+  background: "transparent",
+  color: "inherit",
+  textDecoration: "underline",
+  textUnderlineOffset: "2px",
+  cursor: "pointer",
+  font: "inherit",
+  WebkitTapHighlightColor: "transparent",
+};
+
+function CoordLink({ coord, onGoToTile }: { coord: Axial; onGoToTile: (coord: Axial) => void }) {
+  return (
+    <button type="button" onClick={() => onGoToTile(coord)} style={coordLinkStyle}>
+      ({coord.q}, {coord.r})
+    </button>
+  );
+}
+
 function TrayRow({
   rowKey,
   icon,
@@ -16,23 +37,41 @@ function TrayRow({
   coord,
   remaining,
   onRush,
+  onLabelClick,
+  onGoToTile,
 }: {
   rowKey: string;
   icon: ReactNode;
   label: string;
-  coord: Axial;
+  coord?: Axial;
   remaining: number;
   onRush?: () => void;
+  /** When set (and no coord), the label itself is tappable — e.g. open the Research panel. */
+  onLabelClick?: () => void;
+  onGoToTile?: (coord: Axial) => void;
 }) {
+  const labelNode =
+    onLabelClick != null ? (
+      <button type="button" onClick={onLabelClick} style={coordLinkStyle}>
+        {label}
+      </button>
+    ) : (
+      <span>{label}</span>
+    );
+
   return (
     <CollapsibleNotificationRow
       rowKey={rowKey}
       icon={icon}
       panelStyle={{ padding: "0.4rem 0.65rem", fontSize: "0.8rem" }}
     >
-      <span>
-        {label} ({coord.q}, {coord.r})
-      </span>
+      {labelNode}
+      {coord != null && onGoToTile != null ? (
+        <>
+          {" "}
+          <CoordLink coord={coord} onGoToTile={onGoToTile} />
+        </>
+      ) : null}
       {onRush && (
         <button
           type="button"
@@ -58,6 +97,16 @@ function TrayRow({
   );
 }
 
+export type NotificationCountdownRow = {
+  key: string;
+  icon: ReactNode;
+  label: string;
+  remainingMs: number;
+  coord?: Axial;
+  onRush?: () => void;
+  onLabelClick?: () => void;
+};
+
 /**
  * Compact rows, one per active expedition/den-assault/lab-assault/garrison-recall
  * — replaces the old single grouped box (previously top-left, one internal
@@ -73,6 +122,7 @@ export function NotificationTray({
   siegedDens,
   countdowns,
   now,
+  onGoToTile,
 }: {
   expeditions: ExpeditionsRecord;
   denAssaults: DenAssaultsRecord;
@@ -81,8 +131,10 @@ export function NotificationTray({
   /** Coord + hold-countdown for every den currently under siege — computed in GameScreen (engine/denSiegeStatusFor's math), kept to just what a row needs so this component stays presentation-only. */
   siegedDens: { coord: Axial; holdRemainingMs: number }[];
   /** Every active build/upgrade/repair timer across every owned structure (GameScreen:activeCountdownRows) — the default home for any user-created action with a countdown, not just what happens to be selected. */
-  countdowns: { key: string; icon: ReactNode; label: string; coord: Axial; remainingMs: number; onRush?: () => void }[];
+  countdowns: NotificationCountdownRow[];
   now: number;
+  /** Pan to and select a tile when the player taps a coord link in a row. */
+  onGoToTile?: (coord: Axial) => void;
 }) {
   return (
     <>
@@ -94,10 +146,21 @@ export function NotificationTray({
           label="Den siege holding"
           coord={den.coord}
           remaining={den.holdRemainingMs}
+          onGoToTile={onGoToTile}
         />
       ))}
       {countdowns.map((c) => (
-        <TrayRow key={c.key} rowKey={c.key} icon={c.icon} label={c.label} coord={c.coord} remaining={c.remainingMs} onRush={c.onRush} />
+        <TrayRow
+          key={c.key}
+          rowKey={c.key}
+          icon={c.icon}
+          label={c.label}
+          coord={c.coord}
+          remaining={c.remainingMs}
+          onRush={c.onRush}
+          onLabelClick={c.onLabelClick}
+          onGoToTile={onGoToTile}
+        />
       ))}
       {expeditions.map((expedition) => (
         <TrayRow
@@ -107,6 +170,7 @@ export function NotificationTray({
           label="Expedition"
           coord={expedition.target}
           remaining={remainingMs(expedition.departedAt, expedition.arriveAt - expedition.departedAt, now)}
+          onGoToTile={onGoToTile}
         />
       ))}
       {denAssaults.map((assault) => (
@@ -117,6 +181,7 @@ export function NotificationTray({
           label="Den assault"
           coord={assault.target}
           remaining={remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now)}
+          onGoToTile={onGoToTile}
         />
       ))}
       {labAssaults.map((assault) => (
@@ -127,6 +192,7 @@ export function NotificationTray({
           label="Lab assault"
           coord={assault.target}
           remaining={remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now)}
+          onGoToTile={onGoToTile}
         />
       ))}
       {garrisonRecalls.map((recall) => (
@@ -137,6 +203,7 @@ export function NotificationTray({
           label="Garrison recalling"
           coord={recall.coord}
           remaining={remainingMs(recall.departedAt, recall.arriveAt - recall.departedAt, now)}
+          onGoToTile={onGoToTile}
         />
       ))}
     </>

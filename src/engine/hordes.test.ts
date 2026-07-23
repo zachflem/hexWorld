@@ -1046,4 +1046,17 @@ describe("markCapturedStructuresDamaged", () => {
     expect(result).toBe(structures);
     expect(result[0]).toBe(alreadyDamaged);
   });
+
+  it("clears in-flight upgrade/build timers so horde repair is not blocked afterward", () => {
+    const tower = {
+      coord: { q: 0, r: 0 },
+      damaged: false,
+      upgrade: { targetLevel: 2, startedAt: 0 },
+      buildStartedAt: 99,
+    };
+    const [result] = markCapturedStructuresDamaged([tower], [{ q: 0, r: 0 }]);
+    expect(result.damaged).toBe(true);
+    expect(result.upgrade).toBeNull();
+    expect(result.buildStartedAt).toBeNull();
+  });
 });

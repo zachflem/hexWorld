@@ -103,16 +103,9 @@ export function isOutpostReinforcementBusy(outpost: OutpostReinforcementFields):
   return outpost.reinforcementAction != null;
 }
 
-/** Horde-capture repair — blocked when every task slot on this tile is in use. */
-export function isHordeRepairBlocked(
-  structure: LandStructureFields & { action?: unknown | null },
-  research: ResearchRecord,
-): boolean {
-  if (structure.action != null) {
-    const wallLike = structure as WallFields;
-    return countWallTasks(wallLike) >= structureTaskSlotCap(research);
-  }
-  return isLandStructureAtTaskCap(structure, research);
+/** Horde-capture repair — blocked only while a horde-damage repair timer is already running. */
+export function isHordeRepairBlocked(structure: LandStructureFields & { damaged: boolean }): boolean {
+  return structure.damageRepair != null;
 }
 
 /** Any in-flight timer on a tile — demolish stays blocked while work is ongoing. */

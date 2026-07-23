@@ -86,13 +86,13 @@ import {
   wallFloorContribution,
 } from "../engine/noiseMeter";
 import { computeResourceRates } from "../engine/resourceRates";
-import { isTileScoutable } from "../engine/territory";
+import { canRepairHordeDamagedTile, isTileScoutable } from "../engine/territory";
 import {
   expeditionProvisionsCost,
   expeditionTravelDurationMs,
   findBestExpeditionRoute,
 } from "../engine/expeditions";
-import { troopSpeedMultiplier } from "../engine/research";
+import { troopSpeedMultiplier, researchDurationMs } from "../engine/research";
 import type { ResearchId, ResearchRecord } from "../data/research";
 import { denDefense } from "../engine/dens";
 import {
@@ -170,7 +170,8 @@ import {
   type WanderingScoutOption,
 } from "./tileOptions";
 import { ResearchPanel } from "./ResearchPanel";
-import { NotificationTray } from "./hud/NotificationTray";
+import { NotificationTray, type NotificationCountdownRow } from "./hud/NotificationTray";
+import { RESEARCH_LABEL } from "./researchLabels";
 import { ResourceHud } from "./hud/ResourceHud";
 import { ToastStack, type ToastRecord } from "./hud/Toast";
 import { Panel } from "./primitives/Panel";
@@ -997,6 +998,19 @@ export function GameScreen({
     applyActionResult(result);
   }
 
+  function goToTile(coord: Axial) {
+    setOpenPanel(null);
+    setActionError(null);
+    setSelected(coord);
+    hexCanvasRef.current?.centerOnCoord(coord);
+    setMilitiaToSend(1);
+    setScoutsToTrain(1);
+    setMilitiaToTrain(1);
+    setMilitiaToGarrison(1);
+    setJunkyardKnightToGarrison(0);
+    setCrossBowSniperToGarrison(0);
+  }
+
   function selectTile(coord: Axial) {
     // While a tile is already selected (its ring/card open), clicking a
     // DIFFERENT tile just closes the current selection instead of jumping
@@ -1324,14 +1338,19 @@ export function GameScreen({
     applyActionResult(result);
   }
 
+  function canRepairHordeDamagedAt(coord: Axial): boolean {
+    return canRepairHordeDamagedTile(tweaks, towers, territory, coord, gridSize);
+  }
+
   /**
    * A structure a horde captured stays in place but goes `damaged` (see
    * markCapturedStructuresDamaged, engine/hordes.ts) — this surfaces the
    * fixed-percentage-of-original-build-cost repair option (repairCost,
-   * engine/formulas.ts), timed (structureRepairDurationMs), once the player
-   * has reclaimed the tile. Generic over whichever of the five structure
-   * kinds is actually sitting there, since only one can occupy a tile at a
-   * time. Null while repairInProgressFor is non-null for the same structure.
+   * engine/formulas.ts), timed (structureRepairDurationMs), once the tile
+   * is owned or within an active tower's viewshed (canRepairHordeDamagedTile).
+   * Generic over whichever of the five structure kinds is actually sitting
+   * there, since only one can occupy a tile at a time. Null while a horde-
+   * damage repair timer is already running on that structure.
    */
   function repairOptionFor(
     structure: {
@@ -1340,7 +1359,7 @@ export function GameScreen({
       buildCost: Partial<Record<ResourceType, number>>;
     } | null,
   ): RepairOption | null {
-    if (!structure || !structure.damaged || isHordeRepairBlocked(structure, research)) return null;
+    if (!structure || !structure.damaged || isHordeRepairBlocked(structure)) return null;
     const cost = repairCost(tweaks, structure.buildCost);
     return { cost, affordable: affordable(cost), durationMinutes: structureRepairDurationMs(tweaks) / 60_000 };
   }
@@ -1805,96 +1824,110 @@ export function GameScreen({
     }
 
     if (selectedTile) {
+      if (selectedTile.damaged && canRepairHordeDamagedAt(selected)) {
+        const repair = repairOptionFor(selectedStructure);
+        if (repair) {
+          actions.push({
+            key: "tile-repair",
+            icon: <Wrench size={18} />,
+            title: "Repair extraction tile",
+            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            disabled: !repair.affordable || selectedHordeOccupied,
+            onClick: handleRepairStructure,
+          });
+        }
+        return actions;
+      }
       if (isOwned(selected)) {
-        if (selectedTile.damaged) {
-          const repair = repairOptionFor(selectedStructure);
-          if (repair) {
-            actions.push({
-              key: "tile-repair",
-              icon: <Wrench size={18} />,
-              title: "Repair extraction tile",
-              detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
-              disabled: !repair.affordable || selectedHordeOccupied,
-              onClick: handleRepairStructure,
-            });
-          }
-        } else {
-          const upgrade = tierUpgradeFor(selectedTile);
-          if (upgrade) {
-            actions.push({
-              key: "tile-upgrade",
-              icon: resourceIcon(selectedTile.resource),
-              title: `Upgrade to ${upgrade.targetTier}`,
-              detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
-              disabled: !upgrade.affordable,
-              upgradeAvailable: upgrade.affordable,
-              onClick: handleUpgradeTier,
-            });
-          }
+        const upgrade = tierUpgradeFor(selectedTile);
+        if (upgrade) {
+          actions.push({
+            key: "tile-upgrade",
+            icon: resourceIcon(selectedTile.resource),
+            title: `Upgrade to ${upgrade.targetTier}`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            disabled: !upgrade.affordable,
+            upgradeAvailable: upgrade.affordable,
+            onClick: handleUpgradeTier,
+          });
         }
         return actions;
       }
     } else if (selectedPath) {
+      if (selectedPath.damaged && canRepairHordeDamagedAt(selected)) {
+        const repair = repairOptionFor(selectedStructure);
+        if (repair) {
+          actions.push({
+            key: "path-repair",
+            icon: <Wrench size={18} />,
+            title: "Repair path",
+            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            disabled: !repair.affordable || selectedHordeOccupied,
+            onClick: handleRepairStructure,
+          });
+        }
+        return actions;
+      }
       if (isOwned(selected)) {
-        if (selectedPath.damaged) {
-          const repair = repairOptionFor(selectedStructure);
-          if (repair) {
-            actions.push({
-              key: "path-repair",
-              icon: <Wrench size={18} />,
-              title: "Repair path",
-              detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
-              disabled: !repair.affordable || selectedHordeOccupied,
-              onClick: handleRepairStructure,
-            });
-          }
-        } else {
-          const upgrade = pathUpgradeOptionFor(selectedPath);
-          if (upgrade) {
-            actions.push({
-              key: "path-upgrade",
-              icon: structureIcon(PATH_TIER_ICON_NAMES[selectedPath.tier]),
-              title: `Upgrade to ${upgrade.targetTier}`,
-              detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
-              disabled: !upgrade.affordable,
-              upgradeAvailable: upgrade.affordable,
-              onClick: handleUpgradePath,
-            });
-          }
+        const upgrade = pathUpgradeOptionFor(selectedPath);
+        if (upgrade) {
+          actions.push({
+            key: "path-upgrade",
+            icon: structureIcon(PATH_TIER_ICON_NAMES[selectedPath.tier]),
+            title: `Upgrade to ${upgrade.targetTier}`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            disabled: !upgrade.affordable,
+            upgradeAvailable: upgrade.affordable,
+            onClick: handleUpgradePath,
+          });
         }
         return actions;
       }
     } else if (selectedTower) {
+      if (selectedTower.damaged && canRepairHordeDamagedAt(selected)) {
+        const repair = repairOptionFor(selectedStructure);
+        if (repair) {
+          actions.push({
+            key: "tower-repair",
+            icon: <Wrench size={18} />,
+            title: "Repair tower",
+            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            disabled: !repair.affordable || selectedHordeOccupied,
+            onClick: handleRepairStructure,
+          });
+        }
+        return actions;
+      }
       if (isOwned(selected)) {
-        if (selectedTower.damaged) {
-          const repair = repairOptionFor(selectedStructure);
-          if (repair) {
-            actions.push({
-              key: "tower-repair",
-              icon: <Wrench size={18} />,
-              title: "Repair tower",
-              detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
-              disabled: !repair.affordable || selectedHordeOccupied,
-              onClick: handleRepairStructure,
-            });
-          }
-        } else {
-          const upgrade = towerUpgradeOptionFor(selectedTower);
-          if (upgrade) {
-            actions.push({
-              key: "tower-upgrade",
-              icon: structureIcon("tower"),
-              title: `Upgrade to L${upgrade.targetLevel}`,
-              detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
-              disabled: !upgrade.affordable,
-              upgradeAvailable: upgrade.affordable,
-              onClick: handleUpgradeTower,
-            });
-          }
+        const upgrade = towerUpgradeOptionFor(selectedTower);
+        if (upgrade) {
+          actions.push({
+            key: "tower-upgrade",
+            icon: structureIcon("tower"),
+            title: `Upgrade to L${upgrade.targetLevel}`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            disabled: !upgrade.affordable,
+            upgradeAvailable: upgrade.affordable,
+            onClick: handleUpgradeTower,
+          });
         }
         return actions;
       }
     } else if (selectedWall) {
+      if (selectedWall.damaged && canRepairHordeDamagedAt(selected)) {
+        const repair = repairOptionFor(selectedStructure);
+        if (repair) {
+          actions.push({
+            key: "wall-horde-repair",
+            icon: <Wrench size={18} />,
+            title: "Repair wall",
+            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            disabled: !repair.affordable || selectedHordeOccupied,
+            onClick: handleRepairStructure,
+          });
+        }
+        return actions;
+      }
       if (isOwned(selected)) {
         // Unlike tile/path/tower/barracks, a wall's upgrade and repair options
         // aren't damaged-XOR-not — both can be independently available at
@@ -1928,32 +1961,32 @@ export function GameScreen({
         return actions;
       }
     } else if (selectedBarracks) {
+      if (selectedBarracks.damaged && canRepairHordeDamagedAt(selected)) {
+        const repair = repairOptionFor(selectedStructure);
+        if (repair) {
+          actions.push({
+            key: "barracks-repair",
+            icon: <Wrench size={18} />,
+            title: "Repair barracks",
+            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            disabled: !repair.affordable || selectedHordeOccupied,
+            onClick: handleRepairStructure,
+          });
+        }
+        return actions;
+      }
       if (isOwned(selected)) {
-        if (selectedBarracks.damaged) {
-          const repair = repairOptionFor(selectedStructure);
-          if (repair) {
-            actions.push({
-              key: "barracks-repair",
-              icon: <Wrench size={18} />,
-              title: "Repair barracks",
-              detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
-              disabled: !repair.affordable || selectedHordeOccupied,
-              onClick: handleRepairStructure,
-            });
-          }
-        } else {
-          const upgrade = barracksUpgradeOptionFor(selectedBarracks);
-          if (upgrade) {
-            actions.push({
-              key: "barracks-upgrade",
-              icon: structureIcon("barracks"),
-              title: `Upgrade to L${upgrade.targetLevel}`,
-              detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
-              disabled: !upgrade.affordable,
-              upgradeAvailable: upgrade.affordable,
-              onClick: handleUpgradeBarracks,
-            });
-          }
+        const upgrade = barracksUpgradeOptionFor(selectedBarracks);
+        if (upgrade) {
+          actions.push({
+            key: "barracks-upgrade",
+            icon: structureIcon("barracks"),
+            title: `Upgrade to L${upgrade.targetLevel}`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            disabled: !upgrade.affordable,
+            upgradeAvailable: upgrade.affordable,
+            onClick: handleUpgradeBarracks,
+          });
         }
         const wanderingScout = wanderingScoutOptionFor(selectedBarracks);
         if (wanderingScout) {
@@ -2247,22 +2280,8 @@ export function GameScreen({
    * selected, since these used to be visible per-tile via TilePopup but
    * nothing else shows them now that it's gone.
    */
-  function activeCountdownRows(): {
-    key: string;
-    icon: ReactNode;
-    label: string;
-    coord: Axial;
-    remainingMs: number;
-    onRush?: () => void;
-  }[] {
-    const rows: {
-      key: string;
-      icon: ReactNode;
-      label: string;
-      coord: Axial;
-      remainingMs: number;
-      onRush?: () => void;
-    }[] = [];
+  function activeCountdownRows(): NotificationCountdownRow[] {
+    const rows: NotificationCountdownRow[] = [];
     const buildIcon = <Hammer size={14} />;
     const upgradeIcon = <ArrowUpCircle size={14} />;
     const repairIcon = <Wrench size={14} />;
@@ -2561,6 +2580,16 @@ export function GameScreen({
         label: `Upgrading ${resource} storage to L${pending.targetLevel}`,
         coord: territory.base,
         remainingMs: remainingMs(pending.startedAt, storageUpgradeDurationMs(tweaks, pending.targetLevel), now),
+      });
+    }
+
+    if (research.pending) {
+      rows.push({
+        key: `research-${research.pending.id}`,
+        icon: <FlaskConical size={14} />,
+        label: `Researching ${RESEARCH_LABEL[research.pending.id]}`,
+        remainingMs: remainingMs(research.pending.startedAt, researchDurationMs(tweaks, research.pending.id), now),
+        onLabelClick: () => toggleOpenPanel("research"),
       });
     }
 
@@ -3073,6 +3102,7 @@ export function GameScreen({
             }))}
           countdowns={activeCountdownRows()}
           now={now}
+          onGoToTile={goToTile}
         />
       </div>
       {newGameDialogOpen && (

@@ -8,7 +8,7 @@ import { tweaksSchema } from "../data/tweaksSchema";
 import { axialKey, axialNeighbors, axialSpiral, type Axial } from "./hexCoords";
 import { terrainAt, type TerrainType } from "./terrain";
 import { towerRange } from "./towers";
-import { autoClaimTowerRange, isTileScoutable, tileDefense } from "./territory";
+import { autoClaimTowerRange, canRepairHordeDamagedTile, isTileScoutable, isWithinActiveTowerClaim, tileDefense } from "./territory";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -153,5 +153,53 @@ describe("autoClaimTowerRange", () => {
     const tweaks = loadRealTweaks();
     const territory: TerritoryRecord = { base: { q: 0, r: 0 }, owned: [] };
     expect(autoClaimTowerRange(tweaks, [], territory, gridSize, new Set())).toBe(territory);
+  });
+});
+
+describe("isWithinActiveTowerClaim", () => {
+  const tweaks = loadRealTweaks();
+  const gridSize = 128;
+
+  function makeTower(overrides: Partial<Tower> = {}): Tower {
+    return {
+      coord: { q: 20, r: 20 },
+      level: 1,
+      totalInvested: {},
+      upgrade: null,
+      buildCost: {},
+      damaged: false,
+      ...overrides,
+    };
+  }
+
+  it("is true for a coord inside a healthy tower's range", () => {
+    const tower = makeTower({ level: 3 });
+    const inRange = axialSpiral(tower.coord, towerRange(tweaks, tower.level))[1]!;
+    expect(isWithinActiveTowerClaim(tweaks, [tower], inRange, gridSize)).toBe(true);
+  });
+
+  it("is false when only a damaged tower could cover the coord", () => {
+    const tower = makeTower({ damaged: true });
+    expect(isWithinActiveTowerClaim(tweaks, [tower], tower.coord, gridSize)).toBe(false);
+  });
+});
+
+describe("canRepairHordeDamagedTile", () => {
+  const tweaks = loadRealTweaks();
+  const gridSize = 128;
+  const tower: Tower = {
+    coord: { q: 20, r: 20 },
+    level: 3,
+    totalInvested: {},
+    upgrade: null,
+    buildCost: {},
+    damaged: false,
+  };
+
+  it("is true for owned tiles and for unowned tiles inside an active tower viewshed", () => {
+    const inRange = axialSpiral(tower.coord, towerRange(tweaks, tower.level))[1]!;
+    const territory: TerritoryRecord = { base: { q: 0, r: 0 }, owned: [] };
+    expect(canRepairHordeDamagedTile(tweaks, [tower], territory, inRange, gridSize)).toBe(true);
+    expect(canRepairHordeDamagedTile(tweaks, [tower], { ...territory, owned: [inRange] }, inRange, gridSize)).toBe(true);
   });
 });

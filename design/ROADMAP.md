@@ -78,7 +78,7 @@ Keep the design docs aligned with the code. Stale docs cause the mismatches we h
 | Topic | Rule |
 |-------|------|
 | **Backlog format** | `- **Title.** (#id) Description. **Refs:** … Status: Open / In progress / Resolved (YYYY-MM-DD)` |
-| **Bug IDs** | `#1`–`#17` — preserve existing IDs when adding new items ([TWEAKS.md](TWEAKS.md) references `#12`) |
+| **Bug IDs** | `#1`–`#18` — preserve existing IDs when adding new items ([TWEAKS.md](TWEAKS.md) references `#12`) |
 | **Proposed IDs** | `#P1`, `#P2`, … (P = proposed) |
 | **`[URGENT]`** | Prefix when play is blocked or game state is misleading |
 | **Balance fixes** | Backlog → `public/profiles/{slug}/tweaks.jsonc` → note in [TWEAKS.md](TWEAKS.md) → Resolved |
@@ -87,7 +87,7 @@ Keep the design docs aligned with the code. Stale docs cause the mismatches we h
 | **Collapsible blocks** | Use `<details>` / `<summary>` for completed milestones, recently resolved, deferred, and ideas (see completed section below) |
 | **Agent git workflow** | See [WORKFLOW.md](WORKFLOW.md). Ask the user which **personal branch** they use; do not assume `goblin` or `krunchee`. Merge finished work to **`dev`**. |
 
-*Last updated: 2026-07-24 (#17 resolved — horde-captured structure reclaim)*
+*Last updated: 2026-07-24 (UX — horde structure-damage toast)*
 
 ---
 
@@ -104,6 +104,8 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 *(No open UI items — see Recently resolved for #7, #13.)*
 
 ### UX
+
+- **Toast when a horde damages a structure.** (#18) One-off notification (same lifecycle as other completion toasts — `Toast.tsx` / `CollapsibleNotificationRow`) when `markCapturedStructuresDamaged` flags a structure on a captured tile: structure type + **clickable `(q, r)` coord link** that pans/selects the tile (`goToTile` / `centerOnCoord` in `GameScreen.tsx`). If capture cleared in-flight work (`applyHordeCaptureDamage` — build timer, tier/level upgrade, wall `action`, barracks training queue), append plain-English copy naming what was cancelled (e.g. “Tower upgrade cancelled”); upgrades are **cancelled**, not paused — cost already spent is not refunded. **Refs:** [`src/engine/hordes.ts`](../src/engine/hordes.ts) (`markCapturedStructuresDamaged`, `applyHordeCaptureDamage`), [`src/ui/hud/Toast.tsx`](../src/ui/hud/Toast.tsx), [`src/ui/hud/NotificationTray.tsx`](../src/ui/hud/NotificationTray.tsx). Status: Open
 
 <details>
 <summary><strong>Recently resolved</strong></summary>

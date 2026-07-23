@@ -84,3 +84,29 @@ export function autoClaimTowerRange(
 
   return newlyClaimed.length > 0 ? { ...territory, owned: [...territory.owned, ...newlyClaimed] } : territory;
 }
+
+/** True when `coord` falls within any active tower's viewshed (same radius as autoClaimTowerRange). */
+export function isWithinActiveTowerClaim(tweaks: Tweaks, towers: Tower[], coord: Axial, gridSize: number): boolean {
+  const key = axialKey(coord);
+  for (const tower of towers) {
+    if (!isStructureActive(tower)) continue;
+    for (const c of axialSpiral(tower.coord, towerRange(tweaks, tower.level))) {
+      if (!isWithinMapBounds(c, gridSize)) continue;
+      if (axialKey(c) === key) return true;
+    }
+  }
+  return false;
+}
+
+/** Owned ground, or bare tile within an active tower's viewshed (auto-claim eligible). */
+export function canRepairHordeDamagedTile(
+  tweaks: Tweaks,
+  towers: Tower[],
+  territory: TerritoryRecord,
+  coord: Axial,
+  gridSize: number,
+): boolean {
+  const key = axialKey(coord);
+  if (territory.owned.some((o) => axialKey(o) === key)) return true;
+  return isWithinActiveTowerClaim(tweaks, towers, coord, gridSize);
+}

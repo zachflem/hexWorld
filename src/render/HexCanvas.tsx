@@ -51,10 +51,15 @@ import { extractionTierLevel } from "../engine/tiers";
 /** Exported so DOM overlays (e.g. HoverTooltip) can compute the same on-screen hex circumradius (BASE_HEX_SIZE * zoom) the canvas itself draws with. */
 export const BASE_HEX_SIZE = 24;
 
-/** Pan offset that places `base` at the center of a view with the given pixel dimensions. */
+/** Pan offset that places `coord` at the center of a view with the given pixel dimensions. */
+export function centerPanOnCoord(coord: Axial, viewWidth: number, viewHeight: number): { x: number; y: number } {
+  const pixel = axialToPixel(coord, BASE_HEX_SIZE);
+  return { x: viewWidth / 2 - pixel.x, y: viewHeight / 2 - pixel.y };
+}
+
+/** @deprecated Use centerPanOnCoord — kept for call sites that predate the rename. */
 export function centerPanOnBase(base: Axial, viewWidth: number, viewHeight: number): { x: number; y: number } {
-  const basePixel = axialToPixel(base, BASE_HEX_SIZE);
-  return { x: viewWidth / 2 - basePixel.x, y: viewHeight / 2 - basePixel.y };
+  return centerPanOnCoord(base, viewWidth, viewHeight);
 }
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 3;
@@ -151,6 +156,8 @@ function contrastingInk(hex: string): string {
 /** Imperative handle exposed via ref, since pan/zoom are internal state here — lets a parent (e.g. a "recenter" button in the header) drive the view without lifting that state up. */
 export interface HexCanvasHandle {
   recenterOnBase: () => void;
+  /** Pan the view so `coord` sits at the center of the canvas. */
+  centerOnCoord: (coord: Axial) => void;
   /** Current on-screen pixel position of a tile's center, or null before the initial center-on-base pan has been computed. Recomputed fresh on every call against the latest pan/zoom — safe to call every frame (e.g. to keep a DOM overlay glued to a selected tile). */
   getTileScreenPosition: (coord: Axial) => { x: number; y: number } | null;
 }
@@ -483,8 +490,13 @@ export const HexCanvas = forwardRef<
         canvas.width = container.clientWidth;
         canvas.height = container.clientHeight;
         setZoom(1);
-        setPan(centerPanOnBase(base, canvas.width, canvas.height));
+        setPan(centerPanOnCoord(base, canvas.width, canvas.height));
         pendingInitialCenterRef.current = false;
+      },
+      centerOnCoord(coord: Axial) {
+        const canvas = canvasRef.current;
+        if (!canvas || pan === null) return;
+        setPan(centerPanOnCoord(coord, canvas.width, canvas.height));
       },
       getTileScreenPosition(coord: Axial) {
         if (pan === null) return null;

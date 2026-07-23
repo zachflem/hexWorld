@@ -533,6 +533,29 @@ export function advanceHordes(
   };
 }
 
+type CapturedStructureFields = {
+  coord: Axial;
+  damaged: boolean;
+  upgrade?: unknown | null;
+  buildStartedAt?: number | null;
+  damageRepair?: { startedAt: number } | null;
+  action?: unknown | null;
+  trainingQueue?: unknown | null;
+};
+
+/** Clears in-flight build/upgrade timers so horde-capture repair is never blocked by stale work. */
+function applyHordeCaptureDamage<T extends CapturedStructureFields>(structure: T): T {
+  return {
+    ...structure,
+    damaged: true,
+    upgrade: null,
+    buildStartedAt: null,
+    damageRepair: null,
+    action: null,
+    trainingQueue: null,
+  };
+}
+
 /**
  * Flags any structure sitting on a tile a horde just captured as `damaged` —
  * DESIGN.md §12: buildings survive a lost tile but become non-functional
@@ -542,7 +565,7 @@ export function advanceHordes(
  * reference) when nothing was captured or nothing sits on the captured tiles,
  * so callers can call this unconditionally every tick without extra churn.
  */
-export function markCapturedStructuresDamaged<T extends { coord: Axial; damaged: boolean }>(
+export function markCapturedStructuresDamaged<T extends CapturedStructureFields>(
   structures: T[],
   capturedTiles: Axial[],
 ): T[] {
@@ -552,7 +575,7 @@ export function markCapturedStructuresDamaged<T extends { coord: Axial; damaged:
   const next = structures.map((structure) => {
     if (structure.damaged || !capturedKeys.has(axialKey(structure.coord))) return structure;
     changed = true;
-    return { ...structure, damaged: true };
+    return applyHordeCaptureDamage(structure);
   });
   return changed ? next : structures;
 }

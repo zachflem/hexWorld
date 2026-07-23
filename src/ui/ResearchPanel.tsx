@@ -6,17 +6,10 @@ import { remainingMs } from "../engine/timers";
 import { UPGRADE_AVAILABLE_BADGE_COLOR } from "../render/HexCanvas";
 import type { BuildResult } from "../App";
 import { formatCost } from "./format";
+import { RESEARCH_LABEL } from "./researchLabels";
 import { BottomSheet } from "./primitives/BottomSheet";
 import { InProgressRow } from "./primitives/InProgressRow";
 import { SheetListItem, SheetSectionLabel } from "./primitives/SheetListItem";
-
-const RESEARCH_LABEL: Record<ResearchId, string> = {
-  troop_speed_2: "Troop Movement II (1.5x)",
-  troop_speed_3: "Troop Movement III (2.0x)",
-  game_speed_2: "Game Speed II (unlocks 3x)",
-  game_speed_3: "Game Speed III (unlocks 5x)",
-  parallel_upgrades: "Parallel Work Orders (2 tasks per structure)",
-};
 
 function ResearchTierRow({
   id,
