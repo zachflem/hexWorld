@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 
 /**
- * Mobile-first bottom sheet shell — full-width on small viewports, capped and
- * centered on desktop. Chrome only (header + optional toolbar + scroll body);
- * tabs and content layout belong to the consumer so Settings/Garrisons/etc.
- * can reuse this later without inheriting tile-action UI.
+ * Mobile-first bottom sheet shell — full-width and centered on small
+ * viewports; capped and left-docked from 768px up (see `.bottom-sheet` in
+ * index.css). Chrome only (header + optional toolbar + scroll body); tabs
+ * and content layout belong to the consumer so Settings/Garrisons/etc. can
+ * reuse this later without inheriting tile-action UI.
  */
 export function BottomSheet({
   open,
@@ -86,12 +87,10 @@ export function BottomSheet({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        className="bottom-sheet"
         style={{
           position: "fixed",
           bottom: 0,
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: "min(100%, 420px)",
           // Fixed height (not only max-height) so the body gets a definite
           // scrollport — max-height alone leaves height indefinite and content
           // gets clipped without scrolling.
