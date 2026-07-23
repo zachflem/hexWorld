@@ -1,27 +1,28 @@
-import type { Tweaks } from "../data/tweaksSchema";
-
 export type AssetCategory = "terrain" | "resources" | "structures" | "units" | "markers";
 
-const DEFAULT_PROFILE_SLUG = "default";
+export const DEFAULT_PROFILE_SLUG = "default";
 
 let profileSlug = DEFAULT_PROFILE_SLUG;
-let customSprites = false;
 
-export function initAssetConfig(slug: string, assets: Tweaks["assets"] | undefined): void {
+export function initAssetConfig(slug: string): void {
   profileSlug = slug;
-  customSprites = assets?.custom_sprites === true;
 }
 
 export function resetAssetConfig(): void {
   profileSlug = DEFAULT_PROFILE_SLUG;
-  customSprites = false;
 }
 
-/** Ordered URLs to try for a sprite — profile override, then shared default pack. */
+function profileAssetUrl(slug: string, category: AssetCategory, filename: string): string {
+  return `/profiles/${slug}/assets/${category}/${filename}`;
+}
+
+/** Ordered URLs to try for a sprite — active profile, then default profile pack. */
 export function assetUrlCandidates(category: AssetCategory, filename: string): string[] {
-  const defaultUrl = `/tiles/${category}/${filename}`;
-  if (!customSprites) return [defaultUrl];
-  return [`/profiles/${profileSlug}/assets/${category}/${filename}`, defaultUrl];
+  const urls = [profileAssetUrl(profileSlug, category, filename)];
+  if (profileSlug !== DEFAULT_PROFILE_SLUG) {
+    urls.push(profileAssetUrl(DEFAULT_PROFILE_SLUG, category, filename));
+  }
+  return urls;
 }
 
 /** Primary URL — first candidate in the fallback chain. */

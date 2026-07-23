@@ -59,7 +59,7 @@ export function getResourceTexture(type: ResourceType): HTMLImageElement | null 
  * Fixed-structure marker icon (base, tower, barracks, dock, den, outpost,
  * wall tiers, ...) — a small overlay icon (like resource markers), not
  * full-hex art like terrain. `name` matches the PNG's filename under
- * /tiles/structures/ (e.g. "tower" -> tower.png).
+ * profiles/{slug}/assets/structures/ (e.g. "tower" -> tower.png).
  */
 export function getStructureIconTexture(name: string): HTMLImageElement | null {
   return loadCategory("structures", `${name}-icon`, `${name}.png`);
@@ -69,7 +69,7 @@ export function getStructureIconTexture(name: string): HTMLImageElement | null {
  * Full-hex tile art for a path tier — same footprint/overlay convention as
  * `getTerrainTexture` (a path tile fully replaces the terrain fill rather
  * than sitting as a small overlay on top of it). `name` matches the PNG's
- * filename under /tiles/structures/ (e.g. "path-stone" -> path-stone.png).
+ * filename under profiles/{slug}/assets/structures/ (e.g. "path-stone" -> path-stone.png).
  */
 export function getPathTileTexture(name: string): HTMLImageElement | null {
   return loadCategory("structures", `${name}-full`, `${name}.png`);
@@ -79,7 +79,7 @@ export function getPathTileTexture(name: string): HTMLImageElement | null {
  * Mobile-entity marker icon (expedition, horde, scout skiff, wandering
  * scout, ...) — same small-overlay treatment as getStructureIconTexture,
  * just for things that move around the map rather than sit fixed on a
- * tile. `name` matches the PNG's filename under /tiles/units/.
+ * tile. `name` matches the PNG's filename under profiles/{slug}/assets/units/.
  */
 export function getUnitIconTexture(name: string): HTMLImageElement | null {
   return loadCategory("units", `${name}-icon`, `${name}.png`);

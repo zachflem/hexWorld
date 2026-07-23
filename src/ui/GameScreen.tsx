@@ -213,7 +213,7 @@ function structureIcon(name: string, size = 45) {
     />
   );
 }
-/** Small hand-drawn marker icons (public/tiles/markers/) instead of the full-size in-world resource sprites — those read fine painted on the map itself but turn into an indistinct blob at ring-hex/HUD-chip size. */
+/** Small hand-drawn marker icons (profiles/default/assets/markers/) instead of the full-size in-world resource sprites — those read fine painted on the map itself but turn into an indistinct blob at ring-hex/HUD-chip size. */
 function resourceIcon(resource: ResourceType, size = 45) {
   return (
     <img

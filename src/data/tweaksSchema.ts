@@ -39,12 +39,6 @@ export const tweaksSchema = z.object({
     notes: z.string(),
   }),
 
-  assets: z
-    .object({
-      custom_sprites: z.boolean(),
-    })
-    .optional(),
-
   game: z.object({
     grid_size: z.number(),
     tick_interval_seconds: z.number(),

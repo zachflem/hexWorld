@@ -527,7 +527,7 @@ export default function App() {
         if (saveExists && player && world && territory && resources && clock && storageLevels) {
           const profileSlug = savedProfileSlug ?? DEFAULT_PROFILE_SLUG;
           const tweaks = await loadProfile(profileSlug);
-          initAssetConfig(profileSlug, tweaks.assets);
+          initAssetConfig(profileSlug);
           const pendingGame = buildGameState(tweaks, {
             player,
             world,
@@ -574,7 +574,7 @@ export default function App() {
 
         const profileSlug = urlSlug ?? DEFAULT_PROFILE_SLUG;
         const tweaks = await loadProfile(profileSlug);
-        initAssetConfig(profileSlug, tweaks.assets);
+        initAssetConfig(profileSlug);
         setBoot({
           status: "ready",
           tweaks,
@@ -1632,7 +1632,7 @@ export default function App() {
 
     if (profileSlug !== current.profileSlug) {
       const tweaks = await loadProfile(profileSlug);
-      initAssetConfig(profileSlug, tweaks.assets);
+      initAssetConfig(profileSlug);
       resetTextureCache();
       const updated = { ...current, tweaks, profileSlug };
       bootRef.current = updated;
@@ -1666,7 +1666,7 @@ export default function App() {
     await clearGameSave();
     const profileSlug = resolveProfileSlug(window.location.pathname) ?? DEFAULT_PROFILE_SLUG;
     const tweaks = await loadProfile(profileSlug);
-    initAssetConfig(profileSlug, tweaks.assets);
+    initAssetConfig(profileSlug);
     resetTextureCache();
     const next = { status: "ready" as const, tweaks, profileSlug, profiles, recentSeeds, game: undefined };
     bootRef.current = next;
