@@ -55,7 +55,7 @@ export function ScoutingPanel({
             <p style={{ margin: 0, opacity: 0.7, fontSize: "0.85rem" }}>No clues collected yet.</p>
           ) : (
             clueHistory.map(({ n, text }) => (
-              <SheetListItem key={n} title={`Clue ${n}`} detail={text} />
+              <SheetListItem key={n} title={`Clue ${n}`} detail={text ?? undefined} />
             ))
           )}
         </div>
