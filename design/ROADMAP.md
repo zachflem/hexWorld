@@ -201,17 +201,25 @@ Playtesting backlog gathered 2026-07-22. Ordered by the user's stated priority: 
 
 ---
 
-## Milestone 22 — Onboarding Overhaul: The Field Manual — 🚧 Not started
+## Milestone 22 — Onboarding Overhaul: The Field Manual — ✅ Complete
 
 The bare form from Milestone 1 (name/colour/seed, no framing, no lore delivery) gets replaced with a short paged sequence themed as a found field manual — aged paper, not the glowing-terminal look, since the player hasn't built any power infrastructure yet when the run begins. Full implementation plan and design detail: `design/Milestone22.md`.
 
-- **Testable outcome:** a brand-new player clicks/keys through cover → form → story pages → send-off and lands in the game with the name/colour/seed they entered; an existing save still skips onboarding entirely; the manual reads correctly in both light and dark mode.
+- **Testable outcome:** a brand-new player clicks/keys through cover → form → story pages → send-off and lands in the game with the name/colour/seed/difficulty they chose; an existing save shows a continue-or-new-game prompt (notebook-styled) before onboarding; the manual reads correctly in both light and dark mode. Registration hides difficulty and seed behind **Show Advanced Options** (collapsed by default); recent seeds (last 5) appear there for replay.
+
+---
+
+## Milestone 23 — Difficulty Profiles & Asset Packs — ✅ Complete
+
+Shipped on the `goblin` branch (2026-07-23). Players pick a difficulty during onboarding (advanced options) or via `play.{domain}/{slug}`. Each profile is a bundled folder under `public/profiles/{slug}/` with its own `tweaks.jsonc` and optional partial sprite overrides in `assets/`. The default sprite pack lives at `public/profiles/default/assets/` (formerly top-level `/tiles/`). A continue prompt asks whether to resume a local save or start fresh. Zip upload for new profiles is deferred to a future admin tweaks GUI.
+
+- **Testable outcome:** visit `/hard`, complete onboarding with advanced options expanded, confirm balance and any custom sprites load with fallback to default art; reload with an existing save and confirm the continue prompt appears; `profiles/index.json` lists all shipped difficulties.
 
 ---
 
 ## Explicitly Deferred (post-Milestone 17, not part of this roadmap)
 
-- Difficulty profile files (`tweaks-hard.jsonc` etc.)
+- Admin tweaks GUI (visual balance editor, zip profile import/export for deploy)
 - Water-based transport of resources (a dock's own output still deposits directly, not via a path network — see Milestone 18)
 - Environmental map events
 - Auto-repair skill for walls

@@ -1,5 +1,6 @@
 import type { TerrainType } from "../engine/terrain";
 import type { ResourceType } from "../data/resources";
+import { assetUrlCandidates, type AssetCategory } from "./assetPaths";
 
 type TextureKey = string;
 
@@ -12,10 +13,19 @@ export function onTextureLoad(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
-function load(key: TextureKey, path: string): HTMLImageElement | null {
+export function resetTextureCache(): void {
+  cache.clear();
+}
+
+function loadWithFallbacks(key: TextureKey, urls: string[], index = 0): HTMLImageElement | null {
   const cached = cache.get(key);
   if (cached === "error") return null;
   if (cached) return cached;
+
+  if (index >= urls.length) {
+    cache.set(key, "error");
+    return null;
+  }
 
   const img = new Image();
   img.onload = () => {
@@ -23,48 +33,56 @@ function load(key: TextureKey, path: string): HTMLImageElement | null {
     listeners.forEach((fn) => fn());
   };
   img.onerror = () => {
-    cache.set(key, "error");
+    if (index + 1 < urls.length) {
+      loadWithFallbacks(key, urls, index + 1);
+    } else {
+      cache.set(key, "error");
+    }
   };
-  img.src = path;
+  img.src = urls[index]!;
   return null;
 }
 
+function loadCategory(category: AssetCategory, cacheKey: string, filename: string): HTMLImageElement | null {
+  return loadWithFallbacks(`${category}/${cacheKey}`, assetUrlCandidates(category, filename));
+}
+
 export function getTerrainTexture(type: TerrainType): HTMLImageElement | null {
-  return load(`terrain/${type}`, `/tiles/terrain/${type}.png`);
+  return loadCategory("terrain", type, `${type}.png`);
 }
 
 export function getResourceTexture(type: ResourceType): HTMLImageElement | null {
-  return load(`resources/${type}`, `/tiles/resources/${type}.png`);
+  return loadCategory("resources", type, `${type}.png`);
 }
 
 /**
  * Fixed-structure marker icon (base, tower, barracks, dock, den, outpost,
  * wall tiers, ...) — a small overlay icon (like resource markers), not
  * full-hex art like terrain. `name` matches the PNG's filename under
- * /tiles/structures/ (e.g. "tower" -> tower.png).
+ * profiles/{slug}/assets/structures/ (e.g. "tower" -> tower.png).
  */
 export function getStructureIconTexture(name: string): HTMLImageElement | null {
-  return load(`structures/${name}-icon`, `/tiles/structures/${name}.png`);
+  return loadCategory("structures", `${name}-icon`, `${name}.png`);
 }
 
 /**
  * Full-hex tile art for a path tier — same footprint/overlay convention as
  * `getTerrainTexture` (a path tile fully replaces the terrain fill rather
  * than sitting as a small overlay on top of it). `name` matches the PNG's
- * filename under /tiles/structures/ (e.g. "path-stone" -> path-stone.png).
+ * filename under profiles/{slug}/assets/structures/ (e.g. "path-stone" -> path-stone.png).
  */
 export function getPathTileTexture(name: string): HTMLImageElement | null {
-  return load(`structures/${name}-full`, `/tiles/structures/${name}.png`);
+  return loadCategory("structures", `${name}-full`, `${name}.png`);
 }
 
 /**
  * Mobile-entity marker icon (expedition, horde, scout skiff, wandering
  * scout, ...) — same small-overlay treatment as getStructureIconTexture,
  * just for things that move around the map rather than sit fixed on a
- * tile. `name` matches the PNG's filename under /tiles/units/.
+ * tile. `name` matches the PNG's filename under profiles/{slug}/assets/units/.
  */
 export function getUnitIconTexture(name: string): HTMLImageElement | null {
-  return load(`units/${name}-icon`, `/tiles/units/${name}.png`);
+  return loadCategory("units", `${name}-icon`, `${name}.png`);
 }
 
 /**

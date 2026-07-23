@@ -2,6 +2,7 @@ import { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from "react"
 import type { Axial } from "../../engine/hexCoords";
 import { axialKey } from "../../engine/hexCoords";
 import type { ResourceType } from "../../data/resources";
+import { resolveAssetPath } from "../../render/assetPaths";
 import { BASE_HEX_SIZE } from "../../render/HexCanvas";
 import { COLLECT_PIN_COLORS, collectPinColorState } from "../../render/stockpileState";
 
@@ -89,7 +90,7 @@ function CollectPin({
         <circle cx="16" cy="12" r="9" fill="rgba(255, 255, 255, 0.06)" />
       </svg>
       <img
-        src={`/tiles/markers/icon-${tile.resource}.png`}
+        src={resolveAssetPath("markers", `icon-${tile.resource}.png`)}
         width={ICON_SIZE}
         height={ICON_SIZE}
         alt=""

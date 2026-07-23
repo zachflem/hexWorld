@@ -14,6 +14,18 @@ describe("tweaksSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("validates shipped profile tweaks files", () => {
+    for (const slug of ["default", "hard"] as const) {
+      const raw = readFileSync(resolve(__dirname, `../../public/profiles/${slug}/tweaks.jsonc`), "utf-8");
+      const parsed = JSON.parse(stripJsonComments(raw));
+      const result = tweaksSchema.safeParse(parsed);
+      expect(result.success, slug).toBe(true);
+      if (result.success) {
+        expect(result.data.meta.slug).toBe(slug);
+      }
+    }
+  });
+
   it("rejects a malformed config", () => {
     const result = tweaksSchema.safeParse({ meta: { version: "0.1.0" } });
 

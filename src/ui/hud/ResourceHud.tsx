@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { ResourceAmounts, ResourceType } from "../../data/resources";
+import { resolveAssetPath } from "../../render/assetPaths";
 import { Panel } from "../primitives/Panel";
 
 const RESOURCE_ORDER: ResourceType[] = ["food", "wood", "stone", "steel", "power"];
@@ -7,11 +8,27 @@ const RESOURCE_ORDER: ResourceType[] = ["food", "wood", "stone", "steel", "power
 const ICON_SIZE = 32;
 
 function resourceIcon(resource: ResourceType, size = ICON_SIZE) {
-  return <img src={`/tiles/markers/icon-${resource}.png`} width={size} height={size} alt="" style={{ objectFit: "contain" }} />;
+  return (
+    <img
+      src={resolveAssetPath("markers", `icon-${resource}.png`)}
+      width={size}
+      height={size}
+      alt=""
+      style={{ objectFit: "contain" }}
+    />
+  );
 }
 
 function noiseIcon(size = ICON_SIZE) {
-  return <img src="/tiles/markers/icon-noise.png" width={size} height={size} alt="" style={{ objectFit: "contain" }} />;
+  return (
+    <img
+      src={resolveAssetPath("markers", "icon-noise.png")}
+      width={size}
+      height={size}
+      alt=""
+      style={{ objectFit: "contain" }}
+    />
+  );
 }
 
 /** icon + value(+delta) chip — the HUD bar's atom. Tuned for the dark floating Panel HUD. */

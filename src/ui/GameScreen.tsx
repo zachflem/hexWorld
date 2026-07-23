@@ -98,6 +98,7 @@ import {
 import { availableCrossBowSnipers, availableJunkyardKnights, availableMilitia, garrisonAt } from "../engine/garrisons";
 import type { Player } from "../data/player";
 import type { ResourceAmounts, ResourceType } from "../data/resources";
+import { resolveAssetPath } from "../render/assetPaths";
 import type { TerritoryRecord } from "../data/territory";
 import type { BaseRecord } from "../data/base";
 import type { ExtractionTile } from "../data/extractionTiles";
@@ -206,13 +207,28 @@ const RESOURCE_ORDER: ResourceType[] = ["food", "wood", "stone", "steel", "power
 
 /** Reuses the same painted sprites HexCanvas draws on the map itself — a ring hex for "build/upgrade a tower" shows the actual tower icon, not a generic tool glyph. Sized well above the lucide icons' 18px so the sprite reads clearly inside a ring hex. */
 function structureIcon(name: string, size = 45) {
-  return <img src={`/tiles/structures/${name}.png`} width={size} height={size} alt="" style={{ objectFit: "contain" }} />;
+  return (
+    <img
+      src={resolveAssetPath("structures", `${name}.png`)}
+      width={size}
+      height={size}
+      alt=""
+      style={{ objectFit: "contain" }}
+    />
+  );
 }
-/** Small hand-drawn marker icons (public/tiles/markers/) instead of the full-size in-world resource sprites — those read fine painted on the map itself but turn into an indistinct blob at ring-hex/HUD-chip size. */
+/** Small hand-drawn marker icons (profiles/default/assets/markers/) instead of the full-size in-world resource sprites — those read fine painted on the map itself but turn into an indistinct blob at ring-hex/HUD-chip size. */
 function resourceIcon(resource: ResourceType, size = 45) {
-  return <img src={`/tiles/markers/icon-${resource}.png`} width={size} height={size} alt="" style={{ objectFit: "contain" }} />;
+  return (
+    <img
+      src={resolveAssetPath("markers", `icon-${resource}.png`)}
+      width={size}
+      height={size}
+      alt=""
+      style={{ objectFit: "contain" }}
+    />
+  );
 }
-
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

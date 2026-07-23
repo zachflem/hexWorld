@@ -39,9 +39,16 @@ A small group arrives in unfamiliar territory. They settle, and immediately clai
 
 ## 4. Player Onboarding
 
-No login, no email, no account. On arrival:
-- Player enters a name and picks a colour (full RGB picker).
-- Player is dropped straight into the game world, owning their starting territory outright (see §6).
+No login, no email, no account. On arrival, the player finds a short **field manual** — aged paper, in-world prose, not a terminal UI — and pages through it before play begins:
+
+1. **Cover** — title and hook.
+2. **Registration** — name, inline colour wheel, and (under **Show Advanced Options**, collapsed by default) difficulty profile + optional world seed + recent seeds for replay. Same seed validation as before: blank is random; otherwise a non-negative integer.
+3. **Story pages** (four brief log entries) — settling the starting territory, how noise draws hordes, the rumoured hidden lab (securing it wins the run; clearing dens is valuable but not required), and a light in-fiction nudge before heading out.
+4. **Send-off** — closing line, then into the game.
+
+An existing local save shows a **continue-or-new-game** prompt (styled as a notebook page) before onboarding — **Yes!** resumes, **No. Start a New Game** clears the save and opens the manual. Choosing **Start as a new player** from the new-game dialog shows the full manual again.
+
+**Difficulty profiles:** selectable in advanced registration options and via URL `/{slug}` on the game domain (`play.{domain}`). Each profile loads `public/profiles/{slug}/tweaks.jsonc`; optional partial sprites under `profiles/{slug}/assets/` fall back to `profiles/default/assets/`. See `design/TWEAKS.md` § Profiles.
 
 Progress persists locally in IndexedDB automatically during play, so closing the tab mid-session doesn't lose anything. For anything beyond that — moving a game to another device, keeping a backup, running separate playthroughs side by side — the player explicitly **saves to a file** (see §17).
 
@@ -185,7 +192,6 @@ A successfully held den **converts into a player-usable Outpost** (`engine/outpo
 - **Bidirectional** outpost↔base resource transport — outposts (§13) shipped as a one-way, self-contained economy; moving resources back to base is deferred to a future "trade caravan" tech-tree upgrade (manual → bike couriers → electric van, each tier with its own per-tick resource cost), which can hook into the outpost's already-separate storage pool without touching this milestone's work
 - Water-based transport of resources (moving cargo across water) — a dock's own food output still deposits straight to base, not via a path/highway network the way land tiles do
 - Environmental map events
-- Difficulty profile variants (structure anticipated, not designed yet)
 - Auto-repair skill for walls (mentioned as a future possibility, slower than manual repair)
 
 *(Water-based resources — the "plausible future addition" this list used to defer — shipped during playtesting; see §16, Docks & Water Units. Remote outposts also shipped, with growth-over-time deliberately dropped from the original den concept; see §13.)*
@@ -213,4 +219,6 @@ Both wandering units use the same movement rule: step to a random adjacent tile 
 - **Offline-first PWA** — no server dependency for core gameplay. State persists locally (IndexedDB), with a Service Worker enabling full offline play.
 - **Save files, not accounts** — IndexedDB holds the active session for crash/continue convenience, but the real save/load mechanism is an old-school, explicit save-to-file / load-from-file flow. Files are plain JSON, human-editable, and untrusted by design — single-player game, so if someone wants to hand-edit their save, that's entirely their call.
 - **Procedural seed** determines the entire map at generation time — same seed reproduces the same world.
-- **Tweaks-file driven balance** — nearly every numeric value in this design (costs, yields, timers, noise, horde scaling) is externalized to `tweaks.jsonc`, read at load time, so the whole economy can be retuned without touching game logic.
+- **Tweaks-file driven balance** — nearly every numeric value lives in per-profile `tweaks.jsonc` files under `public/profiles/{slug}/`, loaded from the URL slug or onboarding selection, validated at boot with Zod (`src/data/tweaksSchema.ts`).
+- **Difficulty profiles** — `public/profiles/index.json` registers shipped profiles (`default`, `hard`, …). Each folder contains `tweaks.jsonc` plus optional `assets/` (partial sprite overrides). Default art lives in `public/profiles/default/assets/`. Asset resolution: active profile → default profile → flat-colour fallback (`src/render/assetPaths.ts`). `profileSlug` is persisted in IndexedDB with the save.
+- **Domain split (planned deploy)** — marketing/wiki at `hexworld.seezed.net`; game PWA at `play.{domain}` with `/{slug}` deep links. Git workflow: personal branches `goblin` / `krunchee` → `dev` → `main` (`design/WORKFLOW.md`).

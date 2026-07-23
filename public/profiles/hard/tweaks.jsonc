@@ -25,9 +25,9 @@
 {
   "meta": {
     "version": "0.1.0",
-    "slug": "default",
-    "profile_name": "Standard",
-    "notes": "Baseline tuning for a single ~30-90 minute skirmish session. Untested — first pass only."
+    "slug": "hard",
+    "profile_name": "Hard",
+    "notes": "Tighter economy and faster horde response for experienced players."
   },
 
   // --------------------------------------------------------------------------
@@ -672,7 +672,7 @@
     "proximity_influence": 0.5,
     "den_level_base_weight": 0.5,
     "den_level_influence": 0.5,
-    "spawn_cooldown_minutes": 12, // minimum time between hordes FROM THE SAME DEN — cooldown is per-den, not global, so one loud den doesn't suppress every other den's independent risk. Raised from 5 (2026-07-16 balance pass) to give a new player real recovery time between waves instead of back-to-back hordes from the same den.
+    "spawn_cooldown_minutes": 8,
 
     "no_horde_noise_threshold_db": 30,
     "_no_horde_noise_threshold_note": "Added 2026-07-19 balance pass. noise.noise_floor_minimum is already a hard clamp of 30 — the game treats that as the ambient 'silent' baseline of a quiet environment. Below/at this threshold there's deliberately nothing for a den to hear: checkHordeSpawns returns early (no den even rolls) whenever current noise <= this value, so a player who isn't actively generating noise above the resting floor gets a real, total break from spawns rather than the small-but-nonzero chance the continuous chance_per_check formula alone would still produce at noise_pct>0.",

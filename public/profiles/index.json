@@ -1,0 +1,14 @@
+{
+  "profiles": [
+    {
+      "slug": "default",
+      "name": "Standard",
+      "description": "Baseline 30–90 minute skirmish — balanced economy and horde pressure."
+    },
+    {
+      "slug": "hard",
+      "name": "Hard",
+      "description": "Tighter economy, faster horde response, and a grittier look."
+    }
+  ]
+}

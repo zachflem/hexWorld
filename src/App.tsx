@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { loadTweaks } from "./data/tweaksLoader";
+import { loadProfile, fetchProfileRegistry, resolveProfileSlug, DEFAULT_PROFILE_SLUG, type ProfileEntry } from "./data/profileRegistry";
 import type { Tweaks } from "./data/tweaksSchema";
+import { PROFILE_SLUG_DB_KEY } from "./data/profile";
+import { getRecentSeeds, recordRecentSeed } from "./data/recentSeeds";
+import { clearGameSave, hasCompleteSave } from "./data/gamePersistence";
+import { initAssetConfig } from "./render/assetPaths";
+import { resetTextureCache } from "./render/tileTextures";
+import { ContinueGamePrompt, profileDisplayName } from "./ui/ContinueGamePrompt";
+import type { OnboardingResult } from "./ui/onboarding/OnboardingScreen";
 import { PLAYER_DB_KEY, type Player } from "./data/player";
 import { WORLD_DB_KEY, generateSeed, type WorldRecord } from "./data/world";
 import { TERRITORY_DB_KEY, createStartingTerritory, type TerritoryRecord } from "./data/territory";
@@ -152,7 +159,7 @@ import { GameScreen } from "./ui/GameScreen";
 import type { ToastRecord } from "./ui/hud/Toast";
 import { GameOverScreen } from "./ui/GameOverScreen";
 import { WinScreen } from "./ui/WinScreen";
-import { OnboardingScreen } from "./ui/OnboardingScreen";
+import { OnboardingScreen } from "./ui/onboarding/OnboardingScreen";
 import "./App.css";
 
 interface GameState {
@@ -203,6 +210,78 @@ function resolveBase(tweaks: Tweaks, base: BaseRecord | undefined): BaseRecord {
     resolved.currentHp = baseReinforcementHp(tweaks, resolved.reinforcementLevel);
   }
   return resolved;
+}
+
+function buildGameState(
+  tweaks: Tweaks,
+  data: {
+    player: Player;
+    world: WorldRecord;
+    territory: TerritoryRecord;
+    base: BaseRecord | undefined;
+    resources: ResourceAmounts;
+    clock: ClockRecord;
+    extractionTiles: ExtractionTile[] | undefined;
+    pathTiles: PathTile[] | undefined;
+    towers: Tower[] | undefined;
+    walls: Wall[] | undefined;
+    barracksList: Barracks[] | undefined;
+    units: UnitsRecord | undefined;
+    garrisons: GarrisonsRecord | undefined;
+    scoutedTiles: ScoutedTiles | undefined;
+    storageLevels: StorageLevels;
+    storageUpgrades: StorageUpgradesRecord | undefined;
+    noise: NoiseRecord | undefined;
+    dens: DenRecord[] | undefined;
+    hordes: HordesRecord | undefined;
+    expeditions: ExpeditionsRecord | undefined;
+    gameStatus: GameStatusRecord | undefined;
+    docks: DocksRecord | undefined;
+    scoutSkiffs: ScoutSkiffsRecord | undefined;
+    wanderingScouts: WanderingScoutsRecord | undefined;
+    denAssaults: DenAssaultsRecord | undefined;
+    outposts: OutpostsRecord | undefined;
+    garrisonRecalls: GarrisonRecallsRecord | undefined;
+    lab: LabRecord | undefined;
+    labAssaults: LabAssaultsRecord | undefined;
+    research: ResearchRecord | undefined;
+    tombstones: TombstonesRecord | undefined;
+  },
+): GameState {
+  const resolvedDens = (data.dens ?? []).map(resolveDen);
+  return {
+    player: data.player,
+    world: data.world,
+    territory: data.territory,
+    base: resolveBase(tweaks, data.base),
+    resources: data.resources,
+    clock: { ...data.clock, virtualNow: data.clock.virtualNow ?? data.clock.lastTickAt },
+    extractionTiles: data.extractionTiles ?? [],
+    pathTiles: data.pathTiles ?? [],
+    towers: data.towers ?? [],
+    walls: data.walls ?? [],
+    barracksList: data.barracksList ?? [],
+    units: { ...initialUnits(), ...data.units },
+    garrisons: data.garrisons ?? [],
+    scoutedTiles: data.scoutedTiles ?? [],
+    storageLevels: data.storageLevels,
+    storageUpgrades: data.storageUpgrades ?? initialStorageUpgrades(),
+    noise: data.noise ?? initialNoise(tweaks),
+    dens: resolvedDens,
+    hordes: data.hordes ?? [],
+    expeditions: (data.expeditions ?? []).map((e) => ({ ...e, resolvedIndex: e.resolvedIndex ?? 0 })),
+    gameStatus: { ...initialGameStatus(), ...data.gameStatus },
+    docks: data.docks ?? [],
+    scoutSkiffs: data.scoutSkiffs ?? [],
+    wanderingScouts: data.wanderingScouts ?? [],
+    denAssaults: (data.denAssaults ?? []).map((a) => ({ ...a, resolvedIndex: a.resolvedIndex ?? 0 })),
+    outposts: data.outposts ?? [],
+    garrisonRecalls: data.garrisonRecalls ?? [],
+    lab: data.lab ?? createLab(data.world.seed, tweaks.game.grid_size, data.territory.base, resolvedDens, tweaks),
+    labAssaults: (data.labAssaults ?? []).map((a) => ({ ...a, resolvedIndex: a.resolvedIndex ?? 0 })),
+    research: data.research ?? initialResearch(),
+    tombstones: data.tombstones ?? [],
+  };
 }
 
 /**
@@ -303,7 +382,22 @@ function isHexOccupied(game: GameState, coord: Axial): boolean {
 type BootState =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; tweaks: Tweaks; game: GameState | undefined };
+  | {
+      status: "continuePrompt";
+      tweaks: Tweaks;
+      profileSlug: string;
+      profiles: ProfileEntry[];
+      recentSeeds: number[];
+      pendingGame: GameState;
+    }
+  | {
+      status: "ready";
+      tweaks: Tweaks;
+      profileSlug: string;
+      profiles: ProfileEntry[];
+      recentSeeds: number[];
+      game: GameState | undefined;
+    };
 
 export type BuildResult = { ok: true } | { ok: false; reason: string };
 
@@ -356,7 +450,9 @@ export default function App() {
     (async () => {
       try {
         const [
-          tweaks,
+          profiles,
+          recentSeeds,
+          savedProfileSlug,
           player,
           world,
           territory,
@@ -389,7 +485,9 @@ export default function App() {
           research,
           tombstones,
         ] = await Promise.all([
-          loadTweaks(),
+          fetchProfileRegistry(),
+          getRecentSeeds(),
+          get<string>(PROFILE_SLUG_DB_KEY),
           get<Player>(PLAYER_DB_KEY),
           get<WorldRecord>(WORLD_DB_KEY),
           get<TerritoryRecord>(TERRITORY_DB_KEY),
@@ -422,59 +520,69 @@ export default function App() {
           get<ResearchRecord>(RESEARCH_DB_KEY),
           get<TombstonesRecord>(TOMBSTONES_DB_KEY),
         ]);
-        const resolvedDens = (dens ?? []).map(resolveDen);
-        const game =
-          player && world && territory && resources && clock && storageLevels
-            ? {
-                player,
-                world,
-                territory,
-                base: resolveBase(tweaks, base),
-                resources,
-                // Older saves predate virtualNow — default it to lastTickAt so
-                // timers pick up exactly where Date.now()-anchoring left off.
-                clock: { ...clock, virtualNow: clock.virtualNow ?? clock.lastTickAt },
-                extractionTiles: extractionTiles ?? [],
-                pathTiles: pathTiles ?? [],
-                towers: towers ?? [],
-                walls: walls ?? [],
-                barracksList: barracksList ?? [],
-                // Spread over initialUnits() defaults, not just `?? initialUnits()` —
-                // an existing save from before junkyardKnightCount/crossBowSniperCount
-                // existed would otherwise load with those fields undefined.
-                units: { ...initialUnits(), ...units },
-                garrisons: garrisons ?? [],
-                scoutedTiles: scoutedTiles ?? [],
-                storageLevels,
-                storageUpgrades: storageUpgrades ?? initialStorageUpgrades(),
-                noise: noise ?? initialNoise(tweaks),
-                // resolveDen spreads siege:null over any pre-M14 den missing it.
-                dens: resolvedDens,
-                hordes: hordes ?? [],
-                // Pre-2026-07-21 saves predate resolvedIndex (real-time
-                // incremental corridor resolution) — default it to 0 so an
-                // in-flight party from an old save just re-walks its corridor
-                // from the start next tick, same as a freshly-dispatched one.
-                expeditions: (expeditions ?? []).map((e) => ({ ...e, resolvedIndex: e.resolvedIndex ?? 0 })),
-                // Spreads over initialGameStatus() defaults, not just `?? initialGameStatus()`
-                // — a pre-M15 save has `lost`/`lostAt` but no `won`/`wonAt`.
-                gameStatus: { ...initialGameStatus(), ...gameStatus },
-                docks: docks ?? [],
-                scoutSkiffs: scoutSkiffs ?? [],
-                wanderingScouts: wanderingScouts ?? [],
-                denAssaults: (denAssaults ?? []).map((a) => ({ ...a, resolvedIndex: a.resolvedIndex ?? 0 })),
-                outposts: outposts ?? [],
-                garrisonRecalls: garrisonRecalls ?? [],
-                // Pre-M15 saves have no lab yet — create one deterministically
-                // from the same world seed, same convention as dens/outposts
-                // gaining defaults when their systems first shipped.
-                lab: lab ?? createLab(world.seed, tweaks.game.grid_size, territory.base, resolvedDens, tweaks),
-                labAssaults: (labAssaults ?? []).map((a) => ({ ...a, resolvedIndex: a.resolvedIndex ?? 0 })),
-                research: research ?? initialResearch(),
-                tombstones: tombstones ?? [],
-              }
-            : undefined;
-        setBoot({ status: "ready", tweaks, game });
+
+        const urlSlug = resolveProfileSlug(window.location.pathname);
+        const saveExists = hasCompleteSave({ player, world, territory, resources, clock, storageLevels });
+
+        if (saveExists && player && world && territory && resources && clock && storageLevels) {
+          const profileSlug = savedProfileSlug ?? DEFAULT_PROFILE_SLUG;
+          const tweaks = await loadProfile(profileSlug);
+          initAssetConfig(profileSlug);
+          const pendingGame = buildGameState(tweaks, {
+            player,
+            world,
+            territory,
+            base,
+            resources,
+            clock,
+            extractionTiles,
+            pathTiles,
+            towers,
+            walls,
+            barracksList,
+            units,
+            garrisons,
+            scoutedTiles,
+            storageLevels,
+            storageUpgrades,
+            noise,
+            dens,
+            hordes,
+            expeditions,
+            gameStatus,
+            docks,
+            scoutSkiffs,
+            wanderingScouts,
+            denAssaults,
+            outposts,
+            garrisonRecalls,
+            lab,
+            labAssaults,
+            research,
+            tombstones,
+          });
+          setBoot({
+            status: "continuePrompt",
+            tweaks,
+            profileSlug,
+            profiles,
+            recentSeeds,
+            pendingGame,
+          });
+          return;
+        }
+
+        const profileSlug = urlSlug ?? DEFAULT_PROFILE_SLUG;
+        const tweaks = await loadProfile(profileSlug);
+        initAssetConfig(profileSlug);
+        setBoot({
+          status: "ready",
+          tweaks,
+          profileSlug,
+          profiles,
+          recentSeeds,
+          game: undefined,
+        });
       } catch (err) {
         setBoot({ status: "error", message: err instanceof Error ? err.message : String(err) });
       }
@@ -1402,11 +1510,13 @@ export default function App() {
    * identity and which world seed get reused vs regenerated.
    */
   async function resetGame(player: Player, seed: number) {
-    if (boot.status !== "ready") return;
+    const current = bootRef.current;
+    if (current.status !== "ready") return;
+    const { tweaks, profileSlug } = current;
     const world: WorldRecord = { seed };
-    const territory = createStartingTerritory(world.seed, boot.tweaks.game.grid_size);
-    const base = initialBase(boot.tweaks);
-    const resources = initialResourceAmounts(boot.tweaks);
+    const territory = createStartingTerritory(world.seed, tweaks.game.grid_size);
+    const base = initialBase(tweaks);
+    const resources = initialResourceAmounts(tweaks);
     const clock: ClockRecord = { lastTickAt: Date.now(), virtualNow: Date.now() };
     const extractionTiles: ExtractionTile[] = [];
     const pathTiles: PathTile[] = [];
@@ -1418,8 +1528,8 @@ export default function App() {
     const scoutedTiles: ScoutedTiles = [];
     const storageLevels = initialStorageLevels();
     const storageUpgrades = initialStorageUpgrades();
-    const noise = initialNoise(boot.tweaks);
-    const dens = createDens(world.seed, boot.tweaks.game.grid_size, territory.base, boot.tweaks);
+    const noise = initialNoise(tweaks);
+    const dens = createDens(world.seed, tweaks.game.grid_size, territory.base, tweaks);
     const hordes: HordesRecord = [];
     const expeditions: ExpeditionsRecord = [];
     const gameStatus = initialGameStatus();
@@ -1429,13 +1539,14 @@ export default function App() {
     const denAssaults: DenAssaultsRecord = [];
     const outposts: OutpostsRecord = [];
     const garrisonRecalls: GarrisonRecallsRecord = [];
-    const lab = createLab(world.seed, boot.tweaks.game.grid_size, territory.base, dens, boot.tweaks);
+    const lab = createLab(world.seed, tweaks.game.grid_size, territory.base, dens, tweaks);
     const labAssaults: LabAssaultsRecord = [];
     const research = initialResearch();
     const tombstones: TombstonesRecord = [];
 
     await Promise.all([
       set(PLAYER_DB_KEY, player),
+      set(PROFILE_SLUG_DB_KEY, profileSlug),
       set(WORLD_DB_KEY, world),
       set(TERRITORY_DB_KEY, territory),
       set(BASE_DB_KEY, base),
@@ -1468,50 +1579,98 @@ export default function App() {
       set(TOMBSTONES_DB_KEY, tombstones),
     ]);
 
-    setBoot((prev) =>
-      prev.status === "ready"
-        ? {
-            ...prev,
-            game: {
-              player,
-              world,
-              territory,
-              base,
-              resources,
-              clock,
-              extractionTiles,
-              pathTiles,
-              towers,
-              walls,
-              barracksList,
-              units,
-              garrisons,
-              scoutedTiles,
-              storageLevels,
-              storageUpgrades,
-              noise,
-              dens,
-              hordes,
-              expeditions,
-              gameStatus,
-              docks,
-              scoutSkiffs,
-              wanderingScouts,
-              denAssaults,
-              outposts,
-              garrisonRecalls,
-              lab,
-              labAssaults,
-              research,
-              tombstones,
-            },
-          }
-        : prev,
-    );
+    await recordRecentSeed(seed);
+    const recentSeeds = [seed, ...current.recentSeeds.filter((s) => s !== seed)].slice(0, 5);
+
+    setBoot((prev) => {
+      if (prev.status !== "ready") return prev;
+      const next = {
+        ...prev,
+        recentSeeds,
+        game: {
+          player,
+          world,
+          territory,
+          base,
+          resources,
+          clock,
+          extractionTiles,
+          pathTiles,
+          towers,
+          walls,
+          barracksList,
+          units,
+          garrisons,
+          scoutedTiles,
+          storageLevels,
+          storageUpgrades,
+          noise,
+          dens,
+          hordes,
+          expeditions,
+          gameStatus,
+          docks,
+          scoutSkiffs,
+          wanderingScouts,
+          denAssaults,
+          outposts,
+          garrisonRecalls,
+          lab,
+          labAssaults,
+          research,
+          tombstones,
+        },
+      };
+      bootRef.current = next;
+      return next;
+    });
   }
 
-  async function handlePlayerCreated(player: Player, seed?: number) {
+  async function handlePlayerCreated({ player, seed, profileSlug }: OnboardingResult) {
+    const current = bootRef.current;
+    if (current.status !== "ready") return;
+
+    if (profileSlug !== current.profileSlug) {
+      const tweaks = await loadProfile(profileSlug);
+      initAssetConfig(profileSlug);
+      resetTextureCache();
+      const updated = { ...current, tweaks, profileSlug };
+      bootRef.current = updated;
+      setBoot(updated);
+    }
+
+    window.history.replaceState(null, "", `/${profileSlug}`);
     await resetGame(player, seed ?? generateSeed());
+  }
+
+  function handleContinueGame() {
+    setBoot((prev) => {
+      if (prev.status !== "continuePrompt") return prev;
+      window.history.replaceState(null, "", `/${prev.profileSlug}`);
+      const next = {
+        status: "ready" as const,
+        tweaks: prev.tweaks,
+        profileSlug: prev.profileSlug,
+        profiles: prev.profiles,
+        recentSeeds: prev.recentSeeds,
+        game: prev.pendingGame,
+      };
+      bootRef.current = next;
+      return next;
+    });
+  }
+
+  async function handleDeclineContinue() {
+    if (boot.status !== "continuePrompt") return;
+    const { profiles, recentSeeds } = boot;
+    await clearGameSave();
+    const profileSlug = resolveProfileSlug(window.location.pathname) ?? DEFAULT_PROFILE_SLUG;
+    const tweaks = await loadProfile(profileSlug);
+    initAssetConfig(profileSlug);
+    resetTextureCache();
+    const next = { status: "ready" as const, tweaks, profileSlug, profiles, recentSeeds, game: undefined };
+    bootRef.current = next;
+    setBoot(next);
   }
 
   /** Same player AND same world seed — resets progress but replays the identical map, unlike handleStartNewSeed. Reachable from the New Game dialog on both GameScreen and GameOverScreen. */
@@ -3563,6 +3722,16 @@ export default function App() {
     return { ok: true };
   }
 
+  if (boot.status === "continuePrompt") {
+    return (
+      <ContinueGamePrompt
+        profileName={profileDisplayName(boot.profiles, boot.profileSlug)}
+        onContinue={handleContinueGame}
+        onStartNew={handleDeclineContinue}
+      />
+    );
+  }
+
   if (boot.status === "loading") {
     return <p>Loading…</p>;
   }
@@ -3677,7 +3846,12 @@ export default function App() {
       onStartNewSeed={handleStartNewSeed}
       onNewPlayer={handleNewPlayer}
     />
-  ) : (
-    <OnboardingScreen onCreated={handlePlayerCreated} />
-  );
+  ) : boot.status === "ready" ? (
+    <OnboardingScreen
+      profiles={boot.profiles}
+      initialProfileSlug={boot.profileSlug}
+      recentSeeds={boot.recentSeeds}
+      onCreated={handlePlayerCreated}
+    />
+  ) : null;
 }
