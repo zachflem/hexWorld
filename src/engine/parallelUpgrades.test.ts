@@ -7,7 +7,6 @@ import type { ResearchRecord } from "../data/research";
 import { initialBase } from "../data/base";
 import { isBaseHubAtTaskCap } from "./base";
 import {
-  countBaseHubTasks,
   countLandStructureTasks,
   isLandStructureAtTaskCap,
 } from "./structureBusy";

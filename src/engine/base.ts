@@ -1,7 +1,7 @@
 import type { BaseRecord, BaseRelocationInProgress, BaseUpgradeInProgress } from "../data/base";
 import type { ResourceType } from "../data/resources";
 import type { StorageUpgradesRecord } from "../data/storageUpgrades";
-import { countBaseHubTasks, isBaseHubAtTaskCap } from "./structureBusy";
+import { countBaseHubTasks } from "./structureBusy";
 
 export { isBaseHubAtTaskCap, countBaseHubTasks } from "./structureBusy";
 import type { Tweaks } from "../data/tweaksSchema";

@@ -63,7 +63,6 @@ import {
   baseUpgradeCost,
   baseUpgradeDurationMs,
   canRelocateBase,
-  isBaseHubAtTaskCap,
   maxReinforcementLevel,
   reinforcementUpgradeCost,
 } from "../engine/base";
@@ -2860,12 +2859,12 @@ export function GameScreen({
 
     const canDemolishHere = !selectedIsBase && (!!selectedStructure || !!selectedDock);
     const demolishBlocked =
-      (selectedTile && hasAnyStructureTask(selectedTile)) ||
-      (selectedPath && hasAnyStructureTask(selectedPath)) ||
-      (selectedTower && hasAnyStructureTask(selectedTower)) ||
-      (selectedWall && hasAnyStructureTask(selectedWall)) ||
-      (selectedBarracks && hasAnyStructureTask(selectedBarracks)) ||
-      (selectedDock && countDockTasks(selectedDock) > 0);
+      (!!selectedTile && hasAnyStructureTask(selectedTile)) ||
+      (!!selectedPath && hasAnyStructureTask(selectedPath)) ||
+      (!!selectedTower && hasAnyStructureTask(selectedTower)) ||
+      (!!selectedWall && hasAnyStructureTask(selectedWall)) ||
+      (!!selectedBarracks && hasAnyStructureTask(selectedBarracks)) ||
+      (!!selectedDock && countDockTasks(selectedDock) > 0);
     if (canDemolishHere) {
       actions.push({
         key: "demolish",

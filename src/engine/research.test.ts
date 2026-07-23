@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
 import type { ResearchRecord } from "../data/research";
 import { initialResearch } from "../data/research";
-import { isResearchAvailable, researchCost, researchDurationMs, structureTaskSlotCap, troopSpeedMultiplier, unlockedSpeedRates } from "./research";
+import { isResearchAvailable, researchCost, researchDurationMs, troopSpeedMultiplier, unlockedSpeedRates } from "./research";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
