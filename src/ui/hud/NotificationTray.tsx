@@ -6,7 +6,7 @@ import type { ExpeditionsRecord } from "../../data/expeditions";
 import type { DenAssaultsRecord } from "../../data/denAssaults";
 import type { LabAssaultsRecord } from "../../data/labAssaults";
 import type { GarrisonRecallsRecord } from "../../data/garrisonRecalls";
-import { CollapsibleNotificationRow } from "./CollapsibleNotificationRow";
+import { CollapsibleNotificationRow, NOTIFICATION_ICON_SIZE } from "./CollapsibleNotificationRow";
 import { CoordLink, coordLinkStyle } from "./CoordLink";
 import { formatDuration } from "../format";
 
@@ -122,7 +122,7 @@ export function NotificationTray({
         <TrayRow
           key={`siege-${den.coord.q},${den.coord.r}`}
           rowKey={`siege-${den.coord.q},${den.coord.r}`}
-          icon={<ShieldAlert size={14} />}
+          icon={<ShieldAlert size={NOTIFICATION_ICON_SIZE} />}
           label="Den siege holding"
           coord={den.coord}
           remaining={den.holdRemainingMs}
@@ -146,7 +146,7 @@ export function NotificationTray({
         <TrayRow
           key={expedition.id}
           rowKey={expedition.id}
-          icon={<Footprints size={14} />}
+          icon={<Footprints size={NOTIFICATION_ICON_SIZE} />}
           label="Expedition"
           coord={expedition.target}
           remaining={remainingMs(expedition.departedAt, expedition.arriveAt - expedition.departedAt, now)}
@@ -157,7 +157,7 @@ export function NotificationTray({
         <TrayRow
           key={assault.id}
           rowKey={assault.id}
-          icon={<Skull size={14} />}
+          icon={<Skull size={NOTIFICATION_ICON_SIZE} />}
           label="Den assault"
           coord={assault.target}
           remaining={remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now)}
@@ -168,7 +168,7 @@ export function NotificationTray({
         <TrayRow
           key={assault.id}
           rowKey={assault.id}
-          icon={<FlaskConical size={14} />}
+          icon={<FlaskConical size={NOTIFICATION_ICON_SIZE} />}
           label="Lab assault"
           coord={assault.target}
           remaining={remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now)}
@@ -179,7 +179,7 @@ export function NotificationTray({
         <TrayRow
           key={recall.id}
           rowKey={recall.id}
-          icon={<Undo2 size={14} />}
+          icon={<Undo2 size={NOTIFICATION_ICON_SIZE} />}
           label="Garrison recalling"
           coord={recall.coord}
           remaining={remainingMs(recall.departedAt, recall.arriveAt - recall.departedAt, now)}

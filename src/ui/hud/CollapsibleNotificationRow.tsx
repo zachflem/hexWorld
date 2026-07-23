@@ -3,6 +3,27 @@ import { Panel } from "../primitives/Panel";
 
 export const NOTIFICATION_EXPANDED_MS = 5000;
 export const NOTIFICATION_SLIDE_MS = 350;
+/** Lucide + marker icons in the top-right notification column — keep rows a uniform height. */
+export const NOTIFICATION_ICON_SIZE = 14;
+
+function NotificationIconSlot({ icon }: { icon: ReactNode }) {
+  return (
+    <span
+      style={{
+        width: NOTIFICATION_ICON_SIZE,
+        height: NOTIFICATION_ICON_SIZE,
+        flexShrink: 0,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+        lineHeight: 0,
+      }}
+    >
+      {icon}
+    </span>
+  );
+}
 
 /**
  * Top-right HUD row: expanded label/countdown for {@link NOTIFICATION_EXPANDED_MS},
@@ -77,7 +98,7 @@ export function CollapsibleNotificationRow({
         }}
         tabIndex={expanded ? -1 : 0}
       >
-        {icon}
+        {icon != null ? <NotificationIconSlot icon={icon} /> : null}
       </button>
       <div
         style={{

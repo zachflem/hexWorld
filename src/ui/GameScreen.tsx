@@ -171,6 +171,7 @@ import {
 } from "./tileOptions";
 import { ResearchPanel } from "./ResearchPanel";
 import { NotificationTray, type NotificationCountdownRow } from "./hud/NotificationTray";
+import { NOTIFICATION_ICON_SIZE } from "./hud/CollapsibleNotificationRow";
 import { RESEARCH_LABEL } from "./researchLabels";
 import { ResourceHud } from "./hud/ResourceHud";
 import { ToastStack, type ToastRecord } from "./hud/Toast";
@@ -2289,9 +2290,9 @@ export function GameScreen({
    */
   function activeCountdownRows(): NotificationCountdownRow[] {
     const rows: NotificationCountdownRow[] = [];
-    const buildIcon = <Hammer size={14} />;
-    const upgradeIcon = <ArrowUpCircle size={14} />;
-    const repairIcon = <Wrench size={14} />;
+    const buildIcon = <Hammer size={NOTIFICATION_ICON_SIZE} />;
+    const upgradeIcon = <ArrowUpCircle size={NOTIFICATION_ICON_SIZE} />;
+    const repairIcon = <Wrench size={NOTIFICATION_ICON_SIZE} />;
 
     for (const tile of extractionTiles) {
       const key = axialKey(tile.coord);
@@ -2453,7 +2454,7 @@ export function GameScreen({
         const nextUnitRemainingMs = remainingMs(training.currentUnitStartedAt, perUnitMs, now);
         rows.push({
           key: `barracks-train-${key}`,
-          icon: <GraduationCap size={14} />,
+          icon: <GraduationCap size={NOTIFICATION_ICON_SIZE} />,
           label: `Training ${trainingUnitLabel(training.unitType)}`,
           coord: b.coord,
           remainingMs: nextUnitRemainingMs + (training.remaining - 1) * perUnitMs,
@@ -2569,7 +2570,7 @@ export function GameScreen({
     if (baseRelocationInProgress) {
       rows.push({
         key: "base-relocation",
-        icon: <Navigation size={14} />,
+        icon: <Navigation size={NOTIFICATION_ICON_SIZE} />,
         label: "Relocating base",
         coord: baseRelocationInProgress.destination,
         remainingMs: baseRelocationInProgress.remainingMs,
@@ -2583,7 +2584,7 @@ export function GameScreen({
       if (!pending) continue;
       rows.push({
         key: `storage-${resource}`,
-        icon: resourceIcon(resource),
+        icon: resourceIcon(resource, NOTIFICATION_ICON_SIZE),
         label: `Upgrading ${resource} storage to L${pending.targetLevel}`,
         coord: territory.base,
         remainingMs: remainingMs(pending.startedAt, storageUpgradeDurationMs(tweaks, pending.targetLevel), now),
@@ -2593,7 +2594,7 @@ export function GameScreen({
     if (research.pending) {
       rows.push({
         key: `research-${research.pending.id}`,
-        icon: <FlaskConical size={14} />,
+        icon: <FlaskConical size={NOTIFICATION_ICON_SIZE} />,
         label: `Researching ${RESEARCH_LABEL[research.pending.id]}`,
         remainingMs: remainingMs(research.pending.startedAt, researchDurationMs(tweaks, research.pending.id), now),
         onLabelClick: () => toggleOpenPanel("research"),

@@ -167,6 +167,7 @@ import {
   scoutTrainCost,
 } from "./engine/units";
 import { GameScreen } from "./ui/GameScreen";
+import { NOTIFICATION_ICON_SIZE } from "./ui/hud/CollapsibleNotificationRow";
 import type { ToastRecord } from "./ui/hud/Toast";
 import { GameOverScreen } from "./ui/GameOverScreen";
 import { WinScreen } from "./ui/WinScreen";
@@ -951,7 +952,7 @@ export default function App() {
       );
       for (const event of hordeCaptureEvents) {
         pushToast({
-          icon: <Skull size={14} />,
+          icon: <Skull size={NOTIFICATION_ICON_SIZE} />,
           coord: event.coord,
           message: `Horde damaged ${event.kind} at`,
           detail: event.cancelledWork.length > 0 ? event.cancelledWork.join(" · ") : undefined,
