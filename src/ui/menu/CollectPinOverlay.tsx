@@ -164,7 +164,7 @@ export const CollectPinOverlay = forwardRef<
   });
 
   return (
-    <div ref={containerRef} style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 48 }}>
+    <div ref={containerRef} style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 30 }}>
       {tiles.map((tile) => (
         <CollectPin key={axialKey(tile.coord)} tile={tile} onCollect={onCollect} />
       ))}

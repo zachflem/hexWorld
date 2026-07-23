@@ -112,6 +112,7 @@ export function BottomSheet({
     <>
       <div
         role="presentation"
+        className="bottom-sheet-backdrop"
         onPointerDown={armBackdrop}
         onPointerCancel={disarmBackdrop}
         onClick={(event) => {
