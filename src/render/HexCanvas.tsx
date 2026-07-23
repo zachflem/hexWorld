@@ -46,7 +46,7 @@ import {
   onTextureLoad,
 } from "./tileTextures";
 
-/** Exported so DOM overlays (TileActionRing) can compute the same on-screen hex circumradius (BASE_HEX_SIZE * zoom) the canvas itself draws with, and size themselves to genuinely overlay a tile rather than approximate it. */
+/** Exported so DOM overlays (e.g. HoverTooltip) can compute the same on-screen hex circumradius (BASE_HEX_SIZE * zoom) the canvas itself draws with. */
 export const BASE_HEX_SIZE = 24;
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 3;
@@ -91,14 +91,14 @@ const PATH_TIER_COLORS: Record<PathTier, string> = {
   highway: "#ffdd55",
 };
 
-/** getPathTileTexture names for each path tier's sprite (tiles/structures/path-{track,stone,highway}.png) — falls back to PATH_TIER_COLORS's flat fill until/unless a given sprite is missing. Exported so TileActionRing can reuse the same sprite for its build/upgrade-path ring hex. */
+/** getPathTileTexture names for each path tier's sprite (tiles/structures/path-{track,stone,highway}.png) — falls back to PATH_TIER_COLORS's flat fill until/unless a given sprite is missing. Exported so UI can reuse the same sprite for path build/upgrade actions. */
 export const PATH_TIER_ICON_NAMES: Record<PathTier, string> = {
   goat_track: "path-track",
   stone_road: "path-stone",
   highway: "path-highway",
 };
 
-/** getStructureIconTexture names for each wall tier's sprite (tiles/structures/wall-{small,medium,large}.png) — falls back to WALL_TIER_COLORS's flat dot until/unless a given sprite is missing. Exported so TileActionRing can reuse the same sprite for its build/upgrade-wall ring hex. */
+/** getStructureIconTexture names for each wall tier's sprite (tiles/structures/wall-{small,medium,large}.png) — falls back to WALL_TIER_COLORS's flat dot until/unless a given sprite is missing. Exported so UI can reuse the same sprite for wall build/upgrade actions. */
 export const WALL_TIER_ICON_NAMES: Record<WallTier, string> = {
   wood: "wall-small",
   rock: "wall-medium",
@@ -490,7 +490,7 @@ export const HexCanvas = forwardRef<
         if (!canvas) return null;
         // pan/zoom operate in the canvas's own backing-buffer coordinate
         // space (0,0 = the canvas element's own top-left corner) — but this
-        // is meant for viewport-fixed DOM overlays (TileActionRing), so it
+        // is meant for viewport-fixed DOM overlays (HoverTooltip), so it
         // needs the canvas's own on-page offset added, or an overlay renders
         // shifted by however far the canvas sits from the viewport origin
         // (e.g. up and left, since the header above it pushes it down).
