@@ -201,6 +201,14 @@ Playtesting backlog gathered 2026-07-22. Ordered by the user's stated priority: 
 
 ---
 
+## Milestone 22 — Onboarding Overhaul: The Field Manual — 🚧 Not started
+
+The bare form from Milestone 1 (name/colour/seed, no framing, no lore delivery) gets replaced with a short paged sequence themed as a found field manual — aged paper, not the glowing-terminal look, since the player hasn't built any power infrastructure yet when the run begins. Full implementation plan and design detail: `design/Milestone22.md`.
+
+- **Testable outcome:** a brand-new player clicks/keys through cover → form → story pages → send-off and lands in the game with the name/colour/seed they entered; an existing save still skips onboarding entirely; the manual reads correctly in both light and dark mode.
+
+---
+
 ## Explicitly Deferred (post-Milestone 17, not part of this roadmap)
 
 - Difficulty profile files (`tweaks-hard.jsonc` etc.)
