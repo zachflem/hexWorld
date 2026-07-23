@@ -95,10 +95,13 @@ export function ResourceHud({
   resources,
   resourceRates,
   noiseValue,
+  onLayoutMetrics,
 }: {
   resources: ResourceAmounts;
   resourceRates: ResourceAmounts;
   noiseValue: number;
+  /** Fired when the bar's scaled height or shrink factor changes — used to tuck notifications below the HUD on narrow viewports. */
+  onLayoutMetrics?: (metrics: { height: number; scale: number }) => void;
 }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -128,6 +131,10 @@ export function ResourceHud({
     ro.observe(content);
     return () => ro.disconnect();
   }, [resources, resourceRates, noiseValue]);
+
+  useLayoutEffect(() => {
+    onLayoutMetrics?.({ height: metrics.height, scale: metrics.scale });
+  }, [metrics.height, metrics.scale, onLayoutMetrics]);
 
   return (
     <div

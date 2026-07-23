@@ -87,7 +87,7 @@ Keep the design docs aligned with the code. Stale docs cause the mismatches we h
 | **Collapsible blocks** | Use `<details>` / `<summary>` for completed milestones, recently resolved, deferred, and ideas (see completed section below) |
 | **Agent git workflow** | See [WORKFLOW.md](WORKFLOW.md). Ask the user which **personal branch** they use; do not assume `goblin` or `krunchee`. Merge finished work to **`dev`**. |
 
-*Last updated: 2026-07-24 (#18, #19 resolved — horde damage toast, coord pan)*
+*Last updated: 2026-07-24 (#20 resolved — mobile toast below resource HUD)*
 
 ---
 
@@ -97,7 +97,7 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 
 ### Bugs
 
-- **Toast notifications sit above the resource bar on mobile, obscuring the noise meter.** (#20) The toast stack needs to be repositioned below the HUD resource bar on mobile viewports so it no longer overlaps/hides the noise chip. **Refs:** [`src/ui/hud/Toast.tsx`](../src/ui/hud/Toast.tsx), [`src/ui/hud/NotificationTray.tsx`](../src/ui/hud/NotificationTray.tsx). Status: Open
+*(No open bugs — see Recently resolved for #20.)*
 
 ### UI
 
@@ -110,6 +110,7 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 <details>
 <summary><strong>Recently resolved</strong></summary>
 
+- **Toast notifications sit above the resource bar on mobile, obscuring the noise meter.** (#20) Resolved 2026-07-24 — `ResourceHud` reports scaled height; toast/tray column drops below the HUD when the bar shrinks on narrow viewports (`scale < 1`). **Refs:** [`src/ui/hud/ResourceHud.tsx`](../src/ui/hud/ResourceHud.tsx), [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx).
 - **Notification coord link selects tile but does not pan.** (#19) Resolved 2026-07-24 — `centerOnCoord` no longer bails when `pan` is null; uses container dimensions; pan deferred via `requestAnimationFrame` from `goToTile`. **Refs:** [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx), [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx), [`src/ui/hud/CoordLink.tsx`](../src/ui/hud/CoordLink.tsx).
 - **Toast when a horde damages a structure.** (#18) Resolved 2026-07-24 — `hordeStructureCaptureEvents` + `pushToast` on capture tick; skull icon, clickable coord link, detail line for cancelled build/upgrade/training. **Refs:** [`src/engine/hordes.ts`](../src/engine/hordes.ts), [`src/App.tsx`](../src/App.tsx), [`src/ui/hud/Toast.tsx`](../src/ui/hud/Toast.tsx).
 - **Map size choice during onboarding.** (#10, #P2) Resolved 2026-07-23 — 48×48 / 96×96 / 128×128 under **Show Advanced Options**; `WorldRecord.gridSize` persisted; den count and min distances scale via `tweaksForMapSize()`. Profile scenario overrides: `game.grid_size_locked` + `game.world_seed` in tweaks take precedence over onboarding. Replay/new-seed from the in-game New Game dialog keep the save's size; new player re-enters onboarding (map size there). **Refs:** [`src/data/mapSize.ts`](../src/data/mapSize.ts), [`OnboardingScreen.tsx`](../src/ui/onboarding/OnboardingScreen.tsx), [TWEAKS.md § Game / world](TWEAKS.md).

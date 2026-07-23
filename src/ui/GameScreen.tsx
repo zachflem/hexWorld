@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { axialDistance, axialEquals, axialKey, type Axial } from "../engine/hexCoords";
 import { isBuildableLand, isTransitionTile, terrainAt } from "../engine/terrain";
@@ -462,6 +462,11 @@ export function GameScreen({
   const [openPanel, setOpenPanel] = useState<"garrisons" | "scouting" | "military" | "settings" | "research" | null>(null);
   /** Hammer slot — highlights owned/empty/buildable tiles with an affordable build option, see buildModeEligibleKeysFor below. */
   const [buildModeActive, setBuildModeActive] = useState(false);
+  /** Scaled ResourceHud height — when the bar shrinks (narrow viewport), notifications sit below it so they don't cover the noise chip. */
+  const [resourceHudLayout, setResourceHudLayout] = useState({ height: 0, scale: 1 });
+  const handleResourceHudLayout = useCallback((metrics: { height: number; scale: number }) => {
+    setResourceHudLayout(metrics);
+  }, []);
 
   /** Open a global cluster panel (or toggle the same slot closed). Clears any tile sheet so only one BottomSheet is up. */
   function toggleOpenPanel(panel: "garrisons" | "scouting" | "military" | "settings" | "research") {
@@ -2955,7 +2960,12 @@ export function GameScreen({
           onViewportChange={handleViewportChange}
         />
       </div>
-      <ResourceHud resources={resources} resourceRates={resourceRates} noiseValue={noise.value} />
+      <ResourceHud
+        resources={resources}
+        resourceRates={resourceRates}
+        noiseValue={noise.value}
+        onLayoutMetrics={handleResourceHudLayout}
+      />
       {actionError && (
         <div
           onClick={() => setActionError(null)}
@@ -3081,7 +3091,10 @@ export function GameScreen({
         style={{
           position: "fixed",
           right: "1rem",
-          top: "max(0.65rem, env(safe-area-inset-top, 0px))",
+          top:
+            resourceHudLayout.scale < 1 && resourceHudLayout.height > 0
+              ? `calc(max(0.65rem, env(safe-area-inset-top, 0px)) + ${resourceHudLayout.height}px + 0.35rem)`
+              : "max(0.65rem, env(safe-area-inset-top, 0px))",
           display: "flex",
           flexDirection: "column",
           alignItems: "flex-end",
