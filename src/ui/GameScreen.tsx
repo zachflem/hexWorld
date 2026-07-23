@@ -787,7 +787,7 @@ export function GameScreen({
     : null;
 
   function baseUpgradeOptionFor(): BaseUpgradeOption | null {
-    if (base.upgrade) return null;
+    if (base.upgrade || base.reinforcementAction) return null;
     const targetLevel = base.level + 1;
     const cost = baseUpgradeCost(tweaks, targetLevel);
     return { targetLevel, cost, affordable: affordable(cost), durationMs: baseUpgradeDurationMs(tweaks, targetLevel) };
@@ -795,7 +795,7 @@ export function GameScreen({
 
   /** Timed like every other upgrade (engine/base.ts:baseReinforcementUpgradeDurationMs). Null while base.reinforcementAction is set — see reinforcementActionStatus below. */
   function reinforcementUpgradeOptionFor(): ReinforcementUpgradeOption | null {
-    if (base.reinforcementAction) return null;
+    if (base.reinforcementAction || base.upgrade) return null;
     const targetLevel = base.reinforcementLevel + 1;
     if (targetLevel > maxReinforcementLevel(base.level)) return null;
     const cost = reinforcementUpgradeCost(tweaks, targetLevel);
@@ -810,7 +810,7 @@ export function GameScreen({
 
   /** Null once base.currentHp is already at max — nothing to repair — or while base.reinforcementAction is set. */
   function baseRepairOptionFor(): RepairOption | null {
-    if (base.reinforcementAction) return null;
+    if (base.reinforcementAction || base.upgrade) return null;
     const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
     if (base.currentHp >= maxHp) return null;
     const cost = baseRepairCost(tweaks, base.currentHp, maxHp, base.reinforcementLevel);
@@ -1883,7 +1883,7 @@ export function GameScreen({
       }
 
       const trainSubActions: SheetAction[] = [];
-      if (!selectedBarracks.damaged) {
+      if (isStructureActive(selectedBarracks)) {
         const scoutOption = scoutTrainOptionFor();
         trainSubActions.push({
           key: "train-scouts",

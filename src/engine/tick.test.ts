@@ -172,6 +172,20 @@ describe("accrueResources", () => {
     expect(result.resources.food).toBe(0);
   });
 
+  it("a tile still under construction produces nothing, including when buildStartedAt is 0", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 1;
+    const coord = findCoord(seed, false, axialSpiral(BASE, 30));
+    const tiles: ExtractionTile[] = [
+      extractionTile({ coord, resource: "food", tier: "small", stockpile: 0, buildStartedAt: 0 }),
+    ];
+
+    const result = accrueResources(tweaks, tiles, [], 60, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE]);
+
+    expect(result.tiles[0].stockpile).toBe(0);
+    expect(result.resources.food).toBe(0);
+  });
+
   it("caps the local stockpile at storage.capacity_base_per_resource", () => {
     const tweaks = loadRealTweaks();
     const seed = 1;

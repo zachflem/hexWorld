@@ -66,7 +66,7 @@ export function computeResourceRates(
   }
 
   for (const dock of docks) {
-    if (dock.buildStartedAt) continue;
+    if (dock.buildStartedAt != null) continue;
     grossInflow.food += dockYieldPerSecond(tweaks, dock);
   }
 

@@ -16,7 +16,7 @@ import type { Tweaks } from "../data/tweaksSchema";
  * structure that gets horde-captured still needs repairing, not rebuilding).
  */
 export function isStructureActive(structure: { damaged: boolean; buildStartedAt?: number | null }): boolean {
-  return !structure.damaged && !structure.buildStartedAt;
+  return !structure.damaged && structure.buildStartedAt == null;
 }
 
 /**
