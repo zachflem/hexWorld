@@ -165,8 +165,10 @@ import { NotificationTray } from "./hud/NotificationTray";
 import { ToastStack, type ToastRecord } from "./hud/Toast";
 import { Panel } from "./primitives/Panel";
 import { PartyDispatchForm } from "./primitives/PartyDispatchForm";
+import { TrainForm } from "./primitives/TrainForm";
+import { QuantityStepper } from "./primitives/QuantityStepper";
 import { GlobalHexCluster } from "./menu/GlobalHexCluster";
-import { TileActionRing, type RingAction, type TileActionRingHandle } from "./menu/TileActionRing";
+import { TileActionSheet, type SheetAction } from "./menu/TileActionSheet";
 import { HoverTooltip, type HoverTooltipHandle } from "./menu/HoverTooltip";
 import { formatCost, formatDuration } from "./format";
 import { GarrisonsPanel } from "./panels/GarrisonsPanel";
@@ -177,7 +179,6 @@ import {
   Anchor,
   Archive,
   ArrowUpCircle,
-  BarChart3,
   Binoculars,
   Eye,
   Flag,
@@ -273,7 +274,7 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** The hover tooltip's card — icon + type name, a status line, then whatever stat rows apply to this structure kind. Deliberately terser than infoDialogContent's Panel (smaller font/padding, no "Info" heading) since this follows the cursor rather than sitting in a fixed dialog slot. */
+/** The hover tooltip's card — icon + type name, a status line, then whatever stat rows apply to this structure kind. Deliberately terser than the sheet Info tab (smaller font/padding) since this follows the cursor rather than sitting in a fixed dialog slot. */
 function HoverPanel({ icon, title, status, children }: { icon: ReactNode; title: string; status: string; children?: ReactNode }) {
   return (
     <Panel
@@ -479,9 +480,7 @@ export function GameScreen({
   onNewPlayer: () => void;
 }) {
   const hexCanvasRef = useRef<HexCanvasHandle>(null);
-  /** Positioned imperatively, not via React state — see TileActionRing.tsx's doc comment. Repositioned directly inside handleViewportChange below. */
-  const ringRef = useRef<TileActionRingHandle>(null);
-  /** Same imperative-positioning convention as ringRef — see HoverTooltip.tsx. */
+  /** Same imperative-positioning convention as TileActionSheet's predecessor used — see HoverTooltip.tsx. */
   const hoverTooltipRef = useRef<HoverTooltipHandle>(null);
   const [selected, setSelected] = useState<Axial | null>(null);
   /** Desktop-mouse hover target (HexCanvas's onTileHover) — null on touch devices, which never report hover. Only changes when the hovered tile itself changes (deduped in HexCanvas), not on every mousemove pixel. */
@@ -1051,10 +1050,16 @@ export function GameScreen({
     };
   }
 
+  /** Surfaces failures; on success collapses the tile action sheet so the map is visible again. */
+  function applyActionResult(result: BuildResult) {
+    setActionError(result.ok ? null : result.reason);
+    if (result.ok) setSelected(null);
+  }
+
   async function handleRelocateBase() {
     if (!selected) return;
     const result = await onRelocateBase(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   function selectTile(coord: Axial) {
@@ -1077,304 +1082,225 @@ export function GameScreen({
   async function handleBuild(resource: ResourceType) {
     if (!selected) return;
     const result = await onBuildExtractionTile(selected, resource);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeTier() {
     if (!selected) return;
     const result = await onUpgradeExtractionTile(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeStorage(resource: ResourceType) {
     const result = await onUpgradeStorage(resource);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleCollect() {
     if (!selected) return;
     const result = await onCollectTile(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildPath() {
     if (!selected) return;
     const result = await onBuildPath(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradePath() {
     if (!selected) return;
     const result = await onUpgradePath(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildTower() {
     if (!selected) return;
     const result = await onBuildTower(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeTower() {
     if (!selected) return;
     const result = await onUpgradeTower(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildWall() {
     if (!selected) return;
     const result = await onBuildWall(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeWall() {
     if (!selected) return;
     const result = await onUpgradeWall(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRepairWall() {
     if (!selected) return;
     const result = await onRepairWall(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleDemolish() {
     if (!selected) return;
     if (!window.confirm("Demolish this structure? You'll only recover a fraction of what you spent on it.")) return;
     const result = await onDemolish(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildBarracks() {
     if (!selected) return;
     const result = await onBuildBarracks(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeBarracks() {
     if (!selected) return;
     const result = await onUpgradeBarracks(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildDock() {
     if (!selected) return;
     const result = await onBuildDock(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildFishingBoat() {
     if (!selected) return;
     const result = await onBuildFishingBoat(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildScoutSkiff() {
     if (!selected) return;
     const result = await onBuildScoutSkiff(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleBuildWanderingScout() {
     if (!selected) return;
     const result = await onBuildWanderingScout(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleCollectDock() {
     if (!selected) return;
     const result = await onCollectDock(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleTrainScouts() {
     const result = await onTrainScouts(scoutsToTrain);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleTrainMilitia() {
     const result = await onTrainMilitia(militiaToTrain);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleTrainJunkyardKnight() {
     const result = await onTrainJunkyardKnight(junkyardKnightToTrain);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleTrainCrossBowSniper() {
     const result = await onTrainCrossBowSniper(crossBowSniperToTrain);
-    setActionError(result.ok ? null : result.reason);
-  }
-
-  // Skips the "fill the field, then press Train" two-step — Max trains the
-  // max quantity immediately.
-  async function handleMaxScouts() {
-    const option = scoutTrainOptionFor();
-    if (!option) return;
-    if (option.maxQuantity <= 0) {
-      setActionError("Not enough resources to train any scouts");
-      return;
-    }
-    setScoutsToTrain(option.maxQuantity);
-    const result = await onTrainScouts(option.maxQuantity);
-    setActionError(result.ok ? null : result.reason);
-  }
-
-  async function handleMaxMilitia() {
-    const option = militiaTrainOptionFor();
-    if (!option) return;
-    if (option.maxQuantity <= 0) {
-      setActionError("Not enough resources to train any militia");
-      return;
-    }
-    setMilitiaToTrain(option.maxQuantity);
-    const result = await onTrainMilitia(option.maxQuantity);
-    setActionError(result.ok ? null : result.reason);
-  }
-
-  async function handleMaxJunkyardKnight() {
-    if (!selectedBarracks) return;
-    const option = junkyardKnightTrainOptionFor(selectedBarracks.level);
-    if (!option) return;
-    if (option.maxQuantity <= 0) {
-      setActionError("Not enough resources to train any junkyard knights");
-      return;
-    }
-    setJunkyardKnightToTrain(option.maxQuantity);
-    const result = await onTrainJunkyardKnight(option.maxQuantity);
-    setActionError(result.ok ? null : result.reason);
-  }
-
-  async function handleMaxCrossBowSniper() {
-    if (!selectedBarracks) return;
-    const option = crossBowSniperTrainOptionFor(selectedBarracks.level);
-    if (!option) return;
-    if (option.maxQuantity <= 0) {
-      setActionError("Not enough resources to train any cross-bow snipers");
-      return;
-    }
-    setCrossBowSniperToTrain(option.maxQuantity);
-    const result = await onTrainCrossBowSniper(option.maxQuantity);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRushTrainScouts() {
     const result = await onRushTrainScouts(scoutsToTrain);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRushTrainMilitia() {
     const result = await onRushTrainMilitia(militiaToTrain);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleScoutTile() {
     if (!selected) return;
     const result = await onScoutTile(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeBase() {
     const result = await onUpgradeBase();
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeReinforcement() {
     const result = await onUpgradeReinforcement();
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleDispatchExpedition() {
     if (!selected) return;
     const result = await onDispatchExpedition(selected, militiaToSend, junkyardKnightToSend, crossBowSniperToSend);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleAssaultDen() {
     if (!selectedDen) return;
     const result = await onAssaultDen(selectedDen.id, militiaToSend, junkyardKnightToSend, crossBowSniperToSend);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleSecureLab() {
     const result = await onSecureLab(militiaToSend, junkyardKnightToSend, crossBowSniperToSend);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleGarrisonMilitia() {
     if (!selected) return;
     const result = await onGarrisonMilitia(selected, militiaToGarrison);
-    setActionError(result.ok ? null : result.reason);
-  }
-
-  async function handleMaxGarrison() {
-    if (!selected) return;
-    const maxCount = availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
-    if (maxCount <= 0) return;
-    setMilitiaToGarrison(maxCount);
-    const result = await onGarrisonMilitia(selected, maxCount);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleGarrisonJunkyardKnight() {
     if (!selected) return;
     const result = await onGarrisonJunkyardKnight(selected, junkyardKnightToGarrison);
-    setActionError(result.ok ? null : result.reason);
-  }
-
-  async function handleMaxGarrisonJunkyardKnight() {
-    if (!selected) return;
-    const maxCount = availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
-    if (maxCount <= 0) return;
-    setJunkyardKnightToGarrison(maxCount);
-    const result = await onGarrisonJunkyardKnight(selected, maxCount);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleGarrisonCrossBowSniper() {
     if (!selected) return;
     const result = await onGarrisonCrossBowSniper(selected, crossBowSniperToGarrison);
-    setActionError(result.ok ? null : result.reason);
-  }
-
-  async function handleMaxGarrisonCrossBowSniper() {
-    if (!selected) return;
-    const maxCount = availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
-    if (maxCount <= 0) return;
-    setCrossBowSniperToGarrison(maxCount);
-    const result = await onGarrisonCrossBowSniper(selected, maxCount);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRecallMilitia() {
     if (!selected) return;
     const result = await onRecallMilitia(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRepairStructure() {
     if (!selected) return;
     const result = await onRepairStructure(selected);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRepairBase() {
     const result = await onRepairBase();
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleUpgradeOutpostReinforcement() {
     if (!selectedOutpost) return;
     const result = await onUpgradeOutpostReinforcement(selectedOutpost.id);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   async function handleRepairOutpost() {
     if (!selectedOutpost) return;
     const result = await onRepairOutpost(selectedOutpost.id);
-    setActionError(result.ok ? null : result.reason);
+    applyActionResult(result);
   }
 
   /**
@@ -1553,25 +1479,14 @@ export function GameScreen({
   }, [buildModeActive, resources, extractionTiles, pathTiles, towers, walls, barracksList, docks, territory.owned, territory.base, world.seed, tweaks]);
 
   /**
-   * Repositions the action ring by calling its imperative handle directly —
+   * Repositions the hover tooltip by calling its imperative handle directly —
    * deliberately not a React state update. `HexCanvas` calls this from
    * inside its draw effect (via a ref, not a dependency), so routing it
    * through `setState` here would re-render all of GameScreen's ~30
-   * `selectedX` derivations on every pan/zoom frame. See TileActionRing.tsx.
-   *
-   * Passes a coord->screen-position resolver (the same getTileScreenPosition
-   * HexCanvas already exposes) plus the current on-screen hex circumradius
-   * (BASE_HEX_SIZE * zoom) — TileActionRing looks up whichever hexes are
-   * currently mounted (at whatever sub-ring depth) and repositions each via
-   * its own registered coordinate. Matches the map's own geometry exactly,
-   * not an approximated UI size, so the ring's hexes genuinely overlay the
-   * tiles they sit on at any zoom level.
+   * `selectedX` derivations on every pan/zoom frame. See HoverTooltip.tsx.
+   * The tile action sheet is viewport-fixed and needs no repositioning.
    */
   function handleViewportChange(viewport: { pan: { x: number; y: number }; zoom: number }) {
-    ringRef.current?.repositionAll(
-      (coord) => hexCanvasRef.current?.getTileScreenPosition(coord) ?? null,
-      BASE_HEX_SIZE * viewport.zoom,
-    );
     hoverTooltipRef.current?.reposition(
       (coord) => hexCanvasRef.current?.getTileScreenPosition(coord) ?? null,
       BASE_HEX_SIZE * viewport.zoom,
@@ -1585,19 +1500,18 @@ export function GameScreen({
 
   /**
    * The structural "commit an action" buttons for the currently selected
-   * tile — mirrors TilePopup's own JSX conditionals branch for branch (same
-   * gates, same *OptionFor helpers, same handlers) so the ring can never
-   * show something the popup wouldn't, or vice versa. Multi-choice actions
-   * (which resource to extract, which storage to upgrade) collapse into one
-   * hex with a `subActions` sub-ring rather than eating multiple root slots.
+   * tile — mirrors the old TilePopup / TileActionRing gates branch for
+   * branch (same *OptionFor helpers, same handlers). Multi-choice actions
+   * (which resource to extract, which storage to upgrade) collapse into
+   * category tabs via `subActions` rather than a flat root list.
    *
-   * Called by ringActionsFor below, which appends the universal
+   * Called by sheetActionsFor below, which appends the universal
    * owned-tile-regardless-of-structure actions (Collect, Garrison, Demolish)
    * on top of whatever this returns.
    */
-  function structuralActionsFor(): RingAction[] {
+  function structuralActionsFor(): SheetAction[] {
     if (!selected) return [];
-    const actions: RingAction[] = [];
+    const actions: SheetAction[] = [];
 
     // Den and lab are checked first — `isOwned` can be false for either (a
     // den/lab isn't "owned territory" until cleared/secured), so they'd
@@ -1609,7 +1523,8 @@ export function GameScreen({
         actions.push({
           key: "assault-den",
           icon: <Swords size={18} />,
-          title: `${buttonLabel} — defense ${option.denDefense.toFixed(0)}, ETA ${Math.ceil(option.etaMs / 60_000)}m`,
+          title: buttonLabel,
+          detail: `Defense ${option.denDefense.toFixed(0)}, ETA ${Math.ceil(option.etaMs / 60_000)}m`,
           disabled: !option.affordable,
           formContent: dispatchFormContent(
             option,
@@ -1628,7 +1543,8 @@ export function GameScreen({
         actions.push({
           key: "secure-lab",
           icon: <FlaskConical size={18} />,
-          title: `Secure the lab — guardian defense ${option.guardianDefense.toFixed(0)}`,
+          title: "Secure the lab",
+          detail: `Guardian defense ${option.guardianDefense.toFixed(0)}`,
           disabled: !option.affordable,
           formContent: dispatchFormContent(
             option,
@@ -1650,7 +1566,8 @@ export function GameScreen({
         actions.push({
           key: "relocate",
           icon: <Navigation size={18} />,
-          title: `Relocate base here — ${formatCost(relocation.cost)}, ${Math.ceil(relocation.durationMs / 60_000)}m`,
+          title: "Relocate base here",
+          detail: `${formatCost(relocation.cost)}, ${Math.ceil(relocation.durationMs / 60_000)}m`,
           disabled: !relocation.affordable,
           onClick: handleRelocateBase,
         });
@@ -1663,7 +1580,8 @@ export function GameScreen({
         actions.push({
           key: "outpost-upgrade",
           icon: structureIcon("outpost"),
-          title: `Upgrade reinforcement to ${Math.floor(upgrade.hp)} HP — ${formatCost(upgrade.cost)}`,
+          title: `Upgrade reinforcement to ${Math.floor(upgrade.hp)} HP`,
+          detail: formatCost(upgrade.cost),
           disabled: !upgrade.affordable,
           upgradeAvailable: upgrade.affordable,
           onClick: handleUpgradeOutpostReinforcement,
@@ -1674,7 +1592,8 @@ export function GameScreen({
         actions.push({
           key: "outpost-repair",
           icon: <Wrench size={18} />,
-          title: `Repair outpost — ${formatCost(repair.cost)}`,
+          title: "Repair outpost",
+          detail: formatCost(repair.cost),
           disabled: !repair.affordable,
           onClick: handleRepairOutpost,
         });
@@ -1688,7 +1607,8 @@ export function GameScreen({
         actions.push({
           key: "base-upgrade",
           icon: structureIcon("base"),
-          title: `Upgrade base to L${baseUpgrade.targetLevel} — ${formatCost(baseUpgrade.cost)}`,
+          title: `Upgrade base to L${baseUpgrade.targetLevel}`,
+          detail: formatCost(baseUpgrade.cost),
           disabled: !baseUpgrade.affordable,
           upgradeAvailable: baseUpgrade.affordable,
           onClick: handleUpgradeBase,
@@ -1699,7 +1619,8 @@ export function GameScreen({
         actions.push({
           key: "base-reinforce",
           icon: <ArrowUpCircle size={18} />,
-          title: `Upgrade reinforcement to ${Math.floor(reinforce.hp)} HP — ${formatCost(reinforce.cost)}`,
+          title: `Upgrade reinforcement to ${Math.floor(reinforce.hp)} HP`,
+          detail: formatCost(reinforce.cost),
           disabled: !reinforce.affordable,
           upgradeAvailable: reinforce.affordable,
           onClick: handleUpgradeReinforcement,
@@ -1710,7 +1631,8 @@ export function GameScreen({
         actions.push({
           key: "base-repair",
           icon: <Wrench size={18} />,
-          title: `Repair base — ${formatCost(repair.cost)}`,
+          title: "Repair base",
+          detail: formatCost(repair.cost),
           disabled: !repair.affordable || baseAdjacentHordeOccupied,
           onClick: handleRepairBase,
         });
@@ -1720,12 +1642,13 @@ export function GameScreen({
         actions.push({
           key: "storage-upgrade",
           icon: <Archive size={18} />,
-          title: "Upgrade storage",
+          title: "Storage",
           upgradeAvailable: storageOptions.some((o) => o.affordable),
           subActions: storageOptions.map((o) => ({
             key: o.resource,
             icon: resourceIcon(o.resource),
-            title: `${o.resource} → L${o.level} (${formatCost(o.cost)})`,
+            title: `${o.resource} → L${o.level}`,
+            detail: formatCost(o.cost),
             disabled: !o.affordable,
             upgradeAvailable: o.affordable,
             onClick: () => handleUpgradeStorage(o.resource),
@@ -1741,7 +1664,8 @@ export function GameScreen({
         actions.push({
           key: "fishing-boat",
           icon: <Anchor size={18} />,
-          title: `Build fishing boat — ${formatCost(fishingBoat.cost)}`,
+          title: "Build fishing boat",
+          detail: formatCost(fishingBoat.cost),
           disabled: !fishingBoat.affordable,
           onClick: handleBuildFishingBoat,
         });
@@ -1751,7 +1675,8 @@ export function GameScreen({
         actions.push({
           key: "scout-skiff",
           icon: <Ship size={18} />,
-          title: `Build scout skiff — ${formatCost(scoutSkiff.cost)}, ${scoutSkiff.durationMinutes}m`,
+          title: "Build scout skiff",
+          detail: `${formatCost(scoutSkiff.cost)}, ${scoutSkiff.durationMinutes}m`,
           disabled: !scoutSkiff.affordable,
           onClick: handleBuildScoutSkiff,
         });
@@ -1766,7 +1691,8 @@ export function GameScreen({
           actions.push({
             key: "tile-repair",
             icon: <Wrench size={18} />,
-            title: `Repair extraction tile — ${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            title: "Repair extraction tile",
+            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
             disabled: !repair.affordable || selectedHordeOccupied,
             onClick: handleRepairStructure,
           });
@@ -1777,7 +1703,8 @@ export function GameScreen({
           actions.push({
             key: "tile-upgrade",
             icon: resourceIcon(selectedTile.resource),
-            title: `Upgrade to ${upgrade.targetTier} — ${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            title: `Upgrade to ${upgrade.targetTier}`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradeTier,
@@ -1794,7 +1721,8 @@ export function GameScreen({
           actions.push({
             key: "path-repair",
             icon: <Wrench size={18} />,
-            title: `Repair path — ${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            title: "Repair path",
+            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
             disabled: !repair.affordable || selectedHordeOccupied,
             onClick: handleRepairStructure,
           });
@@ -1805,7 +1733,8 @@ export function GameScreen({
           actions.push({
             key: "path-upgrade",
             icon: structureIcon(PATH_TIER_ICON_NAMES[selectedPath.tier]),
-            title: `Upgrade to ${upgrade.targetTier} — ${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            title: `Upgrade to ${upgrade.targetTier}`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradePath,
@@ -1822,7 +1751,8 @@ export function GameScreen({
           actions.push({
             key: "tower-repair",
             icon: <Wrench size={18} />,
-            title: `Repair tower — ${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            title: "Repair tower",
+            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
             disabled: !repair.affordable || selectedHordeOccupied,
             onClick: handleRepairStructure,
           });
@@ -1833,7 +1763,8 @@ export function GameScreen({
           actions.push({
             key: "tower-upgrade",
             icon: structureIcon("tower"),
-            title: `Upgrade to L${upgrade.targetLevel} — ${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            title: `Upgrade to L${upgrade.targetLevel}`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradeTower,
@@ -1854,7 +1785,8 @@ export function GameScreen({
           actions.push({
             key: "wall-upgrade",
             icon: structureIcon(WALL_TIER_ICON_NAMES[selectedWall.tier]),
-            title: `Upgrade to ${upgrade.targetTier} — ${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            title: `Upgrade to ${upgrade.targetTier}`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradeWall,
@@ -1865,7 +1797,8 @@ export function GameScreen({
           actions.push({
             key: "wall-repair",
             icon: <Wrench size={18} />,
-            title: `Repair wall — ${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            title: "Repair wall",
+            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
             disabled: !repair.affordable,
             onClick: handleRepairWall,
           });
@@ -1881,7 +1814,8 @@ export function GameScreen({
           actions.push({
             key: "barracks-repair",
             icon: <Wrench size={18} />,
-            title: `Repair barracks — ${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            title: "Repair barracks",
+            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
             disabled: !repair.affordable || selectedHordeOccupied,
             onClick: handleRepairStructure,
           });
@@ -1892,7 +1826,8 @@ export function GameScreen({
           actions.push({
             key: "barracks-upgrade",
             icon: structureIcon("barracks"),
-            title: `Upgrade to L${upgrade.targetLevel} — ${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            title: `Upgrade to L${upgrade.targetLevel}`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradeBarracks,
@@ -1904,43 +1839,46 @@ export function GameScreen({
         actions.push({
           key: "wandering-scout",
           icon: <Footprints size={18} />,
-          title: `Build wandering scout — retires ${wanderingScout.scoutCost} scouts, ${formatCost(wanderingScout.cost)}, ${wanderingScout.durationMinutes}m`,
+          title: "Build wandering scout",
+          detail: `Retires ${wanderingScout.scoutCost} scouts, ${formatCost(wanderingScout.cost)}, ${wanderingScout.durationMinutes}m`,
           disabled: !wanderingScout.affordable || wanderingScout.scoutCost > units.scoutStockpile,
           onClick: handleBuildWanderingScout,
         });
       }
 
-      const trainSubActions: RingAction[] = [];
+      const trainSubActions: SheetAction[] = [];
       if (!selectedBarracks.damaged) {
         trainSubActions.push({
           key: "train-scouts",
           icon: <Footprints size={18} />,
           title: "Train scouts",
-          formContent: trainFormContent({
-            label: "scouts",
-            queueStatus: scoutQueueStatus,
-            option: scoutTrainOptionFor(),
-            toTrain: scoutsToTrain,
-            onChangeToTrain: setScoutsToTrain,
-            onTrain: handleTrainScouts,
-            onMax: handleMaxScouts,
-            onRush: handleRushTrainScouts,
-          }),
+          formContent: (
+            <TrainForm
+              label="scouts"
+              queueStatus={scoutQueueStatus}
+              option={scoutTrainOptionFor()}
+              toTrain={scoutsToTrain}
+              onChangeToTrain={setScoutsToTrain}
+              onTrain={handleTrainScouts}
+              onRush={handleRushTrainScouts}
+            />
+          ),
         });
         trainSubActions.push({
           key: "train-militia",
           icon: <Swords size={18} />,
           title: "Train militia",
-          formContent: trainFormContent({
-            label: "militia",
-            queueStatus: militiaQueueStatus,
-            option: militiaTrainOptionFor(),
-            toTrain: militiaToTrain,
-            onChangeToTrain: setMilitiaToTrain,
-            onTrain: handleTrainMilitia,
-            onMax: handleMaxMilitia,
-            onRush: handleRushTrainMilitia,
-          }),
+          formContent: (
+            <TrainForm
+              label="militia"
+              queueStatus={militiaQueueStatus}
+              option={militiaTrainOptionFor()}
+              toTrain={militiaToTrain}
+              onChangeToTrain={setMilitiaToTrain}
+              onTrain={handleTrainMilitia}
+              onRush={handleRushTrainMilitia}
+            />
+          ),
         });
         const knightOption = junkyardKnightTrainOptionFor(selectedBarracks.level);
         if (knightOption) {
@@ -1948,15 +1886,16 @@ export function GameScreen({
             key: "train-knights",
             icon: <Shield size={18} />,
             title: "Train junkyard knights",
-            formContent: trainFormContent({
-              label: "junkyard knights",
-              queueStatus: junkyardKnightQueueStatus,
-              option: knightOption,
-              toTrain: junkyardKnightToTrain,
-              onChangeToTrain: setJunkyardKnightToTrain,
-              onTrain: handleTrainJunkyardKnight,
-              onMax: handleMaxJunkyardKnight,
-            }),
+            formContent: (
+              <TrainForm
+                label="junkyard knights"
+                queueStatus={junkyardKnightQueueStatus}
+                option={knightOption}
+                toTrain={junkyardKnightToTrain}
+                onChangeToTrain={setJunkyardKnightToTrain}
+                onTrain={handleTrainJunkyardKnight}
+              />
+            ),
           });
         }
         const sniperOption = crossBowSniperTrainOptionFor(selectedBarracks.level);
@@ -1965,20 +1904,21 @@ export function GameScreen({
             key: "train-snipers",
             icon: <Target size={18} />,
             title: "Train cross-bow snipers",
-            formContent: trainFormContent({
-              label: "cross-bow snipers",
-              queueStatus: crossBowSniperQueueStatus,
-              option: sniperOption,
-              toTrain: crossBowSniperToTrain,
-              onChangeToTrain: setCrossBowSniperToTrain,
-              onTrain: handleTrainCrossBowSniper,
-              onMax: handleMaxCrossBowSniper,
-            }),
+            formContent: (
+              <TrainForm
+                label="cross-bow snipers"
+                queueStatus={crossBowSniperQueueStatus}
+                option={sniperOption}
+                toTrain={crossBowSniperToTrain}
+                onChangeToTrain={setCrossBowSniperToTrain}
+                onTrain={handleTrainCrossBowSniper}
+              />
+            ),
           });
         }
       }
       if (trainSubActions.length > 0) {
-        actions.push({ key: "train", icon: <GraduationCap size={18} />, title: "Train units", subActions: trainSubActions });
+        actions.push({ key: "train", icon: <GraduationCap size={18} />, title: "Train", subActions: trainSubActions });
       }
 
       return actions;
@@ -1997,7 +1937,8 @@ export function GameScreen({
       actions.push({
         key: "build-dock",
         icon: structureIcon("dock"),
-        title: `Build dock — ${formatCost(dock.cost)}`,
+        title: "Build dock",
+        detail: formatCost(dock.cost),
         disabled: !dock.affordable,
         onClick: handleBuildDock,
       });
@@ -2007,19 +1948,15 @@ export function GameScreen({
     // Empty, buildable, owned land — every structure category is
     // independently available here (they're not mutually exclusive choices
     // at the "what can go here" stage, see GameScreen's selectedEmpty gate),
-    // grouped under two root-level category hexes — Civil (resource
-    // extraction, paths) and Military (tower, wall, barracks) — rather than
-    // one flat "Build" wrapper or 5 separate root slots.
+    // grouped under two category tabs — Civil (resource extraction, paths)
+    // and Military (tower, wall, barracks).
     const emptyBuildableGate = isOwned(selected) && selectedEmpty && !selectedIsBase && isBuildableLand(world.seed, selected);
     if (emptyBuildableGate) {
-      // The 5 resource choices sit directly on the Civil level (no separate
-      // "Build extraction tile" nesting hex) alongside Build path — all 6
-      // neighbor slots stay available for real actions, with Back living
-      // outside the ring (see TileActionRing's module doc comment).
-      const civilSubActions: RingAction[] = buildOptionsFor().map((o) => ({
+      const civilSubActions: SheetAction[] = buildOptionsFor().map((o) => ({
         key: o.resource,
         icon: resourceIcon(o.resource),
-        title: `${o.resource} — ${formatCost(o.cost)}, ${o.durationMinutes}m`,
+        title: o.resource,
+        detail: `${formatCost(o.cost)}, ${o.durationMinutes}m`,
         disabled: !o.affordable,
         onClick: () => handleBuild(o.resource),
       }));
@@ -2027,17 +1964,19 @@ export function GameScreen({
       civilSubActions.push({
         key: "build-path",
         icon: structureIcon(PATH_TIER_ICON_NAMES.goat_track),
-        title: `Build goat track — ${formatCost(path.cost)}, ${path.durationMinutes}m`,
+        title: "Build goat track",
+        detail: `${formatCost(path.cost)}, ${path.durationMinutes}m`,
         disabled: !path.affordable,
         onClick: handleBuildPath,
       });
 
-      const militarySubActions: RingAction[] = [];
+      const militarySubActions: SheetAction[] = [];
       const tower = towerBuildOptionFor();
       militarySubActions.push({
         key: "build-tower",
         icon: structureIcon("tower"),
-        title: `Build tower — ${formatCost(tower.cost)}, ${tower.durationMinutes}m`,
+        title: "Build tower",
+        detail: `${formatCost(tower.cost)}, ${tower.durationMinutes}m`,
         disabled: !tower.affordable,
         onClick: handleBuildTower,
       });
@@ -2045,7 +1984,8 @@ export function GameScreen({
       militarySubActions.push({
         key: "build-wall",
         icon: structureIcon(WALL_TIER_ICON_NAMES.wood),
-        title: `Build wall — ${formatCost(wall.cost)}, ${wall.durationMinutes}m`,
+        title: "Build wall",
+        detail: `${formatCost(wall.cost)}, ${wall.durationMinutes}m`,
         disabled: !wall.affordable,
         onClick: handleBuildWall,
       });
@@ -2053,7 +1993,8 @@ export function GameScreen({
       militarySubActions.push({
         key: "build-barracks",
         icon: structureIcon("barracks"),
-        title: `Build barracks — ${formatCost(barracks.cost)}, ${barracks.durationMinutes}m`,
+        title: "Build barracks",
+        detail: `${formatCost(barracks.cost)}, ${barracks.durationMinutes}m`,
         disabled: !barracks.affordable,
         onClick: handleBuildBarracks,
       });
@@ -2088,7 +2029,8 @@ export function GameScreen({
           actions.push({
             key: "expedition",
             icon: <Swords size={18} />,
-            title: `Send expedition — ${formatCost(expedition.provisionsCost)}, ETA ${Math.ceil(expedition.etaMs / 60_000)}m`,
+            title: "Send expedition",
+            detail: `${formatCost(expedition.provisionsCost)}, ETA ${Math.ceil(expedition.etaMs / 60_000)}m`,
             disabled: !expedition.affordable,
             formContent: dispatchFormContent(expedition, undefined, "Send expedition", handleDispatchExpedition),
           });
@@ -2099,85 +2041,45 @@ export function GameScreen({
     return actions;
   }
 
-  /** A barracks training hex's popover content — qty input + Max (+ Rush, scout/militia only) — reuses the exact same state/handlers TilePopup's training rows already use. Shows a queue-progress readout instead of the form while a training queue is already running for this unit type. */
-  function trainFormContent(params: {
-    label: string;
-    queueStatus: TrainQueueStatus | null;
-    option: TrainOption | SimpleTrainOption | null;
-    toTrain: number;
-    onChangeToTrain: (n: number) => void;
-    onTrain: () => void;
-    onMax: () => void;
-    onRush?: () => void;
-  }): ReactNode {
-    if (params.queueStatus) {
-      return (
-        <Panel style={{ fontSize: "0.8rem", minWidth: 200 }}>
-          Training {params.label}: {params.queueStatus.remaining} left, next in {Math.ceil(params.queueStatus.msUntilNextMs / 60_000)}m
-        </Panel>
-      );
-    }
-    if (!params.option) return null;
-    const disabled = !params.option.affordable || params.toTrain <= 0;
-    return (
-      <Panel style={{ display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.8rem", minWidth: 220 }}>
-        <strong>Train {params.label}</strong>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-          <input
-            type="number"
-            min={0}
-            max={params.option.maxQuantity}
-            value={params.toTrain}
-            onChange={(e) => params.onChangeToTrain(Number(e.target.value))}
-            style={{ width: 50 }}
-            aria-label={`${params.label} to train`}
-          />
-          <button type="button" onClick={params.onMax}>
-            Max
-          </button>
-        </div>
-        <span>{formatCost(params.option.totalCost)}</span>
-        <button type="button" disabled={disabled} onClick={params.onTrain}>
-          Train
-        </button>
-        {params.onRush && (
-          <button type="button" disabled={disabled} onClick={params.onRush}>
-            Rush (instant, noisy)
-          </button>
-        )}
-      </Panel>
-    );
-  }
-
-  /** One row of the garrison form: qty input + Max + Go, shown only when at least one such unit is available to station. */
+  /** One unit type in the garrison sheet form — stepper + station action. */
   function garrisonUnitRow(
     label: string,
     available: number,
     toGarrison: number,
     onChangeToGarrison: (n: number) => void,
-    onMax: () => void,
     onGo: () => void,
   ): ReactNode {
     if (available <= 0) return null;
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-        <input
-          type="number"
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
+        <span style={{ fontSize: "0.8rem", opacity: 0.75 }}>
+          {label} · {available} free
+        </span>
+        <QuantityStepper
+          label={`${label} to garrison`}
+          value={toGarrison}
           min={0}
           max={available}
-          value={toGarrison}
-          onChange={(e) => onChangeToGarrison(Number(e.target.value))}
-          style={{ width: 50 }}
-          aria-label={`${label} to garrison`}
+          onChange={onChangeToGarrison}
         />
-        <span>
-          {label} ({available} free)
-        </span>
-        <button type="button" onClick={onMax}>
-          Max
-        </button>
-        <button type="button" disabled={selectedHordeOccupied} onClick={onGo}>
-          Go
+        <button
+          type="button"
+          disabled={selectedHordeOccupied || toGarrison <= 0}
+          onClick={onGo}
+          style={{
+            width: "100%",
+            border: "none",
+            borderRadius: 10,
+            padding: "0.75rem 1rem",
+            fontSize: "0.9rem",
+            fontWeight: 650,
+            background: selectedHordeOccupied || toGarrison <= 0 ? "rgba(255, 255, 255, 0.12)" : "#2e7d32",
+            color: "white",
+            opacity: selectedHordeOccupied || toGarrison <= 0 ? 0.5 : 1,
+            cursor: selectedHordeOccupied || toGarrison <= 0 ? "default" : "pointer",
+          }}
+        >
+          Station {toGarrison > 0 ? toGarrison : ""} {label}
         </button>
       </div>
     );
@@ -2196,21 +2098,19 @@ export function GameScreen({
     const availKnight = availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
     const availSniper = availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
     return (
-      <Panel style={{ minWidth: 230 }}>
-        <PartyDispatchForm
-          extraInfo={extraInfo}
-          distanceTiles={option.distanceTiles}
-          pathCost={option.pathCost}
-          provisionsCost={option.provisionsCost}
-          etaMs={option.etaMs}
-          affordable={option.affordable}
-          militia={{ available: availMilitia, toSend: militiaToSend, onChange: setMilitiaToSend }}
-          junkyardKnight={{ available: availKnight, toSend: junkyardKnightToSend, onChange: setJunkyardKnightToSend }}
-          crossBowSniper={{ available: availSniper, toSend: crossBowSniperToSend, onChange: setCrossBowSniperToSend }}
-          buttonLabel={buttonLabel}
-          onCommit={onCommit}
-        />
-      </Panel>
+      <PartyDispatchForm
+        extraInfo={extraInfo}
+        distanceTiles={option.distanceTiles}
+        pathCost={option.pathCost}
+        provisionsCost={option.provisionsCost}
+        etaMs={option.etaMs}
+        affordable={option.affordable}
+        militia={{ available: availMilitia, toSend: militiaToSend, onChange: setMilitiaToSend }}
+        junkyardKnight={{ available: availKnight, toSend: junkyardKnightToSend, onChange: setJunkyardKnightToSend }}
+        crossBowSniper={{ available: availSniper, toSend: crossBowSniperToSend, onChange: setCrossBowSniperToSend }}
+        buttonLabel={buttonLabel}
+        onCommit={onCommit}
+      />
     );
   }
 
@@ -2225,15 +2125,14 @@ export function GameScreen({
       : 0;
     const recalling = recallInProgressFor(selected) !== null;
     return (
-      <Panel style={{ display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.8rem", minWidth: 230 }}>
-        <strong>Garrison{stationedTotal > 0 ? ` — ${stationedTotal} stationed` : ""}</strong>
-        {garrisonUnitRow("militia", availMilitia, militiaToGarrison, setMilitiaToGarrison, handleMaxGarrison, handleGarrisonMilitia)}
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.8rem" }}>
+        {stationedTotal > 0 && <span style={{ opacity: 0.8 }}>{stationedTotal} stationed</span>}
+        {garrisonUnitRow("militia", availMilitia, militiaToGarrison, setMilitiaToGarrison, handleGarrisonMilitia)}
         {garrisonUnitRow(
           "knights",
           availKnight,
           junkyardKnightToGarrison,
           setJunkyardKnightToGarrison,
-          handleMaxGarrisonJunkyardKnight,
           handleGarrisonJunkyardKnight,
         )}
         {garrisonUnitRow(
@@ -2241,7 +2140,6 @@ export function GameScreen({
           availSniper,
           crossBowSniperToGarrison,
           setCrossBowSniperToGarrison,
-          handleMaxGarrisonCrossBowSniper,
           handleGarrisonCrossBowSniper,
         )}
         {recalling ? (
@@ -2253,7 +2151,7 @@ export function GameScreen({
             </button>
           )
         )}
-      </Panel>
+      </div>
     );
   }
 
@@ -2549,12 +2447,12 @@ export function GameScreen({
    * elsewhere on the map/HUD (unlike tombstones, HP/durability bars, and the
    * siege countdown, which do) — auto-flow/connected status for extraction
    * tiles, noise floor contribution, and tower range/damage. Returns null
-   * when the selected tile has none of these, so the ring's Info hex only
+   * when the selected tile has none of these, so the sheet's Info tab only
    * appears when there's something to show. Countdown-style status (base
    * relocation, every build/upgrade/repair timer) lives in the notification
    * tray instead — see activeCountdownRows below.
    */
-  function infoDialogContent(): ReactNode | null {
+  function infoSheetContent(): ReactNode | null {
     if (!selected) return null;
     const rows: ReactNode[] = [];
     if (selectedTile) {
@@ -2576,12 +2474,24 @@ export function GameScreen({
       rows.push(<div key="tombstone">Tombstone — fades in {formatDuration(Math.max(0, selectedTombstone.expiresAt - now))}</div>);
     }
     if (rows.length === 0) return null;
-    return (
-      <Panel style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.8rem", minWidth: 220, maxWidth: 320 }}>
-        <strong>Info</strong>
-        {rows}
-      </Panel>
-    );
+    return <>{rows}</>;
+  }
+
+  /** Short header label for the tile action sheet. */
+  function selectedSheetTitle(): string {
+    if (!selected) return "Selected tile";
+    if (selectedIsBase) return `Base — L${base.level}`;
+    if (selectedOutpost) return `Outpost — L${selectedOutpost.reinforcementLevel}`;
+    if (selectedDen) return `Den — L${selectedDen.level}`;
+    if (selectedIsLab) return "Research lab";
+    if (selectedDock) return "Dock";
+    if (selectedBarracks) return `Barracks — L${selectedBarracks.level}`;
+    if (selectedTower) return `Tower — L${selectedTower.level}`;
+    if (selectedWall) return `Wall — ${selectedWall.tier}`;
+    if (selectedPath) return `Path — ${selectedPath.tier}`;
+    if (selectedTile) return `${selectedTile.resource} — ${selectedTile.tier}`;
+    if (selectedEmpty) return isOwned(selected) ? "Empty tile" : isScouted(selected) ? "Scouted tile" : "Unexplored tile";
+    return "Selected tile";
   }
 
   /**
@@ -2778,25 +2688,22 @@ export function GameScreen({
   }
 
   /**
-   * The full ring for the selected tile: structural actions (above) plus
-   * the universal, structure-independent actions available on any owned
-   * tile — Collect, Garrison (a form, not a discrete choice — quantities
-   * aren't a fixed list), and Demolish. These were originally scoped to stay
-   * in the tile info card, but the card is being retired in favor of the
-   * ring covering everything; folding them in here as its own layer keeps
-   * structuralActionsFor's tile-type branching (already mirrored 1:1 against
-   * TilePopup) untouched.
+   * The full sheet action tree for the selected tile: structural actions
+   * (above) plus the universal, structure-independent actions available on
+   * any owned tile — Collect, Garrison (a form), and Demolish. Folding them
+   * in here as its own layer keeps structuralActionsFor's tile-type
+   * branching untouched.
    */
-  function ringActionsFor(): RingAction[] {
+  function sheetActionsFor(): SheetAction[] {
     if (!selected) return [];
     const actions = structuralActionsFor();
 
     // Unlike Collect/Garrison/Demolish below, Info isn't owned-tile-only — a
     // tombstone can sit on unowned ground, so this is pushed before the
     // isOwned gate rather than after it.
-    const info = infoDialogContent();
+    const info = infoSheetContent();
     if (info) {
-      actions.push({ key: "info", icon: <Info size={18} />, title: "Info", dialogContent: info });
+      actions.push({ key: "info", icon: <Info size={18} />, title: "Info", infoContent: info });
     }
 
     if (!isOwned(selected)) return actions;
@@ -2805,7 +2712,8 @@ export function GameScreen({
       actions.push({
         key: "collect",
         icon: <PackageCheck size={18} />,
-        title: `Collect (${Math.floor(selectedTile.stockpile)})`,
+        title: "Collect",
+        detail: `${Math.floor(selectedTile.stockpile)} stockpiled`,
         onClick: handleCollect,
       });
     }
@@ -2813,7 +2721,8 @@ export function GameScreen({
       actions.push({
         key: "collect-dock",
         icon: <PackageCheck size={18} />,
-        title: `Collect (${Math.floor(selectedDock.stockpile)})`,
+        title: "Collect",
+        detail: `${Math.floor(selectedDock.stockpile)} stockpiled`,
         onClick: handleCollectDock,
       });
     }
@@ -2834,11 +2743,10 @@ export function GameScreen({
 
     return actions;
   }
-  const ringActions = ringActionsFor();
-  // Suppressed on the currently-selected tile — its ring (and Info hex,
-  // where applicable) already covers the same ground, and the two floating
-  // panels would otherwise visually collide right where the player's about
-  // to click.
+  const sheetActions = sheetActionsFor();
+  // Suppressed on the currently-selected tile — the action sheet (and Info
+  // tab, where applicable) already covers the same ground, and the two
+  // floating panels would otherwise visually collide.
   const hoverInfoContent =
     hoveredCoord && !(selected && axialEquals(hoveredCoord, selected)) ? hoverInfoFor(hoveredCoord) : null;
 
@@ -2927,8 +2835,13 @@ export function GameScreen({
         />
       </div>
       <HoverTooltip ref={hoverTooltipRef} coord={hoveredCoord} content={hoverInfoContent} />
-      {selected && ringActions.length > 0 && (
-        <TileActionRing key={axialKey(selected)} ref={ringRef} rootCoord={selected} actions={ringActions} />
+      {selected && sheetActions.length > 0 && (
+        <TileActionSheet
+          key={axialKey(selected)}
+          title={selectedSheetTitle()}
+          actions={sheetActions}
+          onClose={() => setSelected(null)}
+        />
       )}
       <div ref={clusterAndPanelsRef}>
       <GlobalHexCluster
@@ -2963,7 +2876,7 @@ export function GameScreen({
           },
           {
             key: "research",
-            icon: <BarChart3 size={20} />,
+            icon: <FlaskConical size={20} />,
             title: "Research",
             // Also lit up while a research is in progress, not just while the panel is open — mirrors the old floating button's "something's happening" cue.
             active: openPanel === "research" || Boolean(research.pending),

@@ -7,7 +7,7 @@ import { clearGameSave, hasCompleteSave } from "./data/gamePersistence";
 import { initAssetConfig } from "./render/assetPaths";
 import { resetTextureCache } from "./render/tileTextures";
 import { ContinueGamePrompt, profileDisplayName } from "./ui/ContinueGamePrompt";
-import type { OnboardingResult } from "./ui/OnboardingScreen";
+import type { OnboardingResult } from "./ui/onboarding/OnboardingScreen";
 import { PLAYER_DB_KEY, type Player } from "./data/player";
 import { WORLD_DB_KEY, generateSeed, type WorldRecord } from "./data/world";
 import { TERRITORY_DB_KEY, createStartingTerritory, type TerritoryRecord } from "./data/territory";
@@ -159,7 +159,7 @@ import { GameScreen } from "./ui/GameScreen";
 import type { ToastRecord } from "./ui/hud/Toast";
 import { GameOverScreen } from "./ui/GameOverScreen";
 import { WinScreen } from "./ui/WinScreen";
-import { OnboardingScreen } from "./ui/OnboardingScreen";
+import { OnboardingScreen } from "./ui/onboarding/OnboardingScreen";
 import "./App.css";
 
 interface GameState {

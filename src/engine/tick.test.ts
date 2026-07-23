@@ -87,7 +87,7 @@ describe("yieldPerSecond", () => {
     const seed = 1;
     const coord = findCoord(seed, false, axialSpiral(BASE, 30), "forest");
     const foodTile = extractionTile({ coord, resource: "food", tier: "small" });
-    expect(yieldPerSecond(tweaks, foodTile, seed)).toBeCloseTo(1.5);
+    expect(yieldPerSecond(tweaks, foodTile, seed)).toBeCloseTo(2.2);
   });
 
   it("scales by the tier multiplier (1.5^tier_index)", () => {
@@ -140,7 +140,7 @@ describe("yieldPerSecond", () => {
     const seed = 1;
     const coord = findCoord(seed, true, axialSpiral(BASE, 30), "forest");
     const onBorder = yieldPerSecond(tweaks, extractionTile({ coord, resource: "food", tier: "small" }), seed);
-    expect(onBorder).toBeCloseTo(1.5 * 0.5);
+    expect(onBorder).toBeCloseTo(2.2 * 0.5);
   });
 });
 

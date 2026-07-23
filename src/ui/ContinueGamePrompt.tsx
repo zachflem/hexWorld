@@ -1,4 +1,5 @@
 import type { ProfileEntry } from "../data/profileRegistry";
+import "./onboarding/onboarding.css";
 
 export function ContinueGamePrompt({
   profileName,
@@ -10,17 +11,37 @@ export function ContinueGamePrompt({
   onStartNew: () => void;
 }) {
   return (
-    <section>
-      <h1>Hex World</h1>
-      <p>You have a saved game on this device ({profileName}).</p>
-      <p>Do you want to continue where you left off?</p>
-      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "1rem" }}>
-        <button type="button" onClick={onContinue}>
-          Yes!
-        </button>
-        <button type="button" onClick={onStartNew}>
-          No. Start a New Game
-        </button>
+    <section className="onboarding-root">
+      <div className="onboarding-notebook">
+        <div className="onboarding-notebook__binding" aria-hidden="true" />
+        <article className="onboarding-manual">
+          <header className="onboarding-manual__header">
+            <h1 className="onboarding-manual__title">Pick up where you left off?</h1>
+          </header>
+          <div className="onboarding-manual__body">
+            <div className="onboarding-page-content">
+              <p>You have a saved game on this device ({profileName}).</p>
+              <p>Do you want to continue where you left off?</p>
+            </div>
+          </div>
+          <footer className="onboarding-manual__footer onboarding-continue__footer">
+            <div className="onboarding-manual__footer-left">
+              <button type="button" className="onboarding-manual__btn" onClick={onStartNew}>
+                No. Start a New Game
+              </button>
+            </div>
+            <div className="onboarding-manual__footer-center" />
+            <div className="onboarding-manual__footer-right">
+              <button
+                type="button"
+                className="onboarding-manual__btn onboarding-manual__btn--primary"
+                onClick={onContinue}
+              >
+                Yes!
+              </button>
+            </div>
+          </footer>
+        </article>
       </div>
     </section>
   );

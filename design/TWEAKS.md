@@ -93,14 +93,16 @@ yield(tier) = small_yield × 1.5^(tier_index)
 ```
 So mid = 1.5× small, large = 2.25× small (1.5²). This is Formula-independent — it's its own exponential curve, chosen deliberately to reward tiering up (rather than the flatter multiplier used for costs).
 
-**L1 (small tier) yields per tick, locked:**
+**L1 (small tier) yields per tick:**
 | Resource | Yield/tick |
 |---|---|
-| Food | 15 |
-| Wood | 12 |
-| Stone | 6 |
-| Steel | 3 |
-| Power | 3 |
+| Food | 22 |
+| Wood | 18 |
+| Stone | 9 |
+| Steel | 5 |
+| Power | 5 |
+
+CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12, playtesting feedback: early game pacing too slow) — raised ~50% across the board from the original 15/12/6/3/3, alongside a 1-minute cut to every build/upgrade timer in the file (see the relevant sections below).
 
 **Build cost:** Formula A (each additional tile of that type built costs more). Food/wood/stone cost their own resource (or wood, for food) — bootstrappable from starting resources. **Steel and power build costs were fixed from an earlier pass**: they used to cost steel and power respectively, which is unbuildable from a 0 starting balance with no other way to earn either resource first. Now: steel tile = wood + stone; power tile = wood + stone + steel (needs an established steel operation first). Tier upgrades stay self-referential (steel tiles upgrade using steel, etc.) since by then the tile is already producing that resource to reinvest. First pass, untested.
 **Tier upgrade cost (small→mid→large):** Formula B, plus the tech progression (mid tier adds stone; large tier adds stone + steel).
@@ -127,25 +129,25 @@ Added during playtesting — not in the original design pass, see `DESIGN.md` §
 **Dock:**
 - **Placement:** a water tile bordering land (`engine/terrain.ts:isTransitionTile` true on a water coord), and the water tile itself must be owned **or** scouted — not full ownership like every other structure, since ordinary land-adjacency territory growth never reaches open water on its own.
 - **Build cost:** Linear build-count scaling, not Formula A (200 wood base) — `cost_n = 200 × (1 + 0.1×(n-1))`. CORRECTION (2026-07-21, playtesting feedback: "60k wood for one dock" — Formula A's compounding pushed a 13th dock to ~62,000 wood) — switched to the same linear scaling walls/goat tracks already use, same reasoning as the walls exception above.
-- **Build time:** 3-minute construction timer (`dockBuildDurationMs`, `engine/docks.ts`) — CORRECTION (2026-07-21, playtesting feedback): docks previously had no construction timer at all, unlike every other structure; a dock now yields nothing until this timer elapses, same "under construction" treatment as a tower/wall/barracks.
+- **Build time:** 2-minute construction timer (`dockBuildDurationMs`, `engine/docks.ts`) — CORRECTION (2026-07-21, playtesting feedback): docks previously had no construction timer at all, unlike every other structure; a dock now yields nothing until this timer elapses, same "under construction" treatment as a tower/wall/barracks. Lowered from 3 (2026-07-23 pacing pass, ROADMAP.md Milestone 21 UX #12).
 - **Yield:** `yield_multiplier_vs_food_tile` (0.7) × the food extraction tile's own small-tier rate — so a dock without a fishing boat produces 70% of a small food tile's yield. Deliberately **not** also halved by the transition-tile rule (Extraction Tiles/Transition Tiles, above) — a dock sits on transition water by definition, so 0.7× is already its full intended rate.
 - **No path connection:** deposits straight into base food storage every tick (capped by the storage skill, same as anywhere else) — paths can't cross water, so there's no "connected vs. unconnected" state the way a land extraction tile has. No tiers either.
 - **No `damaged` state:** immune to horde capture (hordes can't reach water tiles), so it never needs repair.
 - **Noise:** build 20 (`build_dock`, same weight as an extraction tile or wall).
 
 **Fishing Boat (per dock):**
-- One-time build, capped at one per dock: 150 wood + 20 steel, 4-minute timer (same shape as a tier upgrade).
+- One-time build, capped at one per dock: 150 wood + 20 steel, 3-minute timer (same shape as a tier upgrade; lowered from 4, 2026-07-23 pacing pass, ROADMAP.md Milestone 21 UX #12).
 - Effect: multiplies that dock's yield by `yield_bonus_multiplier` (1.5) once complete — a fishing-boat'd dock nets 0.7 × 1.5 = 1.05× a small food tile's rate.
 - Noise: build 10 (`build_fishing_boat`).
 
 **Scout Skiff (per dock, water-side scouting):**
-- Capped at `max_per_dock` (1) per dock: 240 wood + 80 food, 10-minute timer. Doubled from 120 wood + 40 food and given a build timer (2026-07-20 balance pass, playtesting feedback: free/instant unlimited map reveal from a single cheap build was reasonably overpowered).
+- Capped at `max_per_dock` (1) per dock: 240 wood + 80 food, 9-minute timer (lowered from 10, 2026-07-23 pacing pass). Doubled from 120 wood + 40 food and given a build timer (2026-07-20 balance pass, playtesting feedback: free/instant unlimited map reveal from a single cheap build was reasonably overpowered).
 - Moves one tile per `seconds_per_step` (10s), always onto a water tile, excluding the tile it just left whenever another option exists (so it doesn't just oscillate between two tiles) — otherwise unconfined, free to wander anywhere in its connected body of water. Doesn't move (or scout) until its build timer completes.
 - Reveals every tile it steps onto, the same `scoutedTiles` mechanism manual land scouting uses — but automatic and ongoing instead of one reveal per unit spent.
 - Noise: build 5 (`build_scout_skiff`).
 
 **Wandering Scout (land counterpart, trained at a Barracks):**
-- Capped at `units.wandering_scout.max_per_barracks` (1) per barracks. Costs `scout_cost` (10) regular scouts retired from the stockpile **plus** a resource cost (150 wood + 75 stone) and a 10-minute build timer — added 2026-07-20 balance pass, same overpowered-for-its-cost reasoning as the Scout Skiff (previously scouts-only, no resource price, instant).
+- Capped at `units.wandering_scout.max_per_barracks` (1) per barracks. Costs `scout_cost` (10) regular scouts retired from the stockpile **plus** a resource cost (150 wood + 75 stone) and a 9-minute build timer (lowered from 10, 2026-07-23 pacing pass) — added 2026-07-20 balance pass, same overpowered-for-its-cost reasoning as the Scout Skiff (previously scouts-only, no resource price, instant).
 - Same movement rule as the Scout Skiff (one tile per `seconds_per_step`, excludes its last tile when another option exists), except confined to non-water terrain instead of water. Doesn't move (or scout) until its build timer completes. Moves twice as fast as the Scout Skiff — `seconds_per_step` halved from 10s to 5s (2026-07-21 playtest pass: felt static next to the skiff) — every other stat (cost, cap, build timer) is identical between the two.
 - Noise: build 8 (`build_wandering_scout`).
 
@@ -324,7 +326,7 @@ Starting at 1000 for L1. This same 1000 baseline (not scaled by storage-skill le
 The single biggest gate in the game — base level caps every other upgrade (generators, towers, walls, storage, everything).
 
 - **Cost:** Formula B, base 500 food + 300 wood + 200 stone.
-- **Time:** `time(targetLevel) = first_upgrade_time_minutes (10) × (1 + time_growth_per_level_pct/100 (20%)) ^ (targetLevel - 2)` — the first upgrade (L1→L2) takes exactly 10 minutes, then +20% compounding per level from there: L2→L3 = 12min, L3→L4 = 14.4min, L4→L5 = 17.3min, L5→L6 = 20.7min. **Timer runs even while offline.** **CORRECTION (2026-07-20 balance pass, playtesting feedback):** replaces an earlier recursive FORMULA_B-style scale (`time(L) = time(L-1) × (1.0 + 0.1×L)`, starting at 1.2 hours) which made even the very first base upgrade take 86 minutes — longer than a full session on its own, absurd even though base upgrades are deliberately the most time-intensive progression track in the game.
+- **Time:** `time(targetLevel) = first_upgrade_time_minutes (9) × (1 + time_growth_per_level_pct/100 (20%)) ^ (targetLevel - 2)` — the first upgrade (L1→L2) takes exactly 9 minutes, then +20% compounding per level from there: L2→L3 = 10.8min, L3→L4 = ~13min, L4→L5 = ~15.6min, L5→L6 = ~18.7min. **Timer runs even while offline.** **CORRECTION (2026-07-20 balance pass, playtesting feedback):** replaces an earlier recursive FORMULA_B-style scale (`time(L) = time(L-1) × (1.0 + 0.1×L)`, starting at 1.2 hours) which made even the very first base upgrade take 86 minutes — longer than a full session on its own, absurd even though base upgrades are deliberately the most time-intensive progression track in the game. **CORRECTION 2 (2026-07-23, ROADMAP.md Milestone 21 UX #12, playtesting feedback: early game pacing too slow):** lowered from 10, shaving 1 minute off like every other build/upgrade timer in the file.
 - **Attack radius cap:** `attackableRadius(level) = attack_radius_cap_base (10) + attack_radius_cap_per_level (10) × (level - 1)` — an outer ceiling on how far from base a tile can be attacked at all (10 rings at L1, +10 per level). This is a ceiling only, not the sole gate — a tile must also be adjacent to territory you already own to be attackable (see Territory Expansion / Tile Assault, above). It does not grant tiles for free — winning the tile fight is what actually converts an attackable tile into owned territory. Deliberately generous and fast-growing so this ceiling is rarely what actually limits play; adjacency is meant to be the real constraint, keeping expansion player-driven and exploration-friendly rather than boxed into a slow-unlocking ring schedule. **History:** an earlier pass used a stepped `ring_unlock_levels` scheme (rings unlocking at L3/L6/L9, ~1 ring every 3 levels) as the sole gate, with no adjacency requirement — a leftover artifact from a prior plan that was discussed but never reconciled into DESIGN.md, and far too tight at low levels besides. Replaced here after playtesting surfaced the mismatch.
 - **Build slot cap:** a hard limit on total structures standing at once (DESIGN.md §9), separate from territory size. First pass, untested: `cap(level) = 10 + 10 × (level - 1)` — 10 slots at base L1, comfortably fitting the 3 starting extraction tiles plus early headroom, then +10 per base-level upgrade so each level unlocks room for meaningful new defenses/resources, not just a couple of slots.
 

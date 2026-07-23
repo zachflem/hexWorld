@@ -109,3 +109,18 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+/* BottomSheet: full-width / centered on mobile; left-docked on larger screens. */
+.bottom-sheet {
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(100%, 420px);
+}
+
+@media (min-width: 768px) {
+  .bottom-sheet {
+    left: 1rem;
+    transform: none;
+    width: 420px;
+  }
+}
