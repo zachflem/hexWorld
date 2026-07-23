@@ -1,5 +1,5 @@
 import { QuantityStepper } from "./QuantityStepper";
-import { formatCost } from "../format";
+import { formatCost, formatDuration } from "../format";
 import type { SimpleTrainOption, TrainOption, TrainQueueStatus } from "../tileOptions";
 import { SheetButton } from "./SheetButton";
 import { SheetInfoCard } from "./SheetListItem";
@@ -34,7 +34,7 @@ export function TrainForm({
           {queueStatus.remaining} {label} left
         </span>
         <span style={{ opacity: 0.7, fontSize: "0.8rem" }}>
-          Next in {Math.ceil(queueStatus.msUntilNextMs / 60_000)}m
+          Next in {formatDuration(queueStatus.msUntilNextMs)}
         </span>
       </SheetInfoCard>
     );
