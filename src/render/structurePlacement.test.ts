@@ -31,6 +31,8 @@ describe("structurePlacementFor", () => {
 
   it("resolves extraction resource-tier stems", () => {
     expect(STRUCTURE_VARIANT_PLACEMENT["food-small"]).toEqual(STRUCTURE_PLACEMENT.extraction);
-    expect(structurePlacementFor("extraction", "wood-mid").scale).toBe(STRUCTURE_PLACEMENT.extraction.scale);
+    expect(structurePlacementFor("extraction", "wood-mid").scale).toBe(
+      STRUCTURE_VARIANT_PLACEMENT["wood-mid"].scale,
+    );
   });
 });
