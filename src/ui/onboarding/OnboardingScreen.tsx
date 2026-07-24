@@ -61,11 +61,13 @@ export function OnboardingScreen({
   initialProfileSlug,
   recentSeeds,
   onCreated,
+  onLoadFromFile,
 }: {
   profiles: ProfileEntry[];
   initialProfileSlug: string;
   recentSeeds: number[];
   onCreated: (result: OnboardingResult) => void;
+  onLoadFromFile?: () => void;
 }) {
   const [pageIndex, setPageIndex] = useState(0);
   const [name, setName] = useState("");
@@ -210,6 +212,8 @@ export function OnboardingScreen({
           pageKey={pageIndex}
           showBack={false}
           onBack={goBack}
+          leftLabel={onLoadFromFile ? "Load from file" : undefined}
+          onLeft={onLoadFromFile}
           primaryLabel={primaryLabel}
           onPrimary={goForward}
         >

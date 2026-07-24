@@ -4,12 +4,26 @@ import { seededRandom } from "../engine/noise";
 import { terrainAt } from "../engine/terrain";
 import type { Tweaks } from "./tweaksSchema";
 
+/** Coarse quadrant from a watchtower "distant signal" — guides wandering scouts, does not itself award a lab clue. */
+export type Compass4 = "north" | "east" | "south" | "west";
+
+export interface WatchtowerSignal {
+  bearing: Compass4;
+  /** Virtual clock when the signal was set (App tick). */
+  setAt: number;
+}
+
 export interface LabRecord {
   coord: Axial;
   /** True once a party has beaten the guardian (engine/lab.ts:resolveLabAssault) — permanent, this is the entire win condition (DESIGN.md §13). */
   secured: boolean;
   /** 0..tweaks.lab_clues.total_clues — see engine/lab.ts:labClueText for how this turns into a directional hint. */
   cluesCollected: number;
+  /**
+   * Active watchtower listening focus (#38). Vague 4-point bearing toward the lab;
+   * biases wandering scouts. Absent/null on legacy saves.
+   */
+  watchtowerSignal?: WatchtowerSignal | null;
 }
 
 export const LAB_DB_KEY = "lab";
@@ -43,5 +57,5 @@ export function createLab(seed: number, gridSize: number, base: Axial, dens: Den
   const pickIndex = candidates.length > 0 ? Math.floor(seededRandom(seed, 9_999_999) * candidates.length) : 0;
   const coord = candidates[pickIndex] ?? fallback;
 
-  return { coord, secured: false, cluesCollected: 0 };
+  return { coord, secured: false, cluesCollected: 0, watchtowerSignal: null };
 }

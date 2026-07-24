@@ -447,6 +447,27 @@
   justify-content: flex-start;
 }
 
+.onboarding-continue__footer {
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+}
+
+.onboarding-continue__footer .onboarding-manual__footer-left,
+.onboarding-continue__footer .onboarding-manual__footer-center,
+.onboarding-continue__footer .onboarding-manual__footer-right {
+  min-width: 0;
+}
+
+.onboarding-continue__footer .onboarding-manual__btn {
+  white-space: nowrap;
+}
+
+.onboarding-continue__load {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .onboarding-manual__footer-center {
   justify-content: center;
 }

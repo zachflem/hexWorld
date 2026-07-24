@@ -520,10 +520,12 @@ A converted den becomes a second, independent economic/defensive hub — a real 
 
 **Total clues:** 5, fixed. Each clue is a directional hint relative to base — early clues give a coarse compass quadrant ("something calls from the north"), later clues refine that into a narrower arc. The final clue narrows the search down to a cluster roughly 6 tiles in radius — not the exact tile, so the player still has to scout that cluster manually.
 
-**Surfacing (first pass, untested):**
-- Passive: 2% chance per scout action, 0.5% × watchtower intel tier per watchtower tick.
+**Surfacing:**
+- Passive scout: 2% chance per manual scout action.
+- Watchtower signal (#38): L2–L3 towers roll `per_watchtower_tick_base_chance` (0.1%/tick); L4 multiplies by `watchtower_intel_tier_multiplier` (2×). A success sets a vague 4-point **signal** (not a clue) that biases wandering scouts; newly scouted tiles in that sector can roll a real clue at the scout chance. Signal clears when a wandering scout awards a clue.
 - Guaranteed: clearing a den always awards exactly one clue.
-- Stops once all 5 clues are collected.
+- Stops once all 5 clues are collected (no further clues or signals).
+- Horde alert: toast when a horde first enters an active tower's combat range.
 
 ---
 

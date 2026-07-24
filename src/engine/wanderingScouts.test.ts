@@ -4,9 +4,10 @@ import stripJsonComments from "strip-json-comments";
 import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
 import type { WanderingScoutRecord } from "../data/wanderingScouts";
-import { axialKey, axialNeighbors, axialSpiral, type Axial } from "./hexCoords";
+import { axialKey, axialNeighbors, axialSpiral, axialToPixel, type Axial } from "./hexCoords";
 import { terrainAt } from "./terrain";
 import { advanceWanderingScouts } from "./wanderingScouts";
+import { bearingStepScore } from "./lab";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -127,5 +128,82 @@ describe("advanceWanderingScouts", () => {
 
     expect(result.scouts).toEqual(scouts);
     expect(result.scoutedTiles).toEqual([]);
+    expect(result.clueAwarded).toBe(false);
+  });
+});
+
+describe("watchtower signal bias", () => {
+  it("bearingStepScore prefers neighbors aligned with the signal", () => {
+    const from = { q: 0, r: 0 };
+    const northish = { q: 0, r: -1 };
+    const southish = { q: 0, r: 1 };
+    expect(bearingStepScore(from, northish, "north")).toBeGreaterThan(bearingStepScore(from, southish, "north"));
+  });
+
+  it("with a northern signal, scouts take more northward steps than without", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+    const steps = 80;
+    const stepSec = tweaks.units.wandering_scout.seconds_per_step;
+
+    function northDelta(path: Axial[]): number {
+      let sum = 0;
+      for (let i = 1; i < path.length; i++) {
+        const a = axialToPixel(path[i - 1], 1);
+        const b = axialToPixel(path[i], 1);
+        sum += a.y - b.y;
+      }
+      return sum;
+    }
+
+    const control = walk(tweaks, seed, start, steps);
+    let scouts = [makeScout(start)];
+    let scoutedTiles: Axial[] = [];
+    const biasedPath: Axial[] = [start];
+    for (let i = 0; i < steps; i++) {
+      const result = advanceWanderingScouts(tweaks, scouts, scoutedTiles, seed, gridSize, stepSec, {
+        signal: { bearing: "north", setAt: 0 },
+        base: start,
+        cluesCollected: 0,
+      });
+      scouts = result.scouts;
+      scoutedTiles = result.scoutedTiles;
+      biasedPath.push(scouts[0].coord);
+    }
+
+    expect(northDelta(biasedPath)).toBeGreaterThan(northDelta(control.path));
+  });
+
+  it("awards a clue when a newly scouted tile is in-sector and chance is 100%", () => {
+    const baseTweaks = loadRealTweaks();
+    const tweaks = {
+      ...baseTweaks,
+      lab_clues: {
+        ...baseTweaks.lab_clues,
+        passive_surfacing: {
+          ...baseTweaks.lab_clues.passive_surfacing,
+          per_scout_action_chance: 1,
+        },
+      },
+    };
+    const seed = 5;
+    const start = findLandCoord(seed);
+    const scouts = [makeScout(start)];
+    const result = advanceWanderingScouts(
+      tweaks,
+      scouts,
+      [],
+      seed,
+      gridSize,
+      tweaks.units.wandering_scout.seconds_per_step * 40,
+      {
+        signal: { bearing: "north", setAt: 0 },
+        base: start,
+        cluesCollected: 0,
+      },
+    );
+    expect(result.scoutedTiles.length).toBeGreaterThan(0);
+    expect(result.clueAwarded).toBe(true);
   });
 });

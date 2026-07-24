@@ -20,9 +20,11 @@ You can also open a difficulty directly via URL: `play.{domain}/hard` loads the 
 
 Use **Begin**, **Continue**, **Next**, and **Step Outside** (or arrow keys on non-input pages) to move through the manual.
 
-**Returning with a save:** if you already have progress in this browser, you'll see a notebook-style prompt first — **Yes!** resumes where you left off (same profile as when you saved); **No. Start a New Game** clears the save and opens the field manual for a fresh run.
+**Returning with a save:** if you already have progress in this browser, you'll see a notebook-style prompt first — **Continue** resumes where you left off (same profile as when you saved); **New Game** clears the save and opens the field manual for a fresh run; **Load** imports a JSON save file (replaces the local save).
 
 Progress saves automatically in your browser (IndexedDB) as you play — closing the tab is safe.
+
+**Save files:** open **Settings** (bottom-right gear) to **Save to file** (downloads a JSON backup) or **Load from file** (replaces the save in this browser). You can also load from the continue prompt or the field-manual cover on a fresh device — useful for moving a run between browsers or keeping backups. Files are plain JSON and may be hand-edited; there is no account sync.
 
 ### Starting a new game later
 
@@ -182,7 +184,9 @@ Losing an outpost to a horde doesn't end the game — it just reverts back to a 
 
 Somewhere out past every zombie den — deliberately farther out than any of them — sits a **hidden lab**, guarded, and finding + securing it is the win condition. There's nothing else to do to win; you don't need to clear every den or build a particular economy size, just reach the lab and beat its guardian.
 
-**Finding it** takes clues — 5 total, each a directional hint relative to your base that narrows the search area, from a rough compass quadrant down to a small cluster of hexes on the last one. Clues surface two ways: a small passive chance every time you use a scout, and a **guaranteed clue every time you successfully clear a den's hold**. Once you've collected all 5, you'll know roughly where to look.
+**Finding it** takes clues — 5 total, each a directional hint relative to your base that narrows the search area, from a rough compass quadrant down to a small cluster of hexes on the last one. Clues surface from a small passive chance every time you use a scout, and a **guaranteed clue every time you successfully clear a den's hold**. **Watchtowers (level 2+)** sometimes pick up a vague distant signal ("something in the north — send the scouts"); that does not count as a clue, but it steers wandering scouts toward that direction, where they can uncover a real clue. Level 4 towers hear signals more often. Once you've collected all 5, you'll know roughly where to look.
+
+Watchtowers also **alert** when a horde first enters their combat range.
 
 **Securing it** works like assaulting a den — commit a party of militia/knights/snipers. The guardian is by far the toughest fight in the game (its defense is set well above even a max-level den, deliberately — this is meant to demand a real, late-game army), and unlike a den there's no hold period afterward: win the fight and the game ends immediately in victory.
 

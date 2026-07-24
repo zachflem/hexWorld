@@ -4,7 +4,19 @@ import { loadProfile, fetchProfileRegistry, resolveProfileSlug, DEFAULT_PROFILE_
 import type { Tweaks } from "./data/tweaksSchema";
 import { PROFILE_SLUG_DB_KEY } from "./data/profile";
 import { getRecentSeeds, recordRecentSeed } from "./data/recentSeeds";
-import { clearGameSave, hasCompleteSave } from "./data/gamePersistence";
+import {
+  buildSaveFile,
+  clearGameSave,
+  downloadSaveFile,
+  hasCompleteSave,
+  keysToStoredGame,
+  parseSaveFile,
+  pickSaveFile,
+  readJsonFromFile,
+  writeSaveFileToDb,
+  type SaveFileV1,
+  type StoredGameKeys,
+} from "./data/gamePersistence";
 import { initAssetConfig } from "./render/assetPaths";
 import { resetTextureCache } from "./render/tileTextures";
 import { ContinueGamePrompt, profileDisplayName } from "./ui/ContinueGamePrompt";
@@ -110,6 +122,8 @@ import {
   hordeStructureCaptureEvents,
   markCapturedStructuresDamaged,
   resolveGarrisonAutoAttacks,
+  towersInRange,
+  reconcileHordeWatchtowerAlerts,
   type HordeHub,
 } from "./engine/hordes";
 import {
@@ -124,7 +138,14 @@ import {
 } from "./engine/garrisons";
 import { isTimerComplete } from "./engine/timers";
 import { denAssaultSurvivors, denDefense, holdDefenseAt, resolveDenAssault, resolveHoldPeriod } from "./engine/dens";
-import { labClueText, resolveLabAssault, rollScoutClue } from "./engine/lab";
+import {
+  labClueText,
+  makeWatchtowerSignal,
+  resolveLabAssault,
+  rollScoutClue,
+  rollWatchtowerSignal,
+  watchtowerSignalToastText,
+} from "./engine/lab";
 import {
   maxOutpostReinforcementLevel,
   outpostReinforcementHp,
@@ -489,6 +510,8 @@ export default function App() {
    */
   const [toasts, setToasts] = useState<ToastRecord[]>([]);
   const toastSeqRef = useRef(0);
+  /** Horde ids currently inside a tower's combat range — used to toast once on entry (#38). */
+  const hordeAlertedIdsRef = useRef<Set<string>>(new Set());
   const pushToast = useCallback((toast: Omit<ToastRecord, "id">) => {
     setToasts((prev) => [...prev, { ...toast, id: `toast-${Date.now()}-${toastSeqRef.current++}` }]);
   }, []);
@@ -829,14 +852,69 @@ export default function App() {
           ? { ...s, buildStartedAt: null }
           : s,
       );
-      const { scouts: wanderingScouts, scoutedTiles } = advanceWanderingScouts(
+
+      // Watchtower listening (#38): L2+ towers may set a vague compass signal
+      // that biases wandering scouts. Does not award cluesCollected directly.
+      let labWorking: LabRecord = {
+        ...current.game.lab,
+        watchtowerSignal: current.game.lab.watchtowerSignal ?? null,
+      };
+      const cluesCapped =
+        current.tweaks.lab_clues.passive_surfacing.stops_once_all_clues_collected &&
+        labWorking.cluesCollected >= current.tweaks.lab_clues.total_clues;
+      if (!cluesCapped) {
+        const tickCount = Math.max(1, Math.floor(elapsedSeconds));
+        const rollSalt = Math.floor(virtualNow);
+        let newestSignal: typeof labWorking.watchtowerSignal = null;
+        for (const tower of towers) {
+          if (!isStructureActive(tower)) continue;
+          if (
+            rollWatchtowerSignal(
+              current.tweaks,
+              current.game.world.seed,
+              tower.coord,
+              tower.level,
+              rollSalt + tower.coord.q * 17 + tower.coord.r * 31,
+              tickCount,
+            )
+          ) {
+            newestSignal = makeWatchtowerSignal(territoryAfterRelocation.base, labWorking.coord, virtualNow);
+          }
+        }
+        if (newestSignal) {
+          labWorking = { ...labWorking, watchtowerSignal: newestSignal };
+          pushToast({ message: watchtowerSignalToastText(newestSignal.bearing) });
+        }
+      }
+
+      const {
+        scouts: wanderingScouts,
+        scoutedTiles,
+        clueAwarded: wanderingClueAwarded,
+      } = advanceWanderingScouts(
         current.tweaks,
         wanderingScoutsAfterBuild,
         scoutedTilesAfterSkiffs,
         current.game.world.seed,
         resolveWorldGridSize(current.game.world, current.tweaks),
         elapsedSeconds,
+        {
+          signal: labWorking.watchtowerSignal ?? null,
+          base: territoryAfterRelocation.base,
+          cluesCollected: labWorking.cluesCollected,
+        },
       );
+      if (wanderingClueAwarded) {
+        labWorking = {
+          ...labWorking,
+          cluesCollected: labWorking.cluesCollected + 1,
+          watchtowerSignal: null,
+        };
+        const clueText = labClueText(labWorking.cluesCollected, territoryAfterRelocation.base, labWorking.coord);
+        pushToast({
+          message: `New lab clue (${labWorking.cluesCollected}/${current.tweaks.lab_clues.total_clues}): ${clueText}`,
+        });
+      }
 
       // Storage-level upgrade timers — same virtual-clock-threshold pattern,
       // but keyed by resource (data/storageUpgrades.ts) rather than a single
@@ -964,6 +1042,30 @@ export default function App() {
       const towersAfterCapture = markCapturedStructuresDamaged(towers, capturedTiles);
       const wallsAfterCapture = markCapturedStructuresDamaged(walls, capturedTiles);
       const barracksListAfterCapture = markCapturedStructuresDamaged(barracksList, capturedTiles);
+
+      // Watchtower early-warning (#38): toast once when a horde first enters
+      // any active tower's combat range; clear when it leaves so re-entry alerts again.
+      {
+        const inRangeIds: string[] = [];
+        for (const horde of hordes) {
+          const tile = horde.path[horde.pathIndex];
+          if (!tile) continue;
+          if (towersInRange(current.tweaks, towersAfterCapture, tile).length > 0) {
+            inRangeIds.push(horde.id);
+          }
+        }
+        const { nextAlerted, newlyAlertedIds } = reconcileHordeWatchtowerAlerts(inRangeIds, hordeAlertedIdsRef.current);
+        hordeAlertedIdsRef.current = nextAlerted;
+        for (const id of newlyAlertedIds) {
+          const horde = hordes.find((h) => h.id === id);
+          const tile = horde?.path[horde.pathIndex];
+          pushToast({
+            icon: <Skull size={NOTIFICATION_ICON_SIZE} />,
+            coord: tile,
+            message: "Watchtower alert — horde approaching",
+          });
+        }
+      }
 
       // A garrison on a captured tile is wiped outright (no luck, same as
       // any other committed force on a loss) — its militia are actually
@@ -1127,7 +1229,7 @@ export default function App() {
       // Guaranteed clue on every den->outpost conversion (DESIGN.md §13),
       // capped at the fixed total — bumped inside the "converted" branch
       // below alongside the den's own resolution.
-      let labAfterClues: LabRecord = current.game.lab;
+      let labAfterClues: LabRecord = labWorking;
 
       const nextDenAssaults: DenAssaultRecord[] = [];
 
@@ -1678,6 +1780,133 @@ export default function App() {
     const next = { status: "ready" as const, tweaks, profileSlug, profiles, recentSeeds, game: undefined };
     bootRef.current = next;
     setBoot(next);
+  }
+
+  function handleSaveToFile() {
+    const current = bootRef.current;
+    if (current.status !== "ready" || !current.game) return;
+    const save = buildSaveFile(current.game, current.profileSlug);
+    downloadSaveFile(save);
+  }
+
+  async function applyImportedSave(
+    save: SaveFileV1,
+    bootMeta: { profiles: ProfileEntry[]; recentSeeds: number[] },
+  ): Promise<void> {
+    await writeSaveFileToDb(save);
+    const stored: StoredGameKeys = keysToStoredGame(save.keys, save.profileSlug);
+    const profileSlug = stored.profileSlug ?? save.profileSlug ?? DEFAULT_PROFILE_SLUG;
+
+    let tweaks: Tweaks;
+    try {
+      tweaks = await loadProfile(profileSlug);
+    } catch {
+      tweaks = await loadProfile(DEFAULT_PROFILE_SLUG);
+    }
+
+    if (
+      !stored.player ||
+      !stored.world ||
+      !stored.territory ||
+      !stored.resources ||
+      !stored.clock ||
+      !stored.storageLevels
+    ) {
+      throw new Error("Imported save is incomplete after write.");
+    }
+
+    initAssetConfig(profileSlug);
+    resetTextureCache();
+    window.history.replaceState(null, "", `/${profileSlug}`);
+
+    const game = buildGameState(tweaks, {
+      player: stored.player as Player,
+      world: stored.world as WorldRecord,
+      territory: stored.territory as TerritoryRecord,
+      base: stored.base as BaseRecord | undefined,
+      resources: stored.resources as ResourceAmounts,
+      clock: stored.clock as ClockRecord,
+      extractionTiles: stored.extractionTiles as ExtractionTile[] | undefined,
+      pathTiles: stored.pathTiles as PathTile[] | undefined,
+      towers: stored.towers as Tower[] | undefined,
+      walls: stored.walls as Wall[] | undefined,
+      barracksList: stored.barracksList as Barracks[] | undefined,
+      units: stored.units as UnitsRecord | undefined,
+      garrisons: stored.garrisons as GarrisonsRecord | undefined,
+      scoutedTiles: stored.scoutedTiles as ScoutedTiles | undefined,
+      storageLevels: stored.storageLevels as StorageLevels,
+      storageUpgrades: stored.storageUpgrades as StorageUpgradesRecord | undefined,
+      noise: stored.noise as NoiseRecord | undefined,
+      dens: stored.dens as DensRecord | undefined,
+      hordes: stored.hordes as HordesRecord | undefined,
+      expeditions: stored.expeditions as ExpeditionsRecord | undefined,
+      gameStatus: stored.gameStatus as GameStatusRecord | undefined,
+      docks: stored.docks as DocksRecord | undefined,
+      scoutSkiffs: stored.scoutSkiffs as ScoutSkiffsRecord | undefined,
+      wanderingScouts: stored.wanderingScouts as WanderingScoutsRecord | undefined,
+      denAssaults: stored.denAssaults as DenAssaultsRecord | undefined,
+      outposts: stored.outposts as OutpostsRecord | undefined,
+      garrisonRecalls: stored.garrisonRecalls as GarrisonRecallsRecord | undefined,
+      lab: stored.lab as LabRecord | undefined,
+      labAssaults: stored.labAssaults as LabAssaultsRecord | undefined,
+      research: stored.research as ResearchRecord | undefined,
+      tombstones: stored.tombstones as TombstonesRecord | undefined,
+    });
+
+    const recentSeeds = await getRecentSeeds();
+    setSpeedMultiplier(1);
+    const next = {
+      status: "ready" as const,
+      tweaks,
+      profileSlug,
+      profiles: bootMeta.profiles,
+      recentSeeds: recentSeeds.length > 0 ? recentSeeds : bootMeta.recentSeeds,
+      game,
+    };
+    bootRef.current = next;
+    setBoot(next);
+  }
+
+  async function handleLoadFromFile(options?: { confirmReplace?: boolean }) {
+    const current = bootRef.current;
+    if (current.status !== "ready" && current.status !== "continuePrompt") return;
+
+    const confirmReplace =
+      options?.confirmReplace ??
+      (current.status === "continuePrompt" || (current.status === "ready" && current.game != null));
+
+    if (
+      confirmReplace &&
+      !window.confirm("Load this save file? It will replace the game currently stored in this browser.")
+    ) {
+      return;
+    }
+
+    const file = await pickSaveFile();
+    if (!file) return;
+
+    let raw: unknown;
+    try {
+      raw = await readJsonFromFile(file);
+    } catch {
+      window.alert("That file isn't valid JSON.");
+      return;
+    }
+
+    const parsed = parseSaveFile(raw);
+    if (!parsed.ok) {
+      window.alert(parsed.reason);
+      return;
+    }
+
+    try {
+      await applyImportedSave(parsed.save, {
+        profiles: current.profiles,
+        recentSeeds: current.recentSeeds,
+      });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    }
   }
 
   /** Same player AND same world seed — resets progress but replays the identical map, unlike handleStartNewSeed. Reachable from Settings (inline) and from the New Game dialog on GameOverScreen / WinScreen. */
@@ -3813,6 +4042,9 @@ export default function App() {
         profileName={profileDisplayName(boot.profiles, boot.profileSlug)}
         onContinue={handleContinueGame}
         onStartNew={handleDeclineContinue}
+        onLoadFromFile={() => {
+          void handleLoadFromFile({ confirmReplace: true });
+        }}
       />
     );
   }
@@ -3929,6 +4161,10 @@ export default function App() {
       onReplayCurrent={handleReplayCurrentGame}
       onStartNewSeed={handleStartNewSeed}
       onNewPlayer={handleNewPlayer}
+      onSaveToFile={handleSaveToFile}
+      onLoadFromFile={() => {
+        void handleLoadFromFile({ confirmReplace: true });
+      }}
     />
   ) : boot.status === "ready" ? (
     <OnboardingScreen
@@ -3936,6 +4172,9 @@ export default function App() {
       initialProfileSlug={boot.profileSlug}
       recentSeeds={boot.recentSeeds}
       onCreated={handlePlayerCreated}
+      onLoadFromFile={() => {
+        void handleLoadFromFile({ confirmReplace: false });
+      }}
     />
   ) : null;
 }

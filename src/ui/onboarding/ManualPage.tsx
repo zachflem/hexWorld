@@ -6,6 +6,8 @@ export function ManualPage({
   children,
   showBack,
   onBack,
+  leftLabel,
+  onLeft,
   primaryLabel,
   onPrimary,
   primaryDisabled,
@@ -18,6 +20,9 @@ export function ManualPage({
   children: ReactNode;
   showBack: boolean;
   onBack: () => void;
+  /** Optional secondary action in the left footer (e.g. Load from file on cover). */
+  leftLabel?: string;
+  onLeft?: () => void;
   primaryLabel: string;
   onPrimary: () => void;
   primaryDisabled?: boolean;
@@ -59,6 +64,11 @@ export function ManualPage({
           {showBack ? (
             <button type="button" className="onboarding-manual__btn" onClick={onBack}>
               ← Back
+            </button>
+          ) : null}
+          {!showBack && leftLabel && onLeft ? (
+            <button type="button" className="onboarding-manual__btn" onClick={onLeft}>
+              {leftLabel}
             </button>
           ) : null}
         </div>

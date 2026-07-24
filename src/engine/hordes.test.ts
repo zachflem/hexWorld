@@ -25,6 +25,7 @@ import {
   resolveGarrisonAutoAttacks,
   resolveHordeAttack,
   resolveHordeTileFight,
+  reconcileHordeWatchtowerAlerts,
   type HordeHub,
 } from "./hordes";
 import { seededRandom } from "./noise";
@@ -1078,5 +1079,22 @@ describe("hordeStructureCaptureEvents", () => {
   it("skips already-damaged structures", () => {
     const tower = { coord: { q: 0, r: 0 }, damaged: true, upgrade: null };
     expect(hordeStructureCaptureEvents([{ q: 0, r: 0 }], [], [], [tower], [], [])).toHaveLength(0);
+  });
+});
+
+describe("reconcileHordeWatchtowerAlerts", () => {
+  it("alerts only on first entry, then again after leave and re-enter", () => {
+    const first = reconcileHordeWatchtowerAlerts(["h1"], new Set());
+    expect(first.newlyAlertedIds).toEqual(["h1"]);
+    expect([...first.nextAlerted]).toEqual(["h1"]);
+
+    const still = reconcileHordeWatchtowerAlerts(["h1"], first.nextAlerted);
+    expect(still.newlyAlertedIds).toEqual([]);
+
+    const left = reconcileHordeWatchtowerAlerts([], still.nextAlerted);
+    expect([...left.nextAlerted]).toEqual([]);
+
+    const reenter = reconcileHordeWatchtowerAlerts(["h1"], left.nextAlerted);
+    expect(reenter.newlyAlertedIds).toEqual(["h1"]);
   });
 });
