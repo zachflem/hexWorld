@@ -1,6 +1,7 @@
 import type { TerrainType } from "../engine/terrain";
 import type { ResourceType } from "../data/resources";
 import { assetUrlCandidates, type AssetCategory } from "./assetPaths";
+import { structureAssetUrlCandidates } from "./structureSprites";
 
 type TextureKey = string;
 
@@ -62,7 +63,21 @@ export function getResourceTexture(type: ResourceType): HTMLImageElement | null 
  * profiles/{slug}/assets/structures/ (e.g. "tower" -> tower.png).
  */
 export function getStructureIconTexture(name: string): HTMLImageElement | null {
-  return loadCategory("structures", `${name}-icon`, `${name}.png`);
+  return getStructureIconTextureCandidates([name]);
+}
+
+/**
+ * Try structure sprite names in order (e.g. ["tower-2", "tower"]), each
+ * through the profile→default URL chain. First existing file wins; missing
+ * levelled art falls back to the unlevelled pack asset (Milestone 24 / #P13).
+ */
+export function getStructureIconTextureCandidates(names: string[]): HTMLImageElement | null {
+  if (names.length === 0) return null;
+  if (names.length === 1) {
+    return loadCategory("structures", `${names[0]}-icon`, `${names[0]}.png`);
+  }
+  const cacheKey = `${names.join("|")}-icon`;
+  return loadWithFallbacks(`structures/${cacheKey}`, structureAssetUrlCandidates(names, assetUrlCandidates));
 }
 
 /**

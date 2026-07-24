@@ -207,7 +207,7 @@ Replace passive **steel extraction tiles** with a logistics loop (see [ScrapperE
 
 ### Per-level structure sprites (#P13)
 
-Distinct map (and UI) art per upgrade level/tier for structures that today share one sprite — extraction small→mid→large, towers L1–4, barracks L1–4, base levels, docks/boats where it reads, etc. Walls and paths already ship tier sprites; extend that pattern with missing-file fallback to the unlevelled/default asset. **Refs:** [DESIGN.md §17](DESIGN.md), [TWEAKS.md § Difficulty profiles](TWEAKS.md), [`src/render/assetPaths.ts`](../src/render/assetPaths.ts), [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx), Milestone 23. **Next step:** naming convention + which structures get unique art vs shared fallback; then promote to milestone when asset set is ready.
+**Status:** ✅ Code shipped (Milestone 24). Naming + level/tier-aware lookup with missing-file fallback to unlevelled defaults. Art drop-in under `profiles/*/assets/structures/` is content authoring (no further code). **Refs:** [Milestone24.md](Milestone24.md), [#67](https://github.com/zachflem/hexWorld/issues/67), [`src/render/structureSprites.ts`](../src/render/structureSprites.ts).
 
 ---
 
@@ -238,7 +238,7 @@ Much of original scope superseded by Milestone 20 (hex-ring menu, HUD chips, tex
 - ❌ Watchtower intel/alert role (separate from combat range) — see [#P3](#watchtower-intel--alerts-p3)
 - ❌ PWA manifest `screenshots` for rich install UI — see [#P7](#pwa-install-screenshots-p7)
 
-*Related art tracks (not M16 scope):* [#P13](#per-level-structure-sprites-p13); terrain pack swap shipped as [#P12](#terrain-art-replacement-p12).
+*Related art tracks (not M16 scope):* [#P13](#per-level-structure-sprites-p13) code shipped (M24); terrain pack swap shipped as [#P12](#terrain-art-replacement-p12).
 
 **Testable outcome:** first-time player understands state and options without external explanation.
 
@@ -258,7 +258,7 @@ Much of original scope superseded by Milestone 20 (hex-ring menu, HUD chips, tex
 ### Completed milestones
 
 <details>
-<summary><strong>Completed milestones (M0–M23, oldest → newest)</strong></summary>
+<summary><strong>Completed milestones (M0–M24, oldest → newest)</strong></summary>
 
 <details>
 <summary><strong>Milestone 0 — Project Scaffold — ✅ Complete</strong></summary>
@@ -453,7 +453,18 @@ URL slugs, bundled `public/profiles/{slug}/`, partial sprite overrides with defa
 
 **Testable outcome:** `/hard` loads hard profile; continue prompt on reload; `profiles/index.json` lists difficulties.
 
-*Follow-ons (not in M23 scope):* per-level structure sprites [#P13](#per-level-structure-sprites-p13). Terrain art replacement shipped as [#P12](#terrain-art-replacement-p12).
+*Follow-ons:* per-level structure sprites [#P13](#per-level-structure-sprites-p13) shipped as Milestone 24 (code; art drop-in). Terrain art replacement shipped as [#P12](#terrain-art-replacement-p12).
+
+</details>
+
+<details>
+<summary><strong>Milestone 24 — Per-level structure sprites — ✅ Complete (code)</strong></summary>
+
+Level/tier-aware structure sprite resolution (`tower-N`, `barracks-N`, `base-N`, `extraction-{tier}`, `dock-boat`) with profile→default and variant→unlevelled fallback. Resolves proposed **#P13**. No new PNGs required — drop art into `structures/` when ready.
+
+**Testable outcome:** missing levelled files fall back to unlevelled sprites; present levelled files are used on map and in UI.
+
+**Detail file:** [Milestone24.md](Milestone24.md). **GitHub:** [#67](https://github.com/zachflem/hexWorld/issues/67).
 
 </details>
 

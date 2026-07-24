@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { axialDistance, axialEquals, axialKey, type Axial } from "../engine/hexCoords";
 import { isBuildableLand, isTransitionTile, terrainAt } from "../engine/terrain";
@@ -106,7 +106,13 @@ import {
 import { availableCrossBowSnipers, availableJunkyardKnights, availableMilitia, garrisonAt } from "../engine/garrisons";
 import type { Player } from "../data/player";
 import type { ResourceAmounts, ResourceType } from "../data/resources";
-import { resolveAssetPath } from "../render/assetPaths";
+import { assetUrlCandidates, resolveAssetPath } from "../render/assetPaths";
+import {
+  dockSpriteCandidates,
+  extractionTierCandidates,
+  structureAssetUrlCandidates,
+  structureLevelCandidates,
+} from "../render/structureSprites";
 import type { TerritoryRecord } from "../data/territory";
 import type { BaseRecord } from "../data/base";
 import type { ExtractionTile } from "../data/extractionTiles";
@@ -215,17 +221,52 @@ import {
 
 const RESOURCE_ORDER: ResourceType[] = ["food", "wood", "stone", "steel", "power"];
 
-/** Reuses the same painted sprites HexCanvas draws on the map itself — a ring hex for "build/upgrade a tower" shows the actual tower icon, not a generic tool glyph. Sized well above the lucide icons' 18px so the sprite reads clearly inside a ring hex. */
-function structureIcon(name: string, size = 45) {
+/**
+ * Reuses the same painted sprites HexCanvas draws on the map — ring-hex actions
+ * show the real structure icon. Tries name candidates in order (levelled →
+ * unlevelled) across the profile→default URL chain (Milestone 24 / #P13).
+ */
+function StructureIcon({
+  names,
+  size = 45,
+  fallback = null,
+}: {
+  names: string | string[];
+  size?: number;
+  fallback?: ReactNode;
+}) {
+  const nameList = Array.isArray(names) ? names : [names];
+  const candidateKey = nameList.join("|");
+  const candidates = structureAssetUrlCandidates(nameList, assetUrlCandidates);
+  const [index, setIndex] = useState(0);
+  const [exhausted, setExhausted] = useState(false);
+
+  useEffect(() => {
+    setIndex(0);
+    setExhausted(false);
+  }, [candidateKey]);
+
+  if (exhausted || candidates.length === 0) return <>{fallback}</>;
+  const src = candidates[index];
+  if (!src) return <>{fallback}</>;
+
   return (
     <img
-      src={resolveAssetPath("structures", `${name}.png`)}
+      src={src}
       width={size}
       height={size}
       alt=""
       style={{ objectFit: "contain" }}
+      onError={() => {
+        if (index + 1 < candidates.length) setIndex(index + 1);
+        else setExhausted(true);
+      }}
     />
   );
+}
+
+function structureIcon(names: string | string[], size = 45, fallback?: ReactNode) {
+  return <StructureIcon names={names} size={size} fallback={fallback} />;
 }
 /** Small hand-drawn marker icons (profiles/default/assets/markers/) instead of the full-size in-world resource sprites — those read fine painted on the map itself but turn into an indistinct blob at ring-hex/HUD-chip size. */
 function resourceIcon(resource: ResourceType, size = 45) {
@@ -1740,7 +1781,7 @@ export function GameScreen({
       if (baseUpgrade) {
         actions.push({
           key: "base-upgrade",
-          icon: structureIcon("base"),
+          icon: structureIcon(structureLevelCandidates("base", baseUpgrade.targetLevel)),
           title: `Upgrade base to L${baseUpgrade.targetLevel}`,
           detail: formatCost(baseUpgrade.cost),
           disabled: !baseUpgrade.affordable,
@@ -1810,7 +1851,7 @@ export function GameScreen({
       if (fishingBoat) {
         actions.push({
           key: "fishing-boat",
-          icon: <Anchor size={18} />,
+          icon: structureIcon(dockSpriteCandidates(true), 45, <Anchor size={18} />),
           title: "Build fishing boat",
           detail: formatCost(fishingBoat.cost),
           disabled: !fishingBoat.affordable,
@@ -1911,7 +1952,7 @@ export function GameScreen({
         if (upgrade) {
           actions.push({
             key: "tower-upgrade",
-            icon: structureIcon("tower"),
+            icon: structureIcon(structureLevelCandidates("tower", upgrade.targetLevel)),
             title: `Upgrade to L${upgrade.targetLevel}`,
             detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
             disabled: !upgrade.affordable,
@@ -1988,7 +2029,7 @@ export function GameScreen({
         if (upgrade) {
           actions.push({
             key: "barracks-upgrade",
-            icon: structureIcon("barracks"),
+            icon: structureIcon(structureLevelCandidates("barracks", upgrade.targetLevel)),
             title: `Upgrade to L${upgrade.targetLevel}`,
             detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
             disabled: !upgrade.affordable,
@@ -2131,7 +2172,7 @@ export function GameScreen({
       const dock = dockBuildOptionFor();
       actions.push({
         key: "build-dock",
-        icon: structureIcon("dock"),
+        icon: structureIcon(dockSpriteCandidates(false)),
         title: "Build dock",
         detail: formatCost(dock.cost),
         disabled: !dock.affordable,
@@ -2169,7 +2210,7 @@ export function GameScreen({
       const tower = towerBuildOptionFor();
       militarySubActions.push({
         key: "build-tower",
-        icon: structureIcon("tower"),
+        icon: structureIcon(structureLevelCandidates("tower", 1)),
         title: "Build tower",
         detail: `${formatCost(tower.cost)}, ${tower.durationMinutes}m`,
         disabled: !tower.affordable,
@@ -2187,7 +2228,7 @@ export function GameScreen({
       const barracks = barracksBuildOptionFor();
       militarySubActions.push({
         key: "build-barracks",
-        icon: structureIcon("barracks"),
+        icon: structureIcon(structureLevelCandidates("barracks", 1)),
         title: "Build barracks",
         detail: `${formatCost(barracks.cost)}, ${barracks.durationMinutes}m`,
         disabled: !barracks.affordable,
@@ -2713,7 +2754,7 @@ export function GameScreen({
           : "Operational";
       const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
       return (
-        <HoverPanel icon={structureIcon("base", 28)} title={`Base — L${base.level}`} status={status}>
+        <HoverPanel icon={structureIcon(structureLevelCandidates("base", base.level), 28)} title={`Base — L${base.level}`} status={status}>
           <span>HP: {Math.floor(base.currentHp)}/{Math.floor(maxHp)}</span>
           <span>Noise cap: {noiseCap(tweaks, base.level)}db</span>
         </HoverPanel>
@@ -2767,7 +2808,11 @@ export function GameScreen({
             : "Operational";
       const connected = findResourceTileConnection(extractionTiles, pathTiles, territory.base, coord) !== null;
       return (
-        <HoverPanel icon={resourceIcon(tile.resource, 28)} title={`${capitalize(tile.resource)} — ${tile.tier}`} status={status}>
+        <HoverPanel
+          icon={structureIcon(extractionTierCandidates(tile.resource, tile.tier), 28, resourceIcon(tile.resource, 28))}
+          title={`${capitalize(tile.resource)} — ${tile.tier}`}
+          status={status}
+        >
           {isStructureActive(tile) && (
             <span>
               Yield: {yieldPerSecond(tweaks, tile, world.seed).toFixed(1)} {tile.resource}/sec
@@ -2809,7 +2854,7 @@ export function GameScreen({
             ? `Upgrading to L${tower.upgrade.targetLevel}…`
             : "Operational";
       return (
-        <HoverPanel icon={structureIcon("tower", 28)} title={`Tower — L${tower.level}`} status={status}>
+        <HoverPanel icon={structureIcon(structureLevelCandidates("tower", tower.level), 28)} title={`Tower — L${tower.level}`} status={status}>
           {isStructureActive(tower) && (
             <>
               <span>Range: {towerRange(tweaks, tower.level)} tiles</span>
@@ -2856,14 +2901,24 @@ export function GameScreen({
           : barracks.upgrade
             ? `Upgrading to L${barracks.upgrade.targetLevel}…`
             : "Operational";
-      return <HoverPanel icon={structureIcon("barracks", 28)} title={`Barracks — L${barracks.level}`} status={status} />;
+      return (
+        <HoverPanel
+          icon={structureIcon(structureLevelCandidates("barracks", barracks.level), 28)}
+          title={`Barracks — L${barracks.level}`}
+          status={status}
+        />
+      );
     }
 
     const dock = dockAt(coord);
     if (dock) {
       const status = dock.buildStartedAt ? "Under construction" : "Operational";
       return (
-        <HoverPanel icon={structureIcon("dock", 28)} title={dock.fishingBoat ? "Dock — with fishing boat" : "Dock"} status={status}>
+        <HoverPanel
+          icon={structureIcon(dockSpriteCandidates(Boolean(dock.fishingBoat)), 28)}
+          title={dock.fishingBoat ? "Dock — with fishing boat" : "Dock"}
+          status={status}
+        >
           {!dock.buildStartedAt && <span>Yield: {dockYieldPerSecond(tweaks, dock).toFixed(1)} food/sec</span>}
           <span>Stockpile: {Math.floor(dock.stockpile)}</span>
         </HoverPanel>
