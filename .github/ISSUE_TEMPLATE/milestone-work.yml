@@ -1,0 +1,44 @@
+name: Milestone work
+description: Work item attached to a GitHub Milestone
+title: "[M?] "
+labels: []
+body:
+  - type: input
+    id: milestone_num
+    attributes:
+      label: Milestone number
+      description: e.g. 15
+      placeholder: "15"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details / checklist
+      description: Scope and remaining work
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance / testable outcome
+    validations:
+      required: true
+  - type: textarea
+    id: refs
+    attributes:
+      label: Refs
+      description: Include context/MilestoneN.md when a deep plan exists
+      value: |
+        - `context/DESIGN.md`
+        - `context/MilestoneN.md` (if applicable)
+  - type: textarea
+    id: status_notes
+    attributes:
+      label: Status notes

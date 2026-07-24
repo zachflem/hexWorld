@@ -1,8 +1,9 @@
 # Milestone 22 — Onboarding Overhaul: The Field Manual
 
-**Status:** ✅ Complete
+**Status:** ✅ Complete  
+**GitHub:** Milestone “M22 — Onboarding: Field Manual” (see repo Milestones)
 
-Implementation plan and design reference for the onboarding rework. See `ROADMAP.md` for the one-line milestone entry; this file holds the detail.
+Implementation plan and design reference for the onboarding rework. Status lives on GitHub; this file holds the detail.
 
 ## Context
 
@@ -83,9 +84,9 @@ Anchor to `index.css`'s existing `@media (prefers-color-scheme: dark)` pattern, 
 
 **Modified:**
 - `src/App.tsx` — import path `./ui/onboarding/OnboardingScreen`; boot flow now shows `ContinueGamePrompt` when a complete save exists (Milestone 23), then onboarding when starting fresh. `onCreated` carries `{ player, seed?, profileSlug }`.
-- `design/ROADMAP.md` — Milestone 22 marked complete.
-- `design/DESIGN.md` §4 — field-manual onboarding flow.
-- `design/PLAYER_GUIDE.md` — getting-started section updated for the manual flow.
+- GitHub Milestone M22 / retired ROADMAP entry — marked complete.
+- `context/DESIGN.md` §4 — field-manual onboarding flow.
+- `context/PLAYER_GUIDE.md` — getting-started section updated for the manual flow.
 
 **Removed:** old `src/ui/OnboardingScreen.tsx` (superseded by the subfolder version, not left orphaned).
 

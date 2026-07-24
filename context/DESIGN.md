@@ -48,7 +48,7 @@ No login, no email, no account. On arrival, the player finds a short **field man
 
 An existing local save shows a **continue-or-new-game** prompt (styled as a notebook page) before onboarding — **Yes!** resumes, **No. Start a New Game** clears the save and opens the manual. Choosing **Start as a new player** from the new-game dialog shows the full manual again.
 
-**Difficulty profiles:** selectable in advanced registration options and via URL `/{slug}` on the game domain (`play.{domain}`). Each profile loads `public/profiles/{slug}/tweaks.jsonc`; optional partial sprites under `profiles/{slug}/assets/` fall back to `profiles/default/assets/`. See `design/TWEAKS.md` § Profiles.
+**Difficulty profiles:** selectable in advanced registration options and via URL `/{slug}` on the game domain (`play.{domain}`). Each profile loads `public/profiles/{slug}/tweaks.jsonc`; optional partial sprites under `profiles/{slug}/assets/` fall back to `profiles/default/assets/`. See `context/TWEAKS.md` § Profiles.
 
 Progress persists locally in IndexedDB automatically during play, so closing the tab mid-session doesn't lose anything. For anything beyond that — moving a game to another device, keeping a backup, running separate playthroughs side by side — the player explicitly **saves to a file** (see §17).
 
@@ -221,4 +221,4 @@ Both wandering units use the same movement rule: step to a random adjacent tile 
 - **Procedural seed** determines the entire map at generation time — same seed reproduces the same world.
 - **Tweaks-file driven balance** — nearly every numeric value lives in per-profile `tweaks.jsonc` files under `public/profiles/{slug}/`, loaded from the URL slug or onboarding selection, validated at boot with Zod (`src/data/tweaksSchema.ts`).
 - **Difficulty profiles** — `public/profiles/index.json` registers shipped profiles (`default`, `hard`, …). Each folder contains `tweaks.jsonc` plus optional `assets/` (partial sprite overrides). Default art lives in `public/profiles/default/assets/`. Asset resolution: active profile → default profile → flat-colour fallback (`src/render/assetPaths.ts`). `profileSlug` is persisted in IndexedDB with the save.
-- **Domain split (planned deploy)** — marketing/wiki at `hexworld.seezed.net`; game PWA at `play.{domain}` with `/{slug}` deep links. Git workflow: personal branches `goblin` / `krunchee` → `dev` → `main` (`design/WORKFLOW.md`).
+- **Domain split (planned deploy)** — marketing/wiki at `hexworld.seezed.net`; game PWA at `play.{domain}` with `/{slug}` deep links. Git workflow: personal branches `goblin` / `krunchee` → `dev` → `main` (`context/WORKFLOW.md`).

@@ -1,0 +1,40 @@
+name: Design question
+description: Needs a design decision before implementation
+title: "[DESIGN] "
+labels: ["design-question"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: The decision that needs to be made
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details / options
+      description: Problem statement; options if any; linked proposals
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance / testable outcome
+      description: What a resolved decision looks like (may be a written choice, not code)
+    validations:
+      required: true
+  - type: textarea
+    id: refs
+    attributes:
+      label: Refs
+      value: |
+        - `context/DESIGN.md`
+  - type: textarea
+    id: legacy
+    attributes:
+      label: Legacy IDs
+  - type: textarea
+    id: status_notes
+    attributes:
+      label: Status notes
