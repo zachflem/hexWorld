@@ -32,8 +32,8 @@ public/profiles/
 
 **Asset tracks** (pack layout stays next to profiles; status lives in ROADMAP):
 
-- **Per-level structure sprites ([#P13](ROADMAP.md#per-level-structure-sprites-p13))** — today most `structures/` files are one icon per building type (`tower.png`, `barracks.png`, …). Walls and paths already use tier filenames (`wall-small|medium|large`, `path-track|stone|highway`). The planned track extends that: one file (or named variant) per upgrade level for extraction tiers, tower/barracks/base levels, and similar, with missing levels falling back to the unlevelled/default sprite so partial packs stay valid.
-- **Terrain art ([#P12](ROADMAP.md#terrain-art-replacement-p12) ✅)** — `terrain/` ships the post-itch.io replacement pack (see [attribution.md](attribution.md)). Same filenames; profile overrides still win. Future flat-hex swaps: convert with `scripts/convert-flat-terrain-hex.py` before dropping into `terrain/` (see [AGENTS.md](../AGENTS.md)).
+- **Per-level structure sprites (legacy #P13 → [issue #67](https://github.com/zachflem/hexWorld/issues/67))** — today most `structures/` files are one icon per building type (`tower.png`, `barracks.png`, …). Walls and paths already use tier filenames (`wall-small|medium|large`, `path-track|stone|highway`). The planned track extends that: one file (or named variant) per upgrade level for extraction tiers, tower/barracks/base levels, and similar, with missing levels falling back to the unlevelled/default sprite so partial packs stay valid.
+- **Terrain art (legacy #P12 ✅ → [issue #66](https://github.com/zachflem/hexWorld/issues/66))** — `terrain/` ships the post-itch.io replacement pack (see [attribution.md](attribution.md)). Same filenames; profile overrides still win. Future flat-hex swaps: convert with `scripts/convert-flat-terrain-hex.py` before dropping into `terrain/` (see [AGENTS.md](../AGENTS.md)).
 
 ---
 

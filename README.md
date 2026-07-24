@@ -29,8 +29,10 @@ npm run dev
 
 Other useful scripts: `npm run build`, `npm test`, `npm run lint`.
 
-## Docs
+## Docs & tracking
 
-Design notes, the full mechanics reference, the build roadmap (backlog + milestones), and the player guide all live in [`/design`](./design). The roadmap leads with playtesting feedback and links to agent detail files (`design/MilestoneN.md`) for complex features.
+Deep design notes, mechanics reference, tweaks, and the player guide live in [`/context`](./context).  
+**Bugs, proposals, and milestones** are tracked on GitHub Issues and Project [hexWorld](https://github.com/users/zachflem/projects/1) — not in markdown backlogs.
 
-Git branching (personal `goblin` / `krunchee` branches → `dev` → `main`) is documented in [`design/WORKFLOW.md`](./design/WORKFLOW.md).
+Git branching and the Issues workflow: [`context/WORKFLOW.md`](./context/WORKFLOW.md).  
+Agent/issue tooling: private [`zachflem/dev-tools`](https://github.com/zachflem/dev-tools) (`/issue` skill).

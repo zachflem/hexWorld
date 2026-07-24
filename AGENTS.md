@@ -16,19 +16,31 @@ Non-obvious notes:
 - The dev server binds to localhost only; it is not exposed on the network by default (would need `--host`).
 - Runtime game balance/tuning is loaded from per-profile `public/profiles/{slug}/tweaks.jsonc` (validated with Zod via `src/data/tweaksLoader.ts`), not from code — edit those files to change tuning.
 - Because saves live in IndexedDB, clearing browser site data resets game progress.
-- **Terrain PNGs are not drop-in flat hexes.** The canvas draws full-hex tile art via `drawHexTileTexture` / `drawHexTileOverlay` in `src/render/tileTextures.ts`: each file is **256×384**, with the bottom **256×256** as an isometric hex-prism footprint that must be opaque edge-to-edge under the shared mask, and the top **128px** reserved for optional upward bleed (peaks/treetops). New art arrives as a square flat pointy-top hex on a **transparent** background — dropping that straight into `public/profiles/*/assets/terrain/` leaves gaps between tiles. The default pack was swapped under ROADMAP [#P12](design/ROADMAP.md#terrain-art-replacement-p12); for future swaps, convert with:
+- **Terrain PNGs are not drop-in flat hexes.** The canvas draws full-hex tile art via `drawHexTileTexture` / `drawHexTileOverlay` in `src/render/tileTextures.ts`: each file is **256×384**, with the bottom **256×256** as an isometric hex-prism footprint that must be opaque edge-to-edge under the shared mask, and the top **128px** reserved for optional upward bleed (peaks/treetops). New art arrives as a square flat pointy-top hex on a **transparent** background — dropping that straight into `public/profiles/*/assets/terrain/` leaves gaps between tiles. The default pack was swapped under legacy #P12 (GitHub issue #66); for future swaps, convert with:
 
   ```bash
   python3 scripts/convert-flat-terrain-hex.py path/to/flat/*.png \
     -o public/profiles/default/assets/terrain/
   ```
 
-  Mask: `scripts/terrain-hex-footprint-mask.png`. Needs `pillow` + `numpy`. Hard-refresh the browser after replacing PNGs (asset cache). Update [design/attribution.md](design/attribution.md) when the source/license changes.
+  Mask: `scripts/terrain-hex-footprint-mask.png`. Needs `pillow` + `numpy`. Hard-refresh the browser after replacing PNGs (asset cache). Update [context/attribution.md](context/attribution.md) when the source/license changes.
 
-## Roadmap & workflow
+## Backlog & workflow (GitHub-first)
 
-- **What to work on:** [design/ROADMAP.md](design/ROADMAP.md) — start with `[URGENT]` items in **Bugs & testing feedback**, then incomplete milestones.
-- **Git branches:** [design/WORKFLOW.md](design/WORKFLOW.md) — ask the user which **personal branch** they use; merge finished work to **`dev`**.
-- **Implementation plans:** when a feature promotes to a Milestone (or you are commissioned to plan one), write structured detail to `design/MilestoneN.md` — schemas, file layouts, verification steps. Keep the ROADMAP milestone entry brief (checklist + testable outcome + link). See [design/Milestone22.md](design/Milestone22.md) for an example.
-- **Proposed features** in ROADMAP may have short descriptions only; do not expand them into full specs in ROADMAP — promote to a Milestone first.
-- **Documentation:** when shipping player-visible or mechanical changes, keep [design/DESIGN.md](design/DESIGN.md) and [design/PLAYER_GUIDE.md](design/PLAYER_GUIDE.md) in sync — see ROADMAP § Documentation sync. Balance changes → [design/TWEAKS.md](design/TWEAKS.md) + profile tweaks files.
+- **What to work on:** GitHub Issues + Project [hexWorld](https://github.com/users/zachflem/projects/1). Priority: `urgent` / `[URGENT]` titles → open milestone leftovers → `proposed`. Use `gh issue list` (never invent local backlog files).
+- **Do not edit** [`context/ROADMAP.retired.md`](context/ROADMAP.retired.md) — historical only.
+- **Git branches:** [context/WORKFLOW.md](context/WORKFLOW.md) — ask which **personal branch** the user uses; merge finished work to **`dev`**.
+- **Filing / updating issues:** install and use the prompted `/issue` skill from private [`zachflem/dev-tools`](https://github.com/zachflem/dev-tools):
+
+  ```bash
+  gh api repos/zachflem/dev-tools/contents/install.sh --jq .content | base64 -d | bash
+  ```
+
+  Interview the human, suggest refs from context, show a preview, and **only run `gh issue create` (or other state-changing `gh` commands) after explicit human approval**.
+
+- **gh scopes:** `repo` for Issues; for Projects run  
+  `gh auth refresh -h github.com -s project,read:project`  
+  if board commands fail.
+
+- **Implementation plans:** when a feature promotes to a Milestone (or you are commissioned to plan one), write structured detail to `context/MilestoneN.md` with a `GitHub:` link to the milestone/issue. Keep the GitHub issue checklist brief + link.
+- **Documentation:** when shipping player-visible or mechanical changes, keep [context/DESIGN.md](context/DESIGN.md) and [context/PLAYER_GUIDE.md](context/PLAYER_GUIDE.md) in sync — see [context/README.md](context/README.md). Balance changes → [context/TWEAKS.md](context/TWEAKS.md) + profile tweaks files.

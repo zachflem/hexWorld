@@ -1,0 +1,58 @@
+name: Bug
+description: Incorrect behavior, crash, or broken mechanic
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Prefer the prompted `/issue` skill from `zachflem/dev-tools` when filing with an agent.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences — what is wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details / repro
+      description: Steps to reproduce, expected vs actual, profile/seed, preview URL if relevant
+      value: |
+        **Steps:**
+        1.
+        2.
+
+        **Expected:**
+        **Actual:**
+        **Profile / seed:**
+        **Preview URL:**
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance / testable outcome
+      description: How do we know this is fixed?
+    validations:
+      required: true
+  - type: textarea
+    id: refs
+    attributes:
+      label: Refs
+      description: Paths under context/, src/, or related issues
+      value: |
+        - `context/`
+        - `src/`
+  - type: textarea
+    id: status_notes
+    attributes:
+      label: Status notes
+      description: Leave blank for new issues; agents/devs update as work proceeds
+  - type: checkboxes
+    id: urgent
+    attributes:
+      label: Urgency
+      options:
+        - label: Play is blocked or game state is misleading (also prefix title with [URGENT])

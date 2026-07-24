@@ -1,0 +1,35 @@
+name: UX
+description: Interaction / flow / usability
+title: "[UX] "
+labels: ["ux"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Current flow vs desired flow; player confusion; friction
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance / testable outcome
+    validations:
+      required: true
+  - type: textarea
+    id: refs
+    attributes:
+      label: Refs
+      value: |
+        - `context/PLAYER_GUIDE.md`
+        - `src/ui/`
+  - type: textarea
+    id: status_notes
+    attributes:
+      label: Status notes

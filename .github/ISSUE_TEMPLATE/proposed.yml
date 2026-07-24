@@ -1,0 +1,46 @@
+name: Proposed feature
+description: Direction agreed; not yet scheduled as a milestone
+title: "[PROPOSED] "
+labels: ["proposed"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Intent and player-facing goal
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Rough scope; keep structured implementation detail out — promote to a milestone + context/MilestoneN.md when ready
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance / testable outcome
+      description: What “done” would look like when scheduled
+    validations:
+      required: true
+  - type: textarea
+    id: next_step
+    attributes:
+      label: Next step
+      description: Design pass, promote to milestone, etc.
+  - type: textarea
+    id: refs
+    attributes:
+      label: Refs
+      value: |
+        - `context/DESIGN.md`
+  - type: textarea
+    id: legacy
+    attributes:
+      label: Legacy IDs
+      description: e.g. #P1 from retired ROADMAP (optional)
+  - type: textarea
+    id: status_notes
+    attributes:
+      label: Status notes
