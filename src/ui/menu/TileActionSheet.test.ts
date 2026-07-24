@@ -82,4 +82,25 @@ describe("deriveSheetTabs", () => {
     expect(tabs[0]?.items?.map((i) => i.key)).toEqual(["base-reinforce"]);
     expect(tabs[1]?.items?.map((i) => i.key)).toEqual(["base-repair"]);
   });
+
+  it("puts In progress ahead of Upgrades when a tile has active timers", () => {
+    const actions: SheetAction[] = [
+      leaf({
+        key: "tower-upgrade",
+        title: "Upgrade to L2",
+        upgradeAvailable: true,
+      }),
+      {
+        key: "in-progress",
+        icon: null,
+        title: "In progress",
+        subActions: [leaf({ key: "busy-tower-build", title: "Building tower", detail: "2m remaining" })],
+      },
+      leaf({ key: "demolish", title: "Demolish" }),
+    ];
+
+    const tabs = deriveSheetTabs(actions);
+    expect(tabs.map((t) => t.key)).toEqual(["in-progress", "upgrades", "actions"]);
+    expect(tabs[0]?.items?.map((i) => i.key)).toEqual(["busy-tower-build"]);
+  });
 });

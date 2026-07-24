@@ -97,8 +97,16 @@ export function deriveSheetTabs(actions: SheetAction[]): SheetTab[] {
 
   const tabs: SheetTab[] = [];
 
-  // Upgrades first so a clickable upgraded building opens on that tab by
-  // default (see defaultTabKey) and the tab strip leads with the right job.
+  // In-progress status first when present — the player opened this tile to
+  // see what's already running (#74). Prefer it over Upgrades for defaultTabKey.
+  const inProgressTab = categoryTabs.find((tab) => tab.key === "in-progress");
+  const otherCategoryTabs = categoryTabs.filter((tab) => tab.key !== "in-progress");
+  if (inProgressTab) {
+    tabs.push(inProgressTab);
+  }
+
+  // Upgrades next so a clickable upgraded building opens on that tab by
+  // default when nothing is in progress (see defaultTabKey).
   if (upgradeLeaves.length > 0) {
     tabs.push({
       key: "upgrades",
@@ -109,7 +117,7 @@ export function deriveSheetTabs(actions: SheetAction[]): SheetTab[] {
     });
   }
 
-  tabs.push(...categoryTabs);
+  tabs.push(...otherCategoryTabs);
 
   // Actions last among commit tabs — Collect / Garrison / Demolish / Repair
   // and one-off leaf commits. Build / Train categories stay ahead of it.
@@ -137,6 +145,10 @@ export function deriveSheetTabs(actions: SheetAction[]): SheetTab[] {
 
 function defaultTabKey(tabs: SheetTab[]): string | null {
   if (tabs.length === 0) return null;
+  // Busy work on this tile outranks upgrade highlights — the sheet should
+  // open on what's already happening (#74).
+  const inProgress = tabs.find((t) => t.key === "in-progress");
+  if (inProgress) return inProgress.key;
   // Prefer an affordable upgrade highlight when present; otherwise the first
   // tab (Upgrades if that group exists, else Build/Train/etc.).
   const withUpgrade = tabs.find((t) => t.upgradeAvailable);

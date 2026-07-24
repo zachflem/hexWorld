@@ -9,6 +9,7 @@ import type { GarrisonRecallsRecord } from "../../data/garrisonRecalls";
 import { CollapsibleNotificationRow, NOTIFICATION_ICON_SIZE } from "./CollapsibleNotificationRow";
 import { CoordLink, coordLinkStyle } from "./CoordLink";
 import { formatDuration } from "../format";
+import type { StructureProgressKind } from "../structureProgress";
 
 function TrayRow({
   rowKey,
@@ -82,6 +83,10 @@ export type NotificationCountdownRow = {
   icon: ReactNode;
   label: string;
   remainingMs: number;
+  /** Full timer length — used with remainingMs for map progress rings (#74). */
+  durationMs: number;
+  /** Job category — colors the map progress ring when this row has a coord. */
+  kind: StructureProgressKind;
   coord?: Axial;
   onRush?: () => void;
   onLabelClick?: () => void;

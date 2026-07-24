@@ -142,6 +142,8 @@ const DEN_COLOR = "#4a1a1a";
 const OUTPOST_COLOR = "#3a6b8a";
 /** Ring drawn around a den currently under siege (hold period) — same technique as TOWER_ACTIVE_RING_COLOR. */
 const SIEGE_RING_COLOR = "#ff6b35";
+/** Track for in-progress build/upgrade/repair rings on structure tiles (#74). Fill color comes from StructureProgressKind. */
+const STRUCTURE_PROGRESS_TRACK = "rgba(255, 255, 255, 0.22)";
 /** Deep danger red (playtesting feedback: green read as "safe," not a threat) — distinct from TOWER_COLOR's red so friend/foe stay visually distinguishable. */
 const HORDE_COLOR = "#b71c1c";
 const GARRISON_COLOR = "#2e7d32";
@@ -225,6 +227,15 @@ export const HexCanvas = forwardRef<
     upgradeAvailableKeys: Set<string>;
     /** Coord keys (axialKey) of owned, empty, buildable-land tiles where at least one structure type is currently affordable — tinted teal while build-mode (the hammer slot in the global hex cluster) is active. Empty set when build-mode is off. */
     buildModeEligibleKeys: Set<string>;
+    /**
+     * Per-tile build/upgrade/repair progress (0 = just started, approaching 1)
+     * for circular rings drawn on busy structures. Absent keys are idle.
+     * Rebuilt each tick from GameScreen countdown rows so the draw effect
+     * refreshes as the virtual clock advances (unlike `now`, which is only
+     * used for expedition interpolation today).
+     */
+    /** Per-tile progress ring data (progress 0..1 + fill color). Absent = idle. */
+    structureProgressByKey: Map<string, { progress: number; color: string }>;
     selected: Axial | null;
     playerColor: string;
     onTileClick?: (coord: Axial) => void;
@@ -270,6 +281,7 @@ export const HexCanvas = forwardRef<
     baseMaxHp,
     upgradeAvailableKeys,
     buildModeEligibleKeys,
+    structureProgressByKey,
     selected,
     playerColor,
     onTileClick,
@@ -634,6 +646,38 @@ export const HexCanvas = forwardRef<
         context.restore();
       };
 
+      // Circular fill for a structure-tied timer (build/upgrade/repair/…).
+      // Same radius band as the siege/active-tower rings so it frames the
+      // icon without fighting the bottom-centre level badge.
+      const drawProgressRing = (
+        screenCenter: { x: number; y: number },
+        entry: { progress: number; color: string },
+      ) => {
+        const fraction = Math.max(0, Math.min(1, entry.progress));
+        const radius = size * 0.58;
+        const lineWidth = Math.max(2, size * 0.12);
+        context.save();
+        context.lineWidth = lineWidth;
+        context.lineCap = "round";
+        context.beginPath();
+        context.arc(screenCenter.x, screenCenter.y, radius, 0, Math.PI * 2);
+        context.strokeStyle = STRUCTURE_PROGRESS_TRACK;
+        context.stroke();
+        if (fraction > 0) {
+          context.beginPath();
+          context.arc(
+            screenCenter.x,
+            screenCenter.y,
+            radius,
+            -Math.PI / 2,
+            -Math.PI / 2 + fraction * Math.PI * 2,
+          );
+          context.strokeStyle = entry.color;
+          context.stroke();
+        }
+        context.restore();
+      };
+
       // HP/durability edge bar (base, outpost, wall) — "at a glance" on the
       // map itself rather than requiring a click, red/orange/green banding
       // matching how players already read health bars in most games
@@ -825,6 +869,10 @@ export const HexCanvas = forwardRef<
               upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
             );
             drawHealthBar(screenCenter, baseCurrentHp, baseMaxHp, "top-center");
+            const baseProgress = structureProgressByKey.get(coordKey);
+            if (baseProgress != null && baseProgress.progress < 1) {
+              drawProgressRing(screenCenter, baseProgress);
+            }
           } else {
             const tower = towersByKey.get(axialKey(coord));
             const wall = wallsByKey.get(axialKey(coord));
@@ -1035,6 +1083,11 @@ export const HexCanvas = forwardRef<
                 ctx.textBaseline = "middle";
                 ctx.fillText("⛵", screenCenter.x, screenCenter.y);
               }
+            }
+
+            const structureProgress = structureProgressByKey.get(coordKey);
+            if (structureProgress != null && structureProgress.progress < 1) {
+              drawProgressRing(screenCenter, structureProgress);
             }
 
             // A horde-captured structure of any kind goes non-functional
@@ -1306,6 +1359,7 @@ export const HexCanvas = forwardRef<
     baseMaxHp,
     upgradeAvailableKeys,
     buildModeEligibleKeys,
+    structureProgressByKey,
     fogByKey,
     selected,
     playerColor,

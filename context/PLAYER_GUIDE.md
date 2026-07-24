@@ -205,6 +205,8 @@ When a row appears it stays **fully expanded for 5 seconds**, then the text/coun
 
 When several timers are running, collapsed icons stack in that column so you can see at a glance how much is in flight.
 
+On the map, any building with a timed job also shows a **circular progress ring** that fills as the timer runs — amber for builds, orange for upgrades, green for repairs, purple for training, blue for base relocation. Opening that tile’s sheet adds an **In progress** tab listing those jobs with remaining time — handy when you want the detail without hunting the notification tray.
+
 ---
 
 ## Quick tips
