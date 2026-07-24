@@ -17,10 +17,30 @@ export interface ToastRecord {
   detail?: ReactNode;
 }
 
-/** How long a collapsed toast lingers as an icon peek before removing itself. */
-const TOAST_PEEK_DISMISS_MS = 8000;
+/** Soft-wrap long toast copy near this length so it doesn't clip in the 320px tray. */
+export const TOAST_SOFT_WRAP_CHARS = 42;
 
-/** `onDismiss` must be a stable (`useCallback`'d) reference — passed into peek-dismiss timers. */
+/**
+ * Insert newlines at word boundaries near `maxChars` so long single-line
+ * toasts wrap predictably (CSS `pre-wrap` preserves the breaks).
+ */
+export function softWrapToastText(text: string, maxChars = TOAST_SOFT_WRAP_CHARS): string {
+  if (text.includes("\n") || text.length <= maxChars) return text;
+
+  const lines: string[] = [];
+  let remaining = text.trim();
+  while (remaining.length > maxChars) {
+    const window = remaining.slice(0, maxChars + 1);
+    const breakAt = window.lastIndexOf(" ");
+    const cut = breakAt > maxChars * 0.5 ? breakAt : maxChars;
+    lines.push(remaining.slice(0, cut).trimEnd());
+    remaining = remaining.slice(cut).trimStart();
+  }
+  if (remaining.length > 0) lines.push(remaining);
+  return lines.join("\n");
+}
+
+/** `onDismiss` must be a stable (`useCallback`'d) reference — passed into dismiss timers. */
 function ToastItem({
   toast,
   onDismiss,
@@ -37,11 +57,12 @@ function ToastItem({
       rowKey={toast.id}
       icon={toast.icon}
       expandedMs={NOTIFICATION_EXPANDED_MS}
-      peekDismissMs={TOAST_PEEK_DISMISS_MS}
-      onPeekDismiss={dismiss}
+      ephemeral
+      onEphemeralDismiss={dismiss}
+      wrapText
       panelStyle={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}
     >
-      <span>{toast.message}</span>
+      <span>{typeof toast.message === "string" ? softWrapToastText(toast.message) : toast.message}</span>
       {toast.coord != null && onGoToTile != null ? (
         <>
           {" "}
@@ -49,19 +70,19 @@ function ToastItem({
         </>
       ) : null}
       {toast.detail != null ? (
-        <span style={{ display: "block", marginTop: "0.15rem", opacity: 0.85 }}>{toast.detail}</span>
+        <span style={{ display: "block", marginTop: "0.15rem", opacity: 0.85 }}>
+          {typeof toast.detail === "string" ? softWrapToastText(toast.detail) : toast.detail}
+        </span>
       ) : null}
     </CollapsibleNotificationRow>
   );
 }
 
 /**
- * Ephemeral one-off event notices (lab clue landed, den cleared, base
- * upgrade completed) — a distinct lifecycle from `NotificationTray`'s
- * ambient countdown rows: each toast expands fully, slides to an icon peek,
- * then removes itself after a short peek linger. Renders bare items, not its
- * own positioned container — see `NotificationTray`'s doc comment for why
- * (composed together in `GameScreen`).
+ * Ephemeral one-off event notices (lab clue, watchtower signal, den cleared) —
+ * distinct from `NotificationTray` countdown rows (builds / training / assaults).
+ * Shows wrapped copy, then removes itself — no icon-peek linger. Renders bare
+ * items (composed with the tray in `GameScreen`).
  */
 export function ToastStack({
   toasts,

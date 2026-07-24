@@ -116,7 +116,7 @@ export function makeWatchtowerSignal(base: Axial, labCoord: Axial, setAt: number
 }
 
 export function watchtowerSignalToastText(bearing: Compass4): string {
-  return `We picked up a distant signal in the ${bearing} — we should get the scouts to check it out.`;
+  return `We picked up a distant signal in the ${bearing}.\nWe should get the scouts to check it out.`;
 }
 
 /**

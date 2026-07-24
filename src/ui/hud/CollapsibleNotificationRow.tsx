@@ -26,9 +26,13 @@ function NotificationIconSlot({ icon }: { icon: ReactNode }) {
 }
 
 /**
- * Top-right HUD row: expanded label/countdown for {@link NOTIFICATION_EXPANDED_MS},
- * then the text/countdown slides out to the right while the icon (left) stays as a
- * compact peek at the column's right edge. Tap the icon to expand again (timer resets).
+ * Top-right HUD row.
+ *
+ * Default (tray): expanded label/countdown for {@link NOTIFICATION_EXPANDED_MS},
+ * then the text slides out while the icon stays as a compact peek. Tap to expand again.
+ *
+ * `ephemeral` (toasts): stay expanded, then call `onEphemeralDismiss` — no icon peek.
+ * Watchtower / clue / den notices should vanish, not linger like build timers.
  */
 export function CollapsibleNotificationRow({
   rowKey,
@@ -38,6 +42,11 @@ export function CollapsibleNotificationRow({
   expandedMs = NOTIFICATION_EXPANDED_MS,
   onPeekDismiss,
   peekDismissMs,
+  /** When true, body text wraps instead of clipping (toasts). Countdown tray rows stay single-line. */
+  wrapText = false,
+  /** Show once, then remove — no collapse-to-icon linger. */
+  ephemeral = false,
+  onEphemeralDismiss,
 }: {
   rowKey: string;
   icon: ReactNode;
@@ -47,30 +56,40 @@ export function CollapsibleNotificationRow({
   /** Optional — e.g. one-off toasts dismiss after lingering collapsed. */
   onPeekDismiss?: () => void;
   peekDismissMs?: number;
+  wrapText?: boolean;
+  ephemeral?: boolean;
+  onEphemeralDismiss?: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
 
   const expand = useCallback(() => setExpanded(true), []);
 
   useEffect(() => {
+    if (ephemeral) {
+      if (onEphemeralDismiss == null) return;
+      const dismissTimer = window.setTimeout(onEphemeralDismiss, expandedMs);
+      return () => window.clearTimeout(dismissTimer);
+    }
     if (!expanded) return;
     const collapseTimer = window.setTimeout(() => setExpanded(false), expandedMs);
     return () => window.clearTimeout(collapseTimer);
-  }, [expanded, expandedMs, rowKey]);
+  }, [ephemeral, expanded, expandedMs, onEphemeralDismiss, rowKey]);
 
   useEffect(() => {
-    if (expanded || onPeekDismiss == null || peekDismissMs == null) return;
+    if (ephemeral || expanded || onPeekDismiss == null || peekDismissMs == null) return;
     const dismissTimer = window.setTimeout(onPeekDismiss, peekDismissMs);
     return () => window.clearTimeout(dismissTimer);
-  }, [expanded, onPeekDismiss, peekDismissMs, rowKey]);
+  }, [ephemeral, expanded, onPeekDismiss, peekDismissMs, rowKey]);
 
   const slideMs = NOTIFICATION_SLIDE_MS;
+  /** Wrapping only while fully expanded — shrinking max-width with pre-wrap makes a tall 1-char column. */
+  const wrapping = wrapText && expanded;
 
   return (
     <Panel
       style={{
         display: "flex",
-        alignItems: "center",
+        alignItems: wrapping ? "flex-start" : "center",
         alignSelf: "flex-end",
         gap: expanded ? "0.5rem" : 0,
         maxWidth: "min(90vw, 320px)",
@@ -81,30 +100,30 @@ export function CollapsibleNotificationRow({
     >
       <button
         type="button"
-        onClick={expanded ? undefined : expand}
+        onClick={expanded || ephemeral ? undefined : expand}
         aria-expanded={expanded}
-        aria-label={expanded ? undefined : "Expand notification"}
+        aria-label={expanded || ephemeral ? undefined : "Expand notification"}
         style={{
           display: "flex",
           alignItems: "center",
           flexShrink: 0,
-          padding: 0,
+          padding: wrapping ? "0.1rem 0 0" : 0,
           margin: 0,
           border: "none",
           background: "transparent",
           color: "inherit",
-          cursor: expanded ? "default" : "pointer",
+          cursor: expanded || ephemeral ? "default" : "pointer",
           WebkitTapHighlightColor: "transparent",
         }}
-        tabIndex={expanded ? -1 : 0}
+        tabIndex={expanded || ephemeral ? -1 : 0}
       >
         {icon != null ? <NotificationIconSlot icon={icon} /> : null}
       </button>
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "0.5rem",
+          display: wrapping ? "block" : "flex",
+          alignItems: wrapping ? undefined : "center",
+          gap: wrapping ? undefined : "0.5rem",
           flex: "1 1 auto",
           minWidth: 0,
           overflow: "hidden",
@@ -113,7 +132,9 @@ export function CollapsibleNotificationRow({
           transform: expanded ? "translateX(0)" : "translateX(12px)",
           transition: `max-width ${slideMs}ms ease, opacity ${slideMs}ms ease, transform ${slideMs}ms ease`,
           pointerEvents: expanded ? "auto" : "none",
-          whiteSpace: "nowrap",
+          whiteSpace: wrapping ? "pre-wrap" : "nowrap",
+          overflowWrap: wrapping ? "break-word" : undefined,
+          lineHeight: wrapping ? 1.35 : undefined,
         }}
       >
         {children}
