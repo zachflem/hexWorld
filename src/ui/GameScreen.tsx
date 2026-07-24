@@ -347,6 +347,8 @@ export function GameScreen({
   onReplayCurrent,
   onStartNewSeed,
   onNewPlayer,
+  onSaveToFile,
+  onLoadFromFile,
 }: {
   tweaks: Tweaks;
   player: Player;
@@ -450,6 +452,10 @@ export function GameScreen({
   onStartNewSeed: (seed: number) => void;
   /** Settings / New Game (App.tsx) — drops back to onboarding. */
   onNewPlayer: () => void;
+  /** Settings — download current session as JSON. */
+  onSaveToFile: () => void;
+  /** Settings — replace session from a JSON save file. */
+  onLoadFromFile: () => void;
 }) {
   const hexCanvasRef = useRef<HexCanvasHandle>(null);
   const gridSize = resolveWorldGridSize(world, tweaks);
@@ -3112,6 +3118,8 @@ export function GameScreen({
         <SettingsPanel
           player={player}
           seed={world.seed}
+          onSaveToFile={onSaveToFile}
+          onLoadFromFile={onLoadFromFile}
           onReplayCurrent={onReplayCurrent}
           onStartNewSeed={onStartNewSeed}
           onNewPlayer={onNewPlayer}

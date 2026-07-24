@@ -1,3 +1,4 @@
+import { Save } from "lucide-react";
 import type { ProfileEntry } from "../data/profileRegistry";
 import "./onboarding/onboarding.css";
 
@@ -5,10 +6,12 @@ export function ContinueGamePrompt({
   profileName,
   onContinue,
   onStartNew,
+  onLoadFromFile,
 }: {
   profileName: string;
   onContinue: () => void;
   onStartNew: () => void;
+  onLoadFromFile: () => void;
 }) {
   return (
     <section className="onboarding-root">
@@ -27,17 +30,22 @@ export function ContinueGamePrompt({
           <footer className="onboarding-manual__footer onboarding-continue__footer">
             <div className="onboarding-manual__footer-left">
               <button type="button" className="onboarding-manual__btn" onClick={onStartNew}>
-                No. Start a New Game
+                New Game
               </button>
             </div>
-            <div className="onboarding-manual__footer-center" />
-            <div className="onboarding-manual__footer-right">
+            <div className="onboarding-manual__footer-center">
               <button
                 type="button"
                 className="onboarding-manual__btn onboarding-manual__btn--primary"
                 onClick={onContinue}
               >
-                Yes!
+                Continue
+              </button>
+            </div>
+            <div className="onboarding-manual__footer-right">
+              <button type="button" className="onboarding-manual__btn onboarding-continue__load" onClick={onLoadFromFile}>
+                <Save size={16} strokeWidth={2} aria-hidden="true" />
+                Load
               </button>
             </div>
           </footer>

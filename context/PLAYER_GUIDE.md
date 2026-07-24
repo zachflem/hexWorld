@@ -20,9 +20,11 @@ You can also open a difficulty directly via URL: `play.{domain}/hard` loads the 
 
 Use **Begin**, **Continue**, **Next**, and **Step Outside** (or arrow keys on non-input pages) to move through the manual.
 
-**Returning with a save:** if you already have progress in this browser, you'll see a notebook-style prompt first — **Yes!** resumes where you left off (same profile as when you saved); **No. Start a New Game** clears the save and opens the field manual for a fresh run.
+**Returning with a save:** if you already have progress in this browser, you'll see a notebook-style prompt first — **Continue** resumes where you left off (same profile as when you saved); **New Game** clears the save and opens the field manual for a fresh run; **Load** imports a JSON save file (replaces the local save).
 
 Progress saves automatically in your browser (IndexedDB) as you play — closing the tab is safe.
+
+**Save files:** open **Settings** (bottom-right gear) to **Save to file** (downloads a JSON backup) or **Load from file** (replaces the save in this browser). You can also load from the continue prompt or the field-manual cover on a fresh device — useful for moving a run between browsers or keeping backups. Files are plain JSON and may be hand-edited; there is no account sync.
 
 ### Starting a new game later
 
