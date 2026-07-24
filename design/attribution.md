@@ -12,4 +12,4 @@ Previously used the itch.io hex basic set: https://dgbaumgart.itch.io/hex-basic-
 
 ## Other sprites
 
-Structure, resource, unit, and marker art under `public/profiles/default/assets/` — attribute sources here as packs are commissioned or licensed. Per-level structure variants are tracked as ROADMAP [#P13](ROADMAP.md#per-level-structure-sprites-p13).
+Structure, resource, unit, and marker art under `public/profiles/default/assets/` — attribute sources here as packs are commissioned or licensed. Per-level structure variants use Milestone 24 naming ([#P13](ROADMAP.md#per-level-structure-sprites-p13) / [Milestone24.md](Milestone24.md)); fill in source/license when confirmed.

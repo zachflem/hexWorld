@@ -41,11 +41,18 @@ import {
   getPathTileTexture,
   getResourceTexture,
   getStructureIconTexture,
+  getStructureIconTextureCandidates,
   getTerrainTexture,
   getUnitIconTexture,
   onTextureLoad,
 } from "./tileTextures";
 import { drawPlacedResourceIcon, drawPlacedStructureIcon } from "./structurePlacement";
+import {
+  dockSpriteCandidates,
+  extractionTierCandidates,
+  structureLevelCandidates,
+  structureLevelName,
+} from "./structureSprites";
 import { extractionTierLevel } from "../engine/tiers";
 
 /** Exported so DOM overlays (e.g. HoverTooltip) can compute the same on-screen hex circumradius (BASE_HEX_SIZE * zoom) the canvas itself draws with. */
@@ -787,9 +794,17 @@ export const HexCanvas = forwardRef<
           }
 
           if (axialEquals(coord, base)) {
-            const baseIcon = getStructureIconTexture("base");
+            const baseIcon = getStructureIconTextureCandidates(structureLevelCandidates("base", baseLevel));
             if (baseIcon) {
-              drawPlacedStructureIcon(ctx, baseIcon, screenCenter.x, screenCenter.y, size, "base");
+              drawPlacedStructureIcon(
+                ctx,
+                baseIcon,
+                screenCenter.x,
+                screenCenter.y,
+                size,
+                "base",
+                structureLevelName("base", baseLevel),
+              );
             } else {
               ctx.beginPath();
               ctx.arc(screenCenter.x, screenCenter.y, size * 0.55, 0, Math.PI * 2);
@@ -872,7 +887,7 @@ export const HexCanvas = forwardRef<
               }
               const towerIcon = tower.buildStartedAt
                 ? getStructureIconTexture("construction")
-                : getStructureIconTexture("tower");
+                : getStructureIconTextureCandidates(structureLevelCandidates("tower", tower.level));
               if (towerIcon) {
                 drawPlacedStructureIcon(
                   ctx,
@@ -881,6 +896,7 @@ export const HexCanvas = forwardRef<
                   screenCenter.y,
                   size,
                   tower.buildStartedAt ? "construction" : "tower",
+                  tower.buildStartedAt ? null : structureLevelName("tower", tower.level),
                 );
               } else {
                 ctx.beginPath();
@@ -894,7 +910,7 @@ export const HexCanvas = forwardRef<
             } else if (barracks) {
               const barracksIcon = barracks.buildStartedAt
                 ? getStructureIconTexture("construction")
-                : getStructureIconTexture("barracks");
+                : getStructureIconTextureCandidates(structureLevelCandidates("barracks", barracks.level));
               if (barracksIcon) {
                 drawPlacedStructureIcon(
                   ctx,
@@ -903,6 +919,7 @@ export const HexCanvas = forwardRef<
                   screenCenter.y,
                   size,
                   barracks.buildStartedAt ? "construction" : "barracks",
+                  barracks.buildStartedAt ? null : structureLevelName("barracks", barracks.level),
                 );
               } else {
                 ctx.beginPath();
@@ -929,6 +946,7 @@ export const HexCanvas = forwardRef<
                   screenCenter.y,
                   size,
                   wall.buildStartedAt ? "construction" : "wall",
+                  wall.buildStartedAt ? null : WALL_TIER_ICON_NAMES[wall.tier],
                 );
               } else {
                 ctx.beginPath();
@@ -940,22 +958,45 @@ export const HexCanvas = forwardRef<
               }
               drawHealthBar(screenCenter, wall.durability, maxWallDurability(tweaks, wall.tier));
             } else if (tile) {
-              const resourceImg = tile.buildStartedAt
-                ? getStructureIconTexture("construction")
-                : getResourceTexture(tile.resource);
-              if (resourceImg) {
-                if (tile.buildStartedAt) {
-                  drawPlacedStructureIcon(ctx, resourceImg, screenCenter.x, screenCenter.y, size, "construction");
+              if (tile.buildStartedAt) {
+                const constructionIcon = getStructureIconTexture("construction");
+                if (constructionIcon) {
+                  drawPlacedStructureIcon(ctx, constructionIcon, screenCenter.x, screenCenter.y, size, "construction");
                 } else {
-                  drawPlacedResourceIcon(ctx, resourceImg, screenCenter.x, screenCenter.y, size, tile.resource);
+                  ctx.beginPath();
+                  ctx.arc(screenCenter.x, screenCenter.y, size * 0.35, 0, Math.PI * 2);
+                  ctx.fillStyle = RESOURCE_MARKER_COLORS[tile.resource];
+                  ctx.fill();
+                  ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
+                  ctx.stroke();
                 }
               } else {
-                ctx.beginPath();
-                ctx.arc(screenCenter.x, screenCenter.y, size * 0.35, 0, Math.PI * 2);
-                ctx.fillStyle = RESOURCE_MARKER_COLORS[tile.resource];
-                ctx.fill();
-                ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
-                ctx.stroke();
+                const extractionIcon = getStructureIconTextureCandidates(
+                  extractionTierCandidates(tile.resource, tile.tier),
+                );
+                if (extractionIcon) {
+                  drawPlacedStructureIcon(
+                    ctx,
+                    extractionIcon,
+                    screenCenter.x,
+                    screenCenter.y,
+                    size,
+                    "extraction",
+                    `${tile.resource}-${tile.tier}`,
+                  );
+                } else {
+                  const resourceImg = getResourceTexture(tile.resource);
+                  if (resourceImg) {
+                    drawPlacedResourceIcon(ctx, resourceImg, screenCenter.x, screenCenter.y, size, tile.resource);
+                  } else {
+                    ctx.beginPath();
+                    ctx.arc(screenCenter.x, screenCenter.y, size * 0.35, 0, Math.PI * 2);
+                    ctx.fillStyle = RESOURCE_MARKER_COLORS[tile.resource];
+                    ctx.fill();
+                    ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
+                    ctx.stroke();
+                  }
+                }
               }
               if (!tile.buildStartedAt && !tile.damaged) {
                 drawLevelBadge(
@@ -973,9 +1014,12 @@ export const HexCanvas = forwardRef<
                 drawPlacedStructureIcon(ctx, constructionIcon, screenCenter.x, screenCenter.y, size, "construction");
               }
             } else if (dock) {
-              const dockIcon = getStructureIconTexture("dock");
+              const dockStem = dock.fishingBoat ? "dock-boat" : "dock";
+              const dockIcon = getStructureIconTextureCandidates(
+                dockSpriteCandidates(Boolean(dock.fishingBoat)),
+              );
               if (dockIcon) {
-                drawPlacedStructureIcon(ctx, dockIcon, screenCenter.x, screenCenter.y, size, "dock");
+                drawPlacedStructureIcon(ctx, dockIcon, screenCenter.x, screenCenter.y, size, "dock", dockStem);
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.4, 0, Math.PI * 2);
@@ -984,7 +1028,8 @@ export const HexCanvas = forwardRef<
                 ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
                 ctx.stroke();
               }
-              if (dock.fishingBoat) {
+              // Emoji boat marker only when there is no dedicated dock-boat sprite yet.
+              if (dock.fishingBoat && !getStructureIconTexture("dock-boat")) {
                 ctx.font = `${Math.max(9, size * 0.5)}px sans-serif`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
