@@ -2620,13 +2620,13 @@ export function GameScreen({
     if (selectedIsBase) {
       const status = base.relocation
         ? "Relocating…"
-        : base.reinforcementAction
-          ? base.reinforcementAction.kind === "upgrade"
-            ? `Upgrading reinforcement to L${base.reinforcementAction.targetLevel}…`
-            : "Repairing…"
-          : base.upgrade
-            ? `Upgrading to L${base.upgrade.targetLevel}…`
-            : "Operational";
+        : base.action
+          ? base.action.kind === "level_upgrade"
+            ? `Upgrading to L${base.action.targetLevel}…`
+            : base.action.kind === "reinforcement_upgrade"
+              ? `Upgrading reinforcement to L${base.action.targetLevel}…`
+              : "Repairing…"
+          : "Operational";
       const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
       rows.push(
         <div key="base-status">{status}</div>,
