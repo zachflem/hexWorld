@@ -24,6 +24,7 @@ import {
   garrisonedJunkyardKnightTotal,
   garrisonedMilitiaTotal,
   isHordeReachableFromGarrison,
+  mergeIntoGarrison,
   resolveCapturedGarrisons,
 } from "./garrisons";
 
@@ -108,6 +109,31 @@ describe("garrisonAt", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 1, r: 0 }, { militiaCount: 3 })];
     expect(garrisonAt(garrisons, { q: 1, r: 0 })?.militiaCount).toBe(3);
     expect(garrisonAt(garrisons, { q: 2, r: 0 })).toBeNull();
+  });
+});
+
+describe("mergeIntoGarrison", () => {
+  it("appends a new tile without wiping sibling garrisons", () => {
+    const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { militiaCount: 5 })];
+    const next = mergeIntoGarrison(garrisons, { q: 1, r: 0 }, 3, 1, 2);
+    expect(next).toHaveLength(2);
+    expect(garrisonAt(next, { q: 0, r: 0 })).toEqual(makeGarrison({ q: 0, r: 0 }, { militiaCount: 5 }));
+    expect(garrisonAt(next, { q: 1, r: 0 })).toEqual(
+      makeGarrison({ q: 1, r: 0 }, { militiaCount: 3, junkyardKnightCount: 1, crossBowSniperCount: 2 }),
+    );
+  });
+
+  it("adds counts onto an existing garrison at the same coord", () => {
+    const garrisons: GarrisonsRecord = [
+      makeGarrison({ q: 0, r: 0 }, { militiaCount: 5, junkyardKnightCount: 1 }),
+      makeGarrison({ q: 2, r: 0 }, { militiaCount: 4 }),
+    ];
+    const next = mergeIntoGarrison(garrisons, { q: 0, r: 0 }, 2, 3, 1);
+    expect(next).toHaveLength(2);
+    expect(garrisonAt(next, { q: 0, r: 0 })).toEqual(
+      makeGarrison({ q: 0, r: 0 }, { militiaCount: 7, junkyardKnightCount: 4, crossBowSniperCount: 1 }),
+    );
+    expect(garrisonAt(next, { q: 2, r: 0 })).toEqual(makeGarrison({ q: 2, r: 0 }, { militiaCount: 4 }));
   });
 });
 

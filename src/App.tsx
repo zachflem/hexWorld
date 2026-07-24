@@ -119,6 +119,7 @@ import {
   clampPartyDispatch,
   garrisonAt,
   garrisonDefense,
+  mergeIntoGarrison,
   resolveCapturedGarrisons,
 } from "./engine/garrisons";
 import { isTimerComplete } from "./engine/timers";
@@ -1128,28 +1129,6 @@ export default function App() {
       // below alongside the den's own resolution.
       let labAfterClues: LabRecord = current.game.lab;
 
-      const mergeIntoGarrison = (
-        garrisons: GarrisonsRecord,
-        coord: Axial,
-        militia: number,
-        junkyardKnight: number,
-        crossBowSniper: number,
-      ): GarrisonsRecord => {
-        const existing = garrisonAt(garrisons, coord);
-        return existing
-          ? garrisons.map((g) =>
-              axialKey(g.coord) === axialKey(coord)
-                ? {
-                    ...g,
-                    militiaCount: g.militiaCount + militia,
-                    junkyardKnightCount: g.junkyardKnightCount + junkyardKnight,
-                    crossBowSniperCount: g.crossBowSniperCount + crossBowSniper,
-                  }
-                : g,
-            )
-          : [...garrisons, { coord, militiaCount: militia, junkyardKnightCount: junkyardKnight, crossBowSniperCount: crossBowSniper }];
-      };
-
       const nextDenAssaults: DenAssaultRecord[] = [];
 
       for (const assault of [...current.game.denAssaults].sort((a, b) => a.departedAt - b.departedAt)) {
@@ -1701,7 +1680,7 @@ export default function App() {
     setBoot(next);
   }
 
-  /** Same player AND same world seed — resets progress but replays the identical map, unlike handleStartNewSeed. Reachable from the New Game dialog on both GameScreen and GameOverScreen. */
+  /** Same player AND same world seed — resets progress but replays the identical map, unlike handleStartNewSeed. Reachable from Settings (inline) and from the New Game dialog on GameOverScreen / WinScreen. */
   async function handleReplayCurrentGame() {
     if (boot.status !== "ready" || !boot.game) return;
     await resetGame(boot.game.player, boot.game.world.seed, boot.game.world.gridSize ?? DEFAULT_MAP_SIZE);
@@ -3761,26 +3740,13 @@ export default function App() {
       return { ok: false, reason: "Station at least one unit" };
     }
 
-    const existing = garrisonAt(game.garrisons, coord);
-    const garrisons: GarrisonsRecord = existing
-      ? game.garrisons.map((g) =>
-          axialKey(g.coord) === axialKey(coord)
-            ? {
-                ...g,
-                militiaCount: g.militiaCount + militiaCount,
-                junkyardKnightCount: g.junkyardKnightCount + junkyardKnightCount,
-                crossBowSniperCount: g.crossBowSniperCount + crossBowSniperCount,
-              }
-            : g,
-        )
-      : [
-          {
-            coord,
-            militiaCount,
-            junkyardKnightCount,
-            crossBowSniperCount,
-          },
-        ];
+    const garrisons = mergeIntoGarrison(
+      game.garrisons,
+      coord,
+      militiaCount,
+      junkyardKnightCount,
+      crossBowSniperCount,
+    );
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "garrison_militia", game.base.level) };
 
     await Promise.all([set(GARRISONS_DB_KEY, garrisons), set(NOISE_DB_KEY, noise)]);

@@ -26,13 +26,20 @@ Progress saves automatically in your browser (IndexedDB) as you play — closing
 
 ### Starting a new game later
 
-From the in-game menu (☰, top of screen) or from the game-over screen, choose **New Game** to get three options:
+From **Settings** in the bottom-right menu, pick one of the three options directly (no extra dialog):
 - **Replay the current map** — same seed, fresh start, same layout.
 - **Start a new game** — a freshly-generated random seed (or type your own).
 - **Start as a new player** — re-enter your name/colour from scratch.
 
+The game-over and win screens still open a **New Game** dialog with the same three choices.
+
 All three wipe current progress, so use them deliberately.
 
+### Map controls
+
+Bottom-left hex buttons: **zoom in**, **zoom out** (tap or hold to keep zooming), and **recenter on base** (keeps your current zoom). Scroll-wheel / pinch zoom still work on the map itself. The bottom-right cluster opens panels (garrisons, scouting, military, research, build mode, settings).
+
+The top-left resource bar shows stockpile amounts; a small green/red **±** next to an amount is the live net rate per second (inflow minus upkeep; hidden when roughly zero or that resource is at cap).
 ---
 
 ## The world
@@ -54,7 +61,7 @@ You begin owning your base tile plus the two full rings around it (19 tiles) out
 
 Five types, in ascending rarity: **food → wood → stone → steel → power**. Rarer resources yield less per tile and generate more noise while being gathered.
 
-Each resource has its own **storage cap** at your base (1000 at level 1, doubling per storage upgrade level — upgraded per-resource from the base tile menu; first upgrade takes **2 minutes**, each further level **+50%** on that timer, and progress shows in the notification tray). Separate from the global tech tree under [Research](#research).
+Each resource has its own **storage cap** at your base (1000 at level 1, doubling per storage upgrade level — upgraded per-resource from the base tile sheet’s **Storage** tab; first upgrade takes **2 minutes**, each further level **+50%** on that timer, and progress shows in the notification tray). Separate from the global tech tree under [Research](#research). The base sheet’s **Info** tab shows how full each stockpile is against its current cap.
 
 ---
 
@@ -84,6 +91,7 @@ The base is a hub, not a fighting unit — it holds your storage, tech upgrades,
 - **Base level** caps how far every other structure type can be upgraded, sets your **build slot cap** (the total number of structures you're allowed to have standing at once — 10 at level 1, +10 per level), and widens how far from your territory you're allowed to attack/claim tiles.
 - **Base upgrades** cost resources and take real time — they keep counting down even while you're offline.
 - **Reinforcement HP** is a separate, upgradeable pool defending the base tile itself. Upgrading or repairing it also takes real time (offline-safe). **Only one** base level upgrade, reinforcement upgrade, or reinforcement repair can run at a time — you can't stack a reinforcement job on top of a base-level upgrade. If a horde deals more damage than your current reinforcement HP (plus any garrison stationed there) can absorb, **the base falls and the run ends.** A successful defense still costs HP, so repeated assaults need repair even if none of them individually break through.
+- Selecting the base opens a tile sheet: **Info** shows operational status, reinforcement HP, noise cap, and storage fill vs caps; **Upgrades** / **Storage** / **Actions** cover the usual commits.
 - You can also **relocate your base** to a different owned tile once you meet the base-level requirement (costs resources and time).
 
 ---

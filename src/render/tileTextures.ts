@@ -94,6 +94,10 @@ export function getUnitIconTexture(name: string): HTMLImageElement | null {
  * to fill the hex's bounding box. Deliberately not clipped — draw order
  * (top row first) makes each lower tile paint over the tile behind it, which
  * is what lets `drawHexTileOverlay` below spill upward correctly.
+ *
+ * Shipped terrain files are 256×384 under this convention. Flat pointy-top
+ * hex source art must be converted first via `scripts/convert-flat-terrain-hex.py`
+ * (ROADMAP #P12; see AGENTS.md).
  */
 export function drawHexTileTexture(
   ctx: CanvasRenderingContext2D,

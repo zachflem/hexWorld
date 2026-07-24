@@ -101,7 +101,7 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 
 ### UI
 
-*(No open UI items — see Recently resolved for #7, #13.)*
+*(No open UI items — see Recently resolved for #7, #13, #15–#17, #19.)*
 
 ### UX
 
@@ -113,6 +113,11 @@ Playtesting findings from Milestone 21 and ongoing sessions. **Priority for deve
 - **Toast notifications sit above the resource bar on mobile, obscuring the noise meter.** (#20) Resolved 2026-07-24 — `ResourceHud` reports scaled height; toast/tray column drops below the HUD when the bar shrinks on narrow viewports (`scale < 1`). **Refs:** [`src/ui/hud/ResourceHud.tsx`](../src/ui/hud/ResourceHud.tsx), [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx).
 - **Notification coord link selects tile but does not pan.** (#19) Resolved 2026-07-24 — `centerOnCoord` no longer bails when `pan` is null; uses container dimensions; pan deferred via `requestAnimationFrame` from `goToTile`. **Refs:** [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx), [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx), [`src/ui/hud/CoordLink.tsx`](../src/ui/hud/CoordLink.tsx).
 - **Toast when a horde damages a structure.** (#18) Resolved 2026-07-24 — `hordeStructureCaptureEvents` + `pushToast` on capture tick; skull icon, clickable coord link, detail line for cancelled build/upgrade/training. **Refs:** [`src/engine/hordes.ts`](../src/engine/hordes.ts), [`src/App.tsx`](../src/App.tsx), [`src/ui/hud/Toast.tsx`](../src/ui/hud/Toast.tsx).
+- **Settings new-game flow.** Resolved 2026-07-23 — removed Recenter from Settings (map controls only); new-game choices (replay / new seed / new player) live inline in the Settings sheet instead of behind a New Game button; discard warning moved to a confirm popup on Start. **Refs:** [`src/ui/panels/SettingsPanel.tsx`](../src/ui/panels/SettingsPanel.tsx), [`src/ui/NewGameOptions.tsx`](../src/ui/NewGameOptions.tsx), [PLAYER_GUIDE.md](PLAYER_GUIDE.md).
+- **Garrisoning a new tile wipes other garrisons.** Resolved 2026-07-23 — first station on a fresh tile replaced the whole `garrisons` array with a one-element list, so earlier towers lost their troops (looked like a transfer). Fixed via shared `mergeIntoGarrison` that appends instead of replacing. **Refs:** [`src/engine/garrisons.ts`](../src/engine/garrisons.ts) `mergeIntoGarrison`, [`src/App.tsx`](../src/App.tsx) `handleGarrisonUnits`.
+- **Map camera controls.** (#17) Resolved 2026-07-23 — bottom-left hex stack: zoom in/out (hold to repeat) and recenter on base (keeps current zoom). Recenter removed from Settings (map controls are the sole entry point). **Refs:** [`src/ui/hud/MapControls.tsx`](../src/ui/hud/MapControls.tsx), [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx) `zoomBy` / `recenterOnBase`, [PLAYER_GUIDE.md](PLAYER_GUIDE.md).
+- **Resource HUD rate chip layout.** Resolved 2026-07-23 — net ±/sec chip floats at top-right of the amount instead of wrapping onto a new row and shifting the HUD. **Refs:** [`src/ui/hud/ResourceHud.tsx`](../src/ui/hud/ResourceHud.tsx).
+- **Base sheet missing status.** Resolved 2026-07-23 — base tile sheet Info tab shows operational status, reinforcement HP, noise cap, and per-resource storage fill vs capacity; Storage upgrade rows show current cap. **Refs:** [`src/ui/GameScreen.tsx`](../src/ui/GameScreen.tsx) `infoSheetContent`, [PLAYER_GUIDE.md](PLAYER_GUIDE.md).
 - **Map size choice during onboarding.** (#10, #P2) Resolved 2026-07-23 — 48×48 / 96×96 / 128×128 under **Show Advanced Options**; `WorldRecord.gridSize` persisted; den count and min distances scale via `tweaksForMapSize()`. Profile scenario overrides: `game.grid_size_locked` + `game.world_seed` in tweaks take precedence over onboarding. Replay/new-seed from the in-game New Game dialog keep the save's size; new player re-enters onboarding (map size there). **Refs:** [`src/data/mapSize.ts`](../src/data/mapSize.ts), [`OnboardingScreen.tsx`](../src/ui/onboarding/OnboardingScreen.tsx), [TWEAKS.md § Game / world](TWEAKS.md).
 - **Timer notifications should auto-collapse.** (#14) Resolved 2026-07-23 — shared `CollapsibleNotificationRow`: 5s full expand, slide right to icon peek; tap icon to re-expand. Countdown rows stay peeking; one-off toasts dismiss after 8s collapsed. **Refs:** [`src/ui/hud/CollapsibleNotificationRow.tsx`](../src/ui/hud/CollapsibleNotificationRow.tsx), [`NotificationTray.tsx`](../src/ui/hud/NotificationTray.tsx), [`Toast.tsx`](../src/ui/hud/Toast.tsx).
 - **Early game pacing too slow.** (#12) Resolved 2026-07-23 — small-tier extraction yields raised ~50%; every flat build/upgrade timer shaved 1 minute. **Refs:** [`public/profiles/default/tweaks.jsonc`](../public/profiles/default/tweaks.jsonc), [TWEAKS.md](TWEAKS.md).
@@ -171,7 +176,7 @@ Towers gain a distinct intel/alert role: passive lab-clue rolls on tick and hord
 
 ### Touch structure stats (#P5)
 
-Mobile-friendly equivalent of the M20 desktop hover tooltip; Info hex is a partial fallback today. **Refs:** [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx), Milestone 20. **Next step:** UX sketch for touch/long-press vs persistent panel.
+Mobile-friendly equivalent of the M20 desktop hover tooltip; Info hex is a partial fallback today. Base tile sheet **Info** tab now covers base status ([#15](#bugs--testing-feedback)); other structures still need a touch equivalent. **Refs:** [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx), Milestone 20. **Next step:** UX sketch for touch/long-press vs persistent panel.
 
 ### Water resource transport (#P6)
 
@@ -192,6 +197,14 @@ Terrain type multiplies tile claim difficulty (e.g. mountains harder than grassl
 ### Scrapper unit & scrap stashes (#P11)
 
 Replace passive **steel extraction tiles** with a logistics loop (see [ScrapperEconomy.md](ScrapperEconomy.md)). Includes **expedition travel parity** — mid-route retarget rules aligned with Scrapper hauls. **Decision (Q1):** steel extraction tiles removed entirely; tune early steel costs in tweaks. **Detail:** [ScrapperEconomy.md](ScrapperEconomy.md).
+
+### Terrain art replacement (#P12)
+
+**Status:** ✅ Done (2026-07-23). Replaced the itch.io hex basic-set terrain pack in `profiles/default/assets/terrain/` (`grassland`, `forest`, `mountain`, `shore`, `water`) with a new flat pointy-top hex set, converted to the 256×384 footprint layout via [`scripts/convert-flat-terrain-hex.py`](../scripts/convert-flat-terrain-hex.py). Profile override → default → flat-colour path unchanged. **Refs:** [attribution.md](attribution.md), [AGENTS.md](../AGENTS.md), [`src/render/tileTextures.ts`](../src/render/tileTextures.ts). **Maintenance:** future terrain swaps still need the convert script (flat hex + transparent bg → footprint); fill in source/license in attribution when confirmed.
+
+### Per-level structure sprites (#P13)
+
+Distinct map (and UI) art per upgrade level/tier for structures that today share one sprite — extraction small→mid→large, towers L1–4, barracks L1–4, base levels, docks/boats where it reads, etc. Walls and paths already ship tier sprites; extend that pattern with missing-file fallback to the unlevelled/default asset. **Refs:** [DESIGN.md §17](DESIGN.md), [TWEAKS.md § Difficulty profiles](TWEAKS.md), [`src/render/assetPaths.ts`](../src/render/assetPaths.ts), [`src/render/HexCanvas.tsx`](../src/render/HexCanvas.tsx), Milestone 23. **Next step:** naming convention + which structures get unique art vs shared fallback; then promote to milestone when asset set is ready.
 
 ---
 
@@ -221,6 +234,8 @@ Much of original scope superseded by Milestone 20 (hex-ring menu, HUD chips, tex
 - ✅ Icon-led HUD, settings/notifications panel, terrain/resource art (via M20)
 - ❌ Watchtower intel/alert role (separate from combat range) — see [#P3](#watchtower-intel--alerts-p3)
 - ❌ PWA manifest `screenshots` for rich install UI — see [#P7](#pwa-install-screenshots-p7)
+
+*Related art tracks (not M16 scope):* [#P13](#per-level-structure-sprites-p13); terrain pack swap shipped as [#P12](#terrain-art-replacement-p12).
 
 **Testable outcome:** first-time player understands state and options without external explanation.
 
@@ -434,6 +449,8 @@ Paged field-manual onboarding, continue-or-new-game prompt, advanced options (di
 URL slugs, bundled `public/profiles/{slug}/`, partial sprite overrides with default fallback, profile persisted in save. Shipped **Standard** (`default`) and **Hard** (`hard`) sibling packs; onboarding difficulty dropdown + `/{slug}` URL. Resolves proposed **#P8** — adding more profiles (e.g. casual, speedrun) is content authoring via the same layout, not a separate feature.
 
 **Testable outcome:** `/hard` loads hard profile; continue prompt on reload; `profiles/index.json` lists difficulties.
+
+*Follow-ons (not in M23 scope):* per-level structure sprites [#P13](#per-level-structure-sprites-p13). Terrain art replacement shipped as [#P12](#terrain-art-replacement-p12).
 
 </details>
 

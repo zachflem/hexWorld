@@ -16,6 +16,14 @@ Non-obvious notes:
 - The dev server binds to localhost only; it is not exposed on the network by default (would need `--host`).
 - Runtime game balance/tuning is loaded from per-profile `public/profiles/{slug}/tweaks.jsonc` (validated with Zod via `src/data/tweaksLoader.ts`), not from code — edit those files to change tuning.
 - Because saves live in IndexedDB, clearing browser site data resets game progress.
+- **Terrain PNGs are not drop-in flat hexes.** The canvas draws full-hex tile art via `drawHexTileTexture` / `drawHexTileOverlay` in `src/render/tileTextures.ts`: each file is **256×384**, with the bottom **256×256** as an isometric hex-prism footprint that must be opaque edge-to-edge under the shared mask, and the top **128px** reserved for optional upward bleed (peaks/treetops). New art arrives as a square flat pointy-top hex on a **transparent** background — dropping that straight into `public/profiles/*/assets/terrain/` leaves gaps between tiles. The default pack was swapped under ROADMAP [#P12](design/ROADMAP.md#terrain-art-replacement-p12); for future swaps, convert with:
+
+  ```bash
+  python3 scripts/convert-flat-terrain-hex.py path/to/flat/*.png \
+    -o public/profiles/default/assets/terrain/
+  ```
+
+  Mask: `scripts/terrain-hex-footprint-mask.png`. Needs `pillow` + `numpy`. Hard-refresh the browser after replacing PNGs (asset cache). Update [design/attribution.md](design/attribution.md) when the source/license changes.
 
 ## Roadmap & workflow
 

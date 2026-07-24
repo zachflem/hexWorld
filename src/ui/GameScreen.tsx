@@ -143,7 +143,6 @@ import {
   WALL_TIER_ICON_NAMES,
   type HexCanvasHandle,
 } from "../render/HexCanvas";
-import { NewGameDialog } from "./NewGameDialog";
 import {
   type BarracksUpgradeOption,
   type BaseUpgradeOption,
@@ -174,8 +173,10 @@ import { NotificationTray, type NotificationCountdownRow } from "./hud/Notificat
 import { NOTIFICATION_ICON_SIZE } from "./hud/CollapsibleNotificationRow";
 import { RESEARCH_LABEL } from "./researchLabels";
 import { ResourceHud } from "./hud/ResourceHud";
+import { MapControls } from "./hud/MapControls";
 import { ToastStack, type ToastRecord } from "./hud/Toast";
 import { Panel } from "./primitives/Panel";
+import { StatRow } from "./primitives/StatRow";
 import { PartyDispatchForm } from "./primitives/PartyDispatchForm";
 import { TrainForm } from "./primitives/TrainForm";
 import { GarrisonForm } from "./primitives/GarrisonForm";
@@ -443,11 +444,11 @@ export function GameScreen({
   onBuildScoutSkiff: (coord: Axial) => Promise<BuildResult>;
   onCollectDock: (coord: Axial) => Promise<BuildResult>;
   onBuildWanderingScout: (coord: Axial) => Promise<BuildResult>;
-  /** New Game dialog (App.tsx) — same player, same map, progress reset. */
+  /** Settings / New Game (App.tsx) — same player, same map, progress reset. */
   onReplayCurrent: () => void;
-  /** New Game dialog (App.tsx) — same player, a chosen (or freshly-generated) map. */
+  /** Settings / New Game (App.tsx) — same player, a chosen (or freshly-generated) map. */
   onStartNewSeed: (seed: number) => void;
-  /** New Game dialog (App.tsx) — drops back to onboarding. */
+  /** Settings / New Game (App.tsx) — drops back to onboarding. */
   onNewPlayer: () => void;
 }) {
   const hexCanvasRef = useRef<HexCanvasHandle>(null);
@@ -458,7 +459,6 @@ export function GameScreen({
   const [selected, setSelected] = useState<Axial | null>(null);
   /** Desktop-mouse hover target (HexCanvas's onTileHover) — null on touch devices, which never report hover. Only changes when the hovered tile itself changes (deduped in HexCanvas), not on every mousemove pixel. */
   const [hoveredCoord, setHoveredCoord] = useState<Axial | null>(null);
-  const [newGameDialogOpen, setNewGameDialogOpen] = useState(false);
   /** Which of the global hex cluster's five panel slots (flag/binoculars/gear/chart — hammer is a toggle, not a panel) is open, if any. Only one at a time. Dismissed via BottomSheet Close/backdrop. */
   const [openPanel, setOpenPanel] = useState<"garrisons" | "scouting" | "military" | "settings" | "research" | null>(null);
   /** Hammer slot — highlights owned/empty/buildable tiles with an affordable build option, see buildModeEligibleKeysFor below. */
@@ -2605,18 +2605,52 @@ export function GameScreen({
   }
 
   /**
-   * The passive status info that doesn't have a "first glance" home
-   * elsewhere on the map/HUD (unlike tombstones, HP/durability bars, and the
-   * siege countdown, which do) — auto-flow/connected status for extraction
-   * tiles, noise floor contribution, and tower range/damage. Returns null
-   * when the selected tile has none of these, so the sheet's Info tab only
-   * appears when there's something to show. Countdown-style status (base
-   * relocation, every build/upgrade/repair timer) lives in the notification
-   * tray instead — see activeCountdownRows below.
+   * Passive status for the sheet Info tab. Extraction connection, noise floor
+   * contribution, and tower range/damage live here because they have no other
+   * home. Base HP/noise/storage also belong here: the map HP bar is glance-only,
+   * desktop hover is suppressed while the tile is selected, and storage fill vs
+   * caps appear nowhere else on the HUD. Tombstones and siege countdowns stay
+   * map/tray-first. Countdown timers (build/upgrade/repair/relocation) live in
+   * the notification tray — see activeCountdownRows. Returns null when the
+   * selected tile has nothing to show, so the Info tab only appears when needed.
    */
   function infoSheetContent(): ReactNode | null {
     if (!selected) return null;
     const rows: ReactNode[] = [];
+    if (selectedIsBase) {
+      const status = base.relocation
+        ? "Relocating…"
+        : base.reinforcementAction
+          ? base.reinforcementAction.kind === "upgrade"
+            ? `Upgrading reinforcement to L${base.reinforcementAction.targetLevel}…`
+            : "Repairing…"
+          : base.upgrade
+            ? `Upgrading to L${base.upgrade.targetLevel}…`
+            : "Operational";
+      const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
+      rows.push(
+        <div key="base-status">{status}</div>,
+        <StatRow
+          key="base-hp"
+          label={`HP (L${base.reinforcementLevel})`}
+          current={base.currentHp}
+          max={maxHp}
+        />,
+        <div key="base-noise">Noise cap: {noiseCap(tweaks, base.level)}db</div>,
+      );
+      for (const resource of RESOURCE_ORDER) {
+        const level = storageLevels[resource];
+        rows.push(
+          <StatRow
+            key={`storage-${resource}`}
+            icon={resourceIcon(resource, 18)}
+            label={`${capitalize(resource)} · L${level}`}
+            current={resources[resource]}
+            max={storageCapacity(tweaks, level)}
+          />,
+        );
+      }
+    }
     if (selectedTile) {
       rows.push(
         <div key="flow">{selectedConnected ? "Connected — auto-flowing to base" : "Not connected — manual collection only"}</div>,
@@ -3051,6 +3085,11 @@ export function GameScreen({
           },
         ]}
       />
+      <MapControls
+        onZoomIn={() => hexCanvasRef.current?.zoomBy(1.1)}
+        onZoomOut={() => hexCanvasRef.current?.zoomBy(1 / 1.1)}
+        onRecenterOnBase={() => hexCanvasRef.current?.recenterOnBase()}
+      />
       {openPanel === "garrisons" && (
         <GarrisonsPanel garrisons={garrisons} garrisonRecalls={garrisonRecalls} now={now} onClose={() => setOpenPanel(null)} />
       )}
@@ -3073,8 +3112,9 @@ export function GameScreen({
         <SettingsPanel
           player={player}
           seed={world.seed}
-          onRecenterOnBase={() => hexCanvasRef.current?.recenterOnBase()}
-          onNewGame={() => setNewGameDialogOpen(true)}
+          onReplayCurrent={onReplayCurrent}
+          onStartNewSeed={onStartNewSeed}
+          onNewPlayer={onNewPlayer}
           onClose={() => setOpenPanel(null)}
         />
       )}
@@ -3121,24 +3161,6 @@ export function GameScreen({
           onGoToTile={goToTile}
         />
       </div>
-      {newGameDialogOpen && (
-        <NewGameDialog
-          currentSeed={world.seed}
-          onReplayCurrent={() => {
-            setNewGameDialogOpen(false);
-            onReplayCurrent();
-          }}
-          onStartNewSeed={(seed) => {
-            setNewGameDialogOpen(false);
-            onStartNewSeed(seed);
-          }}
-          onNewPlayer={() => {
-            setNewGameDialogOpen(false);
-            onNewPlayer();
-          }}
-          onCancel={() => setNewGameDialogOpen(false)}
-        />
-      )}
     </div>
   );
 }
