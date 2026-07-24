@@ -43,7 +43,6 @@ import {
   junkyardKnightCapacity as junkyardKnightCapacityFor,
   militiaCapacity as militiaCapacityFor,
   nextBarracksLevel,
-  scoutCapacity as scoutCapacityFor,
   trainingUnitDurationMs,
   trainingUnitLabel,
 } from "../engine/barracks";
@@ -51,7 +50,6 @@ import {
   crossBowSniperTrainCost,
   junkyardKnightTrainCost,
   militiaTrainCost,
-  scoutTrainCost,
 } from "../engine/units";
 import {
   baseReinforcementHp,
@@ -86,7 +84,7 @@ import {
   wallFloorContribution,
 } from "../engine/noiseMeter";
 import { computeResourceRates } from "../engine/resourceRates";
-import { canRepairHordeDamagedTile, isTileScoutable } from "../engine/territory";
+import { canRepairHordeDamagedTile } from "../engine/territory";
 import {
   expeditionProvisionsCost,
   expeditionTravelDurationMs,
@@ -201,7 +199,6 @@ import {
   Archive,
   ArrowUpCircle,
   Binoculars,
-  Eye,
   Flag,
   FlaskConical,
   Footprints,
@@ -362,14 +359,11 @@ export function GameScreen({
   onDemolish,
   onBuildBarracks,
   onUpgradeBarracks,
-  onTrainScouts,
   onTrainMilitia,
   onTrainJunkyardKnight,
   onTrainCrossBowSniper,
-  onRushTrainScouts,
   onRushTrainMilitia,
   onRushActiveTraining,
-  onScoutTile,
   onUpgradeBase,
   onUpgradeReinforcement,
   onRepairBase,
@@ -445,14 +439,11 @@ export function GameScreen({
   onDemolish: (coord: Axial) => Promise<BuildResult>;
   onBuildBarracks: (coord: Axial) => Promise<BuildResult>;
   onUpgradeBarracks: (coord: Axial) => Promise<BuildResult>;
-  onTrainScouts: (coord: Axial, quantity: number) => Promise<BuildResult>;
   onTrainMilitia: (coord: Axial, quantity: number) => Promise<BuildResult>;
   onTrainJunkyardKnight: (coord: Axial, quantity: number) => Promise<BuildResult>;
   onTrainCrossBowSniper: (coord: Axial, quantity: number) => Promise<BuildResult>;
-  onRushTrainScouts: (coord: Axial, quantity: number) => Promise<BuildResult>;
   onRushTrainMilitia: (coord: Axial, quantity: number) => Promise<BuildResult>;
   onRushActiveTraining: (coord: Axial) => Promise<BuildResult>;
-  onScoutTile: (coord: Axial) => Promise<BuildResult>;
   onUpgradeBase: () => Promise<BuildResult>;
   onUpgradeReinforcement: () => Promise<BuildResult>;
   onRepairBase: () => Promise<BuildResult>;
@@ -526,7 +517,6 @@ export function GameScreen({
   const [militiaToSend, setMilitiaToSend] = useState(1);
   const [junkyardKnightToSend, setJunkyardKnightToSend] = useState(0);
   const [crossBowSniperToSend, setCrossBowSniperToSend] = useState(0);
-  const [scoutsToTrain, setScoutsToTrain] = useState(1);
   const [militiaToTrain, setMilitiaToTrain] = useState(1);
   const [junkyardKnightToTrain, setJunkyardKnightToTrain] = useState(1);
   const [crossBowSniperToTrain, setCrossBowSniperToTrain] = useState(1);
@@ -736,12 +726,10 @@ export function GameScreen({
     if (isBarracksAtTaskCap(b, research)) return null;
     const existing = wanderingScouts.filter((s) => axialKey(s.homeBarracksCoord) === axialKey(b.coord)).length;
     if (existing >= tweaks.units.wandering_scout.max_per_barracks) return null;
-    const scoutCost = tweaks.units.wandering_scout.scout_cost;
     const cost = tweaks.units.wandering_scout.cost;
     return {
-      scoutCost,
       cost,
-      affordable: units.scoutStockpile >= scoutCost && affordable(cost),
+      affordable: affordable(cost),
       durationMinutes: tweaks.units.wandering_scout.build_time_minutes,
     };
   }
@@ -762,16 +750,6 @@ export function GameScreen({
   }
 
 
-  function scoutTrainOptionFor(): TrainOption | null {
-    const capacityGap = scoutCapacityFor(tweaks, barracksList) - units.scoutStockpile;
-    if (capacityGap <= 0) return null;
-    const perUnitCost = scoutTrainCost(tweaks);
-    const maxQuantity = Math.min(capacityGap, maxAffordableQuantity(perUnitCost));
-    const totalCost: Partial<Record<ResourceType, number>> = {};
-    for (const [key, amount] of Object.entries(perUnitCost)) totalCost[key as ResourceType] = amount * scoutsToTrain;
-    const rushNoise = tweaks.noise.one_time_action_noise.rush_train_scout * scoutsToTrain;
-    return { totalCost, affordable: affordable(totalCost), maxQuantity, rushNoise };
-  }
 
   function militiaTrainOptionFor(): TrainOption | null {
     const capacityGap = militiaCapacityFor(tweaks, barracksList) - units.militiaCount;
@@ -1060,7 +1038,6 @@ export function GameScreen({
       hexCanvasRef.current?.centerOnCoord(coord);
     });
     setMilitiaToSend(1);
-    setScoutsToTrain(1);
     setMilitiaToTrain(1);
     setMilitiaToGarrison(1);
     setJunkyardKnightToGarrison(0);
@@ -1081,7 +1058,6 @@ export function GameScreen({
     setActionError(null);
     setSelected(coord);
     setMilitiaToSend(1);
-    setScoutsToTrain(1);
     setMilitiaToTrain(1);
     setMilitiaToGarrison(1);
     setJunkyardKnightToGarrison(0);
@@ -1207,12 +1183,6 @@ export function GameScreen({
     applyActionResult(result);
   }
 
-  async function handleTrainScouts(quantity = scoutsToTrain) {
-    if (!selected) return;
-    const result = await onTrainScouts(selected, quantity);
-    applyActionResult(result, { keepSelection: true });
-  }
-
   async function handleTrainMilitia(quantity = militiaToTrain) {
     if (!selected) return;
     const result = await onTrainMilitia(selected, quantity);
@@ -1286,12 +1256,6 @@ export function GameScreen({
     return queue != null && queue.remaining > 0 && queue.unitType !== unitType;
   }
 
-  async function handleRushTrainScouts() {
-    if (!selected) return;
-    const result = await onRushTrainScouts(selected, scoutsToTrain);
-    applyActionResult(result, { keepSelection: true });
-  }
-
   async function handleRushTrainMilitia() {
     if (!selected) return;
     const result = await onRushTrainMilitia(selected, militiaToTrain);
@@ -1300,12 +1264,6 @@ export function GameScreen({
 
   async function handleRushActiveTraining(coord: Axial) {
     const result = await onRushActiveTraining(coord);
-    applyActionResult(result);
-  }
-
-  async function handleScoutTile() {
-    if (!selected) return;
-    const result = await onScoutTile(selected);
     applyActionResult(result);
   }
 
@@ -1425,7 +1383,6 @@ export function GameScreen({
   const selectedTower = selected ? towerAt(selected) : null;
   const selectedWall = selected ? wallAt(selected) : null;
   const selectedBarracks = selected ? barracksAt(selected) : null;
-  const scoutQueueStatus = trainQueueStatusFor(selectedBarracks, "scout");
   const militiaQueueStatus = trainQueueStatusFor(selectedBarracks, "militia");
   const junkyardKnightQueueStatus = trainQueueStatusFor(selectedBarracks, "junkyard_knight");
   const crossBowSniperQueueStatus = trainQueueStatusFor(selectedBarracks, "cross_bow_sniper");
@@ -1626,18 +1583,14 @@ export function GameScreen({
   }
 
   /**
-   * Scout or expedition for unowned tiles — empty hexes and horde-captured
-   * structures (#17). Reclaim ownership before repair is allowed.
+   * Expedition for unowned scouted tiles — empty hexes and horde-captured
+   * structures (#17). Reclaim ownership before repair is allowed. Fog reveal
+   * is Wandering Scout / Scout Skiff only (#76).
    */
   function unownedClaimActionsFor(): SheetAction[] {
     if (!selected || isOwned(selected)) return [];
 
-    if (!isScouted(selected)) {
-      const canScout =
-        units.scoutStockpile > 0 && isTileScoutable(world.seed, selected, territory.owned, scoutedTiles);
-      if (!canScout) return [];
-      return [{ key: "scout", icon: <Eye size={18} />, title: "Scout this tile", onClick: handleScoutTile }];
-    }
+    if (!isScouted(selected)) return [];
 
     const expedition = expeditionRouteOptionFor(selected);
     if (!expedition) return [];
@@ -2044,41 +1997,22 @@ export function GameScreen({
             onClick: handleUpgradeBarracks,
           });
         }
+
+        const trainSubActions: SheetAction[] = [];
+        // Wandering Scout lives under Train (replaced stockpile scouts there) —
+        // not a leaf Actions row, so it isn't buried behind Upgrades/Train tabs.
         const wanderingScout = wanderingScoutOptionFor(selectedBarracks);
         if (wanderingScout) {
-          actions.push({
+          trainSubActions.push({
             key: "wandering-scout",
             icon: <Footprints size={18} />,
-            title: "Build wandering scout",
-            detail: `Retires ${wanderingScout.scoutCost} scouts, ${formatCost(wanderingScout.cost)}, ${wanderingScout.durationMinutes}m`,
-            disabled: !wanderingScout.affordable || wanderingScout.scoutCost > units.scoutStockpile,
+            title: "Wandering scout",
+            detail: `${formatCost(wanderingScout.cost)}, ${wanderingScout.durationMinutes}m`,
+            disabled: !wanderingScout.affordable,
             onClick: handleBuildWanderingScout,
           });
         }
-
-        const trainSubActions: SheetAction[] = [];
         if (isStructureActive(selectedBarracks) && !isBarracksAtTaskCap(selectedBarracks, research)) {
-        const scoutOption = otherTrainingBlocks(selectedBarracks, "scout") ? null : scoutTrainOptionFor();
-        trainSubActions.push({
-          key: "train-scouts",
-          icon: <Footprints size={18} />,
-          title: "Scouts",
-          detail: trainQueueDetail(scoutQueueStatus),
-          formContent: (
-            <TrainForm
-              label="scouts"
-              queueStatus={scoutQueueStatus}
-              option={scoutOption}
-              toTrain={scoutsToTrain}
-              onChangeToTrain={setScoutsToTrain}
-              onTrain={() => handleTrainScouts()}
-              onRush={handleRushTrainScouts}
-            />
-          ),
-          quickActions: trainQuickActions(scoutOption, scoutQueueStatus, otherTrainingBlocks(selectedBarracks, "scout"), (qty) => {
-            void handleTrainScouts(qty);
-          }),
-        });
         const militiaOption = otherTrainingBlocks(selectedBarracks, "militia") ? null : militiaTrainOptionFor();
         trainSubActions.push({
           key: "train-militia",
@@ -2568,7 +2502,7 @@ export function GameScreen({
           durationMs: training.remaining * perUnitMs,
           remainingMs: remainingMsTotal,
           onRush:
-            training.unitType === "scout" || training.unitType === "militia"
+            training.unitType === "militia"
               ? () => {
                   void handleRushActiveTraining(b.coord);
                 }
@@ -3279,8 +3213,6 @@ export function GameScreen({
       {openPanel === "scouting" && (
         <ScoutingPanel
           tweaks={tweaks}
-          units={units}
-          barracksList={barracksList}
           scoutSkiffs={scoutSkiffs}
           wanderingScouts={wanderingScouts}
           lab={lab}

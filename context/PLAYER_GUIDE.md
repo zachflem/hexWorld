@@ -111,18 +111,17 @@ There's no way to wall off everything — your build slot cap forces real choice
 
 ## Barracks & units
 
-Barracks (levels 1–4, same one-structure-per-tile rule as everything else) train:
+Barracks (levels 1–4, same one-structure-per-tile rule as everything else) train combat units and build land explorers:
 
-- **Scouts** — one-time use. Spend one on an unowned tile adjacent to your existing land/scouted footprint to reveal it permanently (this also shows its defense value before you attack it). Trained scouts sitting in reserve still cost food upkeep.
 - **Militia** — a standing army. Feeds both your **attack power** (used to claim unowned tiles and to fight hordes automatically from a garrison) and your **defense** (adds to the base's last-stand HP pool). Costs ongoing food upkeep; units desert if you can't pay it.
 - **Junkyard Knights** (barracks level 2+) and **Cross-Bow Snipers** (barracks level 3+) — tougher/pricier units with their own attack/defense stats. Snipers additionally deal ranged damage to any horde within range of wherever they're garrisoned.
-- **Wandering Scout** — a persistent unit built by retiring 10 regular scouts from your stockpile (max 1 per barracks). Instead of a single reveal, it wanders your connected land automatically, forever, quietly revealing tiles as it roams. Shown on the map as a walking icon.
+- **Wandering Scout** — a persistent land explorer (max 1 per barracks) built for **300 food + 200 wood** (about the cost of ten old one-shot scouts). It wanders your connected land automatically, forever, quietly revealing tiles as it roams. Shown on the map as a walking icon. There is no trainable stockpile scout and no manual one-tile reveal — fog on land clears only via Wandering Scouts (and water via Scout Skiffs).
 
 You can **garrison** militia/knights/snipers on any owned tile — a garrison automatically attacks any horde on its own tile or a neighboring one, and stacks additively with whatever structure is on that tile. **Recalling** a garrison marches it home along the same route at half the travel time and no provisions cost — it's walking back through ground you already hold, not fighting, so nothing can be lost or tombstoned along the way.
 
 **Expeditions:** the way you claim any unowned tile, adjacent or distant — dispatch a party of militia/knights/snipers along a route, committing provisions and a chosen mix of units. The party walks the route tile by tile in real time, claiming each tile as it crosses it rather than resolving everything at once on arrival, so a party that runs into trouble partway keeps whatever it had already claimed up to that point. If it's out-fought by a tile's defenders or blocked by a horde on the road, it dies where it stands and leaves a **tombstone** — click it to see what happened (units lost, attack power, cause) before it fades a few minutes later.
 
-Training scouts or militia normally queues them at your barracks over time, but you can also **rush** the queue to finish instantly for a noise spike — useful when you need bodies right now and are willing to accept the extra attention.
+Training militia normally queues them at your barracks over time, but you can also **rush** the queue to finish instantly for a noise spike — useful when you need bodies right now and are willing to accept the extra attention.
 
 Towers also **passively claim territory** just by existing — every tile within a tower's range becomes owned automatically, no assault needed, as if the tower gave you a better vantage point.
 
@@ -184,7 +183,7 @@ Losing an outpost to a horde doesn't end the game — it just reverts back to a 
 
 Somewhere out past every zombie den — deliberately farther out than any of them — sits a **hidden lab**, guarded, and finding + securing it is the win condition. There's nothing else to do to win; you don't need to clear every den or build a particular economy size, just reach the lab and beat its guardian.
 
-**Finding it** takes clues — 5 total, each a directional hint relative to your base that narrows the search area, from a rough compass quadrant down to a small cluster of hexes on the last one. Clues surface from a small passive chance every time you use a scout, and a **guaranteed clue every time you successfully clear a den's hold**. **Watchtowers (level 2+)** sometimes pick up a vague distant signal ("something in the north — send the scouts"); that does not count as a clue, but it steers wandering scouts toward that direction, where they can uncover a real clue. Level 4 towers hear signals more often. Once you've collected all 5, you'll know roughly where to look.
+**Finding it** takes clues — 5 total, each a directional hint relative to your base that narrows the search area, from a rough compass quadrant down to a small cluster of hexes on the last one. Clues surface from a small passive chance when a **Wandering Scout** newly reveals a tile, and a **guaranteed clue every time you successfully clear a den's hold**. **Watchtowers (level 2+)** sometimes pick up a vague distant signal ("something in the north — send the scouts"); that does not count as a clue, but it steers wandering scouts toward that direction. Level 4 towers hear signals more often. Once you've collected all 5, you'll know roughly where to look.
 
 Watchtowers also **alert** when a horde first enters their combat range.
 
@@ -215,7 +214,7 @@ On the map, any building with a timed job also shows a **circular progress ring*
 - Don't overbuild early — your build slot cap is tight at base level 1, and every structure (even a quiet one) raises your noise floor a little.
 - A tower's passive claim range is a cheap way to expand territory without spending militia.
 - Keep at least a little garrison on exposed tiles once hordes start showing up — a bare tile has almost no defense of its own.
-- Scouting before attacking a tile shows you its defense value, so you're not committing militia blind.
+- Scouting a tile (via Wandering Scout / Scout Skiff) shows you its defense value before an expedition, so you're not committing militia blind.
 - If you're not making noise-triggering moves, hordes need real time to get moving again — recovering the "quiet" state is worth doing between pushes.
 - Before assaulting a den, have your garrison/tower/wall plan ready to execute the moment you win — the last-stand hold starts immediately, and its waves escalate fast.
 - Every den you clear also hands you a guaranteed lab clue, so working toward outposts naturally works toward finding the lab too.

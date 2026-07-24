@@ -14,7 +14,6 @@ import {
   junkyardKnightCapacity,
   militiaCapacity,
   nextBarracksLevel,
-  scoutCapacity,
   trainingUnitDurationMs,
 } from "./barracks";
 
@@ -69,7 +68,7 @@ describe("barracksUpgradeDurationMs", () => {
   });
 });
 
-describe("militiaCapacity / scoutCapacity", () => {
+describe("militiaCapacity", () => {
   it("sums per-level contributions across multiple barracks", () => {
     const tweaks = loadRealTweaks();
     const list: Barracks[] = [
@@ -79,15 +78,11 @@ describe("militiaCapacity / scoutCapacity", () => {
     expect(militiaCapacity(tweaks, list)).toBe(
       tweaks.barracks.militia_capacity_per_level * 1 + tweaks.barracks.militia_capacity_per_level * 2,
     );
-    expect(scoutCapacity(tweaks, list)).toBe(
-      tweaks.barracks.scout_capacity_per_level * 1 + tweaks.barracks.scout_capacity_per_level * 2,
-    );
   });
 
   it("is 0 with no barracks", () => {
     const tweaks = loadRealTweaks();
     expect(militiaCapacity(tweaks, [])).toBe(0);
-    expect(scoutCapacity(tweaks, [])).toBe(0);
   });
 });
 
@@ -135,25 +130,24 @@ describe("advanceBarracksTraining", () => {
   });
 
   const units = (): UnitsRecord => ({
-    scoutStockpile: 0,
     militiaCount: 0,
     junkyardKnightCount: 0,
     crossBowSniperCount: 0,
   });
 
-  it("delivers scouts from an active barracks queue", () => {
+  it("delivers militia from an active barracks queue", () => {
     const tweaks = loadRealTweaks();
-    const perUnitMs = trainingUnitDurationMs(tweaks, "scout", 2);
+    const perUnitMs = trainingUnitDurationMs(tweaks, "militia", 2);
     const startedAt = 1000;
     const list = [
       baseBarracks({
-        trainingQueue: { unitType: "scout", remaining: 2, currentUnitStartedAt: startedAt },
+        trainingQueue: { unitType: "militia", remaining: 2, currentUnitStartedAt: startedAt },
       }),
     ];
     const result = advanceBarracksTraining(tweaks, list, units(), startedAt + perUnitMs);
-    expect(result.units.scoutStockpile).toBe(1);
+    expect(result.units.militiaCount).toBe(1);
     expect(result.barracksList[0].trainingQueue).toEqual({
-      unitType: "scout",
+      unitType: "militia",
       remaining: 1,
       currentUnitStartedAt: startedAt + perUnitMs,
     });
@@ -185,8 +179,8 @@ describe("advanceBarracksTraining", () => {
 
   it("uses each barracks's own level for training speed, not a pooled count", () => {
     const tweaks = loadRealTweaks();
-    const l1Ms = trainingUnitDurationMs(tweaks, "scout", 1);
-    const l4Ms = trainingUnitDurationMs(tweaks, "scout", 4);
+    const l1Ms = trainingUnitDurationMs(tweaks, "militia", 1);
+    const l4Ms = trainingUnitDurationMs(tweaks, "militia", 4);
     expect(l4Ms).toBeCloseTo(l1Ms / 4);
   });
 });

@@ -1,21 +1,15 @@
 import type { Axial } from "../../engine/hexCoords";
-import type { Barracks } from "../../data/barracks";
-import type { UnitsRecord } from "../../data/units";
 import type { ScoutSkiffsRecord } from "../../data/scoutSkiffs";
 import type { WanderingScoutsRecord } from "../../data/wanderingScouts";
 import type { LabRecord } from "../../data/lab";
 import type { Tweaks } from "../../data/tweaksSchema";
-import { scoutCapacity } from "../../engine/barracks";
 import { labClueText } from "../../engine/lab";
 import { BottomSheet } from "../primitives/BottomSheet";
-import { StatRow } from "../primitives/StatRow";
 import { SheetInfoCard, SheetListItem, SheetSectionLabel } from "../primitives/SheetListItem";
 
 /** Scouting/exploration status + the lab's clue history — previously the clue count/latest hint lived in the HUD header with no history, and skiffs/wandering scouts had no summary view at all. */
 export function ScoutingPanel({
   tweaks,
-  units,
-  barracksList,
   scoutSkiffs,
   wanderingScouts,
   lab,
@@ -23,8 +17,6 @@ export function ScoutingPanel({
   onClose,
 }: {
   tweaks: Tweaks;
-  units: UnitsRecord;
-  barracksList: Barracks[];
   scoutSkiffs: ScoutSkiffsRecord;
   wanderingScouts: WanderingScoutsRecord;
   lab: LabRecord;
@@ -39,7 +31,6 @@ export function ScoutingPanel({
   return (
     <BottomSheet open title="Scouting" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
-        <StatRow label="Scouts" current={units.scoutStockpile} max={scoutCapacity(tweaks, barracksList)} />
         <SheetInfoCard>
           <span>Scout skiffs: {scoutSkiffs.length}</span>
           <span>Wandering scouts: {wanderingScouts.length}</span>

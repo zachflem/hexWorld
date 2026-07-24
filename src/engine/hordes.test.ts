@@ -407,7 +407,6 @@ describe("resolveHordeAttack", () => {
 
 describe("resolveGarrisonAutoAttacks", () => {
   const units = (militiaCount: number): UnitsRecord => ({
-    scoutStockpile: 0,
     militiaCount,
     junkyardKnightCount: 0,
     crossBowSniperCount: 0,

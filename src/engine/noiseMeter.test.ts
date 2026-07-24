@@ -320,13 +320,13 @@ describe("addActionNoise", () => {
 
   it("defaults the multiplier to 1, matching the no-multiplier call", () => {
     const tweaks = loadRealTweaks();
-    expect(addActionNoise(tweaks, 0, "train_scout", BASE_LEVEL, 1)).toBe(addActionNoise(tweaks, 0, "train_scout", BASE_LEVEL));
+    expect(addActionNoise(tweaks, 0, "train_militia", BASE_LEVEL, 1)).toBe(addActionNoise(tweaks, 0, "train_militia", BASE_LEVEL));
   });
 
   it("scales the spike by the multiplier — rush training scaling by quantity, unlike every other flat one-time action", () => {
     const tweaks = loadRealTweaks();
-    expect(addActionNoise(tweaks, 0, "rush_train_scout", BASE_LEVEL, 5)).toBeCloseTo(
-      tweaks.noise.one_time_action_noise.rush_train_scout * 5,
+    expect(addActionNoise(tweaks, 0, "rush_train_militia", BASE_LEVEL, 5)).toBeCloseTo(
+      tweaks.noise.one_time_action_noise.rush_train_militia * 5,
     );
   });
 

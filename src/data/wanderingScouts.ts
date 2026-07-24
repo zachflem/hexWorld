@@ -1,12 +1,12 @@
 import type { Axial } from "../engine/hexCoords";
 
 /**
- * A mobile land-only unit, built at a Barracks by retiring
- * tweaks.units.wandering_scout.scout_cost regular scouts from the stockpile
- * (max tweaks.units.wandering_scout.max_per_barracks per barracks) — wanders
- * randomly across connected land (engine/wanderingScouts.ts:advanceWanderingScouts),
- * scouting every tile it visits (src/data/scoutedTiles.ts), the land
- * counterpart of the water-bound scout skiff (src/data/scoutSkiffs.ts).
+ * A mobile land-only unit, built at a Barracks for
+ * tweaks.units.wandering_scout.cost (max tweaks.units.wandering_scout.max_per_barracks
+ * per barracks) — wanders randomly across connected land
+ * (engine/wanderingScouts.ts:advanceWanderingScouts), scouting every tile it
+ * visits (src/data/scoutedTiles.ts), the land counterpart of the water-bound
+ * scout skiff (src/data/scoutSkiffs.ts).
  */
 export interface WanderingScoutRecord {
   id: string;

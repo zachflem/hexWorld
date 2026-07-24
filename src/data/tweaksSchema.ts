@@ -176,7 +176,6 @@ export const tweaksSchema = z.object({
     upgrade_time_minutes_base: z.number(),
     _upgrade_time_note: z.string(),
     militia_capacity_per_level: z.number(),
-    scout_capacity_per_level: z.number(),
     junkyard_knight_capacity_per_level: z.number(),
     cross_bow_sniper_capacity_per_level: z.number(),
     _capacity_note: z.string(),
@@ -184,12 +183,6 @@ export const tweaksSchema = z.object({
 
   units: z.object({
     _status: z.string(),
-    scout: z.object({
-      train_cost: resourceCostMap,
-      train_time_seconds: z.number(),
-      upkeep_food_per_min: z.number(),
-      _note: z.string(),
-    }),
     militia: z.object({
       train_cost: resourceCostMap,
       train_time_seconds: z.number(),
@@ -219,7 +212,6 @@ export const tweaksSchema = z.object({
       _note: z.string(),
     }),
     wandering_scout: z.object({
-      scout_cost: z.number(),
       cost: resourceCostMap,
       max_per_barracks: z.number(),
       seconds_per_step: z.number(),

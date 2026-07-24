@@ -1,5 +1,4 @@
 export interface UnitsRecord {
-  scoutStockpile: number;
   militiaCount: number;
   /** Barracks L2 unlock (units.junkyard_knight, tweaks.jsonc) — a tougher, harder-hitting melee unit, same standing-army/garrison model as militia. */
   junkyardKnightCount: number;
@@ -11,7 +10,6 @@ export const UNITS_DB_KEY = "units";
 
 export function initialUnits(): UnitsRecord {
   return {
-    scoutStockpile: 0,
     militiaCount: 0,
     junkyardKnightCount: 0,
     crossBowSniperCount: 0,
@@ -24,8 +22,12 @@ export interface LegacyTrainingQueue {
   currentUnitStartedAt: number;
 }
 
-/** @deprecated Pre-#5 save shape — stripped in hydrateGameState. */
-export interface LegacyUnitsRecord extends UnitsRecord {
+/** @deprecated Pre-#5 / pre-#76 save shape — stripped in hydrateGameState. */
+export interface LegacyUnitsRecord {
+  scoutStockpile?: number;
+  militiaCount?: number;
+  junkyardKnightCount?: number;
+  crossBowSniperCount?: number;
   scoutQueue?: LegacyTrainingQueue | null;
   militiaQueue?: LegacyTrainingQueue | null;
   junkyardKnightQueue?: LegacyTrainingQueue | null;

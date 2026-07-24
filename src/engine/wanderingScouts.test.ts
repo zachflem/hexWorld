@@ -175,7 +175,7 @@ describe("watchtower signal bias", () => {
     expect(northDelta(biasedPath)).toBeGreaterThan(northDelta(control.path));
   });
 
-  it("awards a clue when a newly scouted tile is in-sector and chance is 100%", () => {
+  it("awards a clue on a newly scouted tile when chance is 100%, even without a signal", () => {
     const baseTweaks = loadRealTweaks();
     const tweaks = {
       ...baseTweaks,
@@ -198,7 +198,7 @@ describe("watchtower signal bias", () => {
       gridSize,
       tweaks.units.wandering_scout.seconds_per_step * 40,
       {
-        signal: { bearing: "north", setAt: 0 },
+        signal: null,
         base: start,
         cluesCollected: 0,
       },

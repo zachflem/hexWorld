@@ -16,7 +16,6 @@ import {
   militiaDefensePower,
   militiaTrainDurationMs,
   resolveTrainingQueue,
-  scoutTrainDurationMs,
   type TrainingQueueProgress,
 } from "./units";
 
@@ -71,12 +70,11 @@ describe("applyUpkeepTick", () => {
   it("deducts upkeep from food when there's enough to cover it", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
-      scoutStockpile: 2,
       militiaCount: 4,
       junkyardKnightCount: 0,
       crossBowSniperCount: 0,
     };
-    const upkeepPerMin = 2 * tweaks.units.scout.upkeep_food_per_min + 4 * tweaks.units.militia.upkeep_food_per_min;
+    const upkeepPerMin = 4 * tweaks.units.militia.upkeep_food_per_min;
 
     const result = applyUpkeepTick(tweaks, units, 1000, 60);
 
@@ -87,7 +85,6 @@ describe("applyUpkeepTick", () => {
   it("clamps food at 0 and deserts one militia when upkeep can't be covered", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
-      scoutStockpile: 0,
       militiaCount: 3,
       junkyardKnightCount: 0,
       crossBowSniperCount: 0,
@@ -99,25 +96,9 @@ describe("applyUpkeepTick", () => {
     expect(result.units.militiaCount).toBe(2);
   });
 
-  it("deserts a scout instead when there's no militia left", () => {
+  it("deserts a junkyard knight before a cross-bow sniper, once militia is gone", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
-      scoutStockpile: 2,
-      militiaCount: 0,
-      junkyardKnightCount: 0,
-      crossBowSniperCount: 0,
-    };
-
-    const result = applyUpkeepTick(tweaks, units, 0, 60);
-
-    expect(result.units.militiaCount).toBe(0);
-    expect(result.units.scoutStockpile).toBe(1);
-  });
-
-  it("deserts a junkyard knight before a cross-bow sniper or scout, once militia is gone", () => {
-    const tweaks = loadRealTweaks();
-    const units: UnitsRecord = {
-      scoutStockpile: 1,
       militiaCount: 0,
       junkyardKnightCount: 2,
       crossBowSniperCount: 1,
@@ -127,13 +108,11 @@ describe("applyUpkeepTick", () => {
 
     expect(result.units.junkyardKnightCount).toBe(1);
     expect(result.units.crossBowSniperCount).toBe(1);
-    expect(result.units.scoutStockpile).toBe(1);
   });
 
-  it("deserts a cross-bow sniper before a scout, once militia and junkyard knights are gone", () => {
+  it("deserts a cross-bow sniper once militia and junkyard knights are gone", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
-      scoutStockpile: 1,
       militiaCount: 0,
       junkyardKnightCount: 0,
       crossBowSniperCount: 1,
@@ -142,13 +121,11 @@ describe("applyUpkeepTick", () => {
     const result = applyUpkeepTick(tweaks, units, 0, 60);
 
     expect(result.units.crossBowSniperCount).toBe(0);
-    expect(result.units.scoutStockpile).toBe(1);
   });
 
   it("does nothing for zero or negative elapsed time", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
-      scoutStockpile: 2,
       militiaCount: 3,
       junkyardKnightCount: 0,
       crossBowSniperCount: 0,
@@ -160,7 +137,6 @@ describe("applyUpkeepTick", () => {
   it("does nothing when there are no units at all", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
-      scoutStockpile: 0,
       militiaCount: 0,
       junkyardKnightCount: 0,
       crossBowSniperCount: 0,
@@ -217,22 +193,20 @@ describe("resolveTrainingQueue", () => {
   });
 });
 
-describe("scoutTrainDurationMs / militiaTrainDurationMs", () => {
+describe("militiaTrainDurationMs", () => {
   it("convert the configured per-unit seconds to milliseconds, for a single barracks", () => {
     const tweaks = loadRealTweaks();
-    expect(scoutTrainDurationMs(tweaks, 1)).toBe(tweaks.units.scout.train_time_seconds * 1000);
     expect(militiaTrainDurationMs(tweaks, 1)).toBe(tweaks.units.militia.train_time_seconds * 1000);
   });
 
   it("scales inversely with the barracks's own level — L2 trains twice as fast as L1", () => {
     const tweaks = loadRealTweaks();
-    expect(scoutTrainDurationMs(tweaks, 2)).toBeCloseTo((tweaks.units.scout.train_time_seconds * 1000) / 2);
     expect(militiaTrainDurationMs(tweaks, 4)).toBeCloseTo((tweaks.units.militia.train_time_seconds * 1000) / 4);
   });
 
   it("floors at level 1 — never divides by zero or speeds up below the base rate", () => {
     const tweaks = loadRealTweaks();
-    expect(scoutTrainDurationMs(tweaks, 0)).toBe(tweaks.units.scout.train_time_seconds * 1000);
+    expect(militiaTrainDurationMs(tweaks, 0)).toBe(tweaks.units.militia.train_time_seconds * 1000);
   });
 });
 

@@ -9,7 +9,6 @@ import {
   junkyardKnightTrainDurationMs,
   militiaTrainDurationMs,
   resolveTrainingQueue,
-  scoutTrainDurationMs,
 } from "./units";
 
 export function barracksBuildCost(tweaks: Tweaks, n: number): Record<string, number> {
@@ -60,15 +59,11 @@ export function militiaCapacity(tweaks: Tweaks, barracksList: Barracks[]): numbe
   return barracksList.reduce((sum, b) => sum + tweaks.barracks.militia_capacity_per_level * b.level, 0);
 }
 
-export function scoutCapacity(tweaks: Tweaks, barracksList: Barracks[]): number {
-  return barracksList.reduce((sum, b) => sum + tweaks.barracks.scout_capacity_per_level * b.level, 0);
-}
-
 /**
- * Unlike militiaCapacity/scoutCapacity, this unit type is level-gated — a
- * barracks below units.junkyard_knight.min_barracks_level hasn't built the
- * wing for it yet and contributes 0, not just less. A barracks that meets
- * the gate still scales by its own level, same per_level_value*level shape.
+ * Unlike militiaCapacity, this unit type is level-gated — a barracks below
+ * units.junkyard_knight.min_barracks_level hasn't built the wing for it yet
+ * and contributes 0, not just less. A barracks that meets the gate still
+ * scales by its own level, same per_level_value*level shape.
  */
 export function junkyardKnightCapacity(tweaks: Tweaks, barracksList: Barracks[]): number {
   const minLevel = tweaks.units.junkyard_knight.min_barracks_level;
@@ -89,8 +84,6 @@ export function crossBowSniperCapacity(tweaks: Tweaks, barracksList: Barracks[])
 
 export function trainingUnitDurationMs(tweaks: Tweaks, unitType: TrainingUnitType, barracksLevel: number): number {
   switch (unitType) {
-    case "scout":
-      return scoutTrainDurationMs(tweaks, barracksLevel);
     case "militia":
       return militiaTrainDurationMs(tweaks, barracksLevel);
     case "junkyard_knight":
@@ -102,8 +95,6 @@ export function trainingUnitDurationMs(tweaks: Tweaks, unitType: TrainingUnitTyp
 
 export function trainingUnitLabel(unitType: TrainingUnitType): string {
   switch (unitType) {
-    case "scout":
-      return "scouts";
     case "militia":
       return "militia";
     case "junkyard_knight":
@@ -133,9 +124,6 @@ export function advanceBarracksTraining(
     const result = resolveTrainingQueue(queue, trainingUnitDurationMs(tweaks, queue.unitType, barracks.level), virtualNow);
     if (result.delivered > 0) {
       switch (queue.unitType) {
-        case "scout":
-          nextUnits = { ...nextUnits, scoutStockpile: nextUnits.scoutStockpile + result.delivered };
-          break;
         case "militia":
           nextUnits = { ...nextUnits, militiaCount: nextUnits.militiaCount + result.delivered };
           break;

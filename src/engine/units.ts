@@ -1,10 +1,6 @@
 import type { UnitsRecord } from "../data/units";
 import type { Tweaks } from "../data/tweaksSchema";
 
-export function scoutTrainCost(tweaks: Tweaks): Record<string, number> {
-  return tweaks.units.scout.train_cost;
-}
-
 export function militiaTrainCost(tweaks: Tweaks): Record<string, number> {
   return tweaks.units.militia.train_cost;
 }
@@ -22,10 +18,6 @@ export function crossBowSniperTrainCost(tweaks: Tweaks): Record<string, number> 
  * that barracks's own level (not a pooled count across every barracks).
  * Floored at 1 so a malformed level-0 record can't divide by zero.
  */
-export function scoutTrainDurationMs(tweaks: Tweaks, barracksLevel: number): number {
-  return (tweaks.units.scout.train_time_seconds * 1000) / Math.max(1, barracksLevel);
-}
-
 export function militiaTrainDurationMs(tweaks: Tweaks, barracksLevel: number): number {
   return (tweaks.units.militia.train_time_seconds * 1000) / Math.max(1, barracksLevel);
 }
@@ -97,20 +89,18 @@ export function crossBowSniperDefensePower(tweaks: Tweaks, count: number): numbe
 }
 
 export function totalUpkeepPerSecond(tweaks: Tweaks, units: UnitsRecord): number {
-  const scoutPerMin = units.scoutStockpile * tweaks.units.scout.upkeep_food_per_min;
   const militiaPerMin = units.militiaCount * tweaks.units.militia.upkeep_food_per_min;
   const junkyardKnightPerMin = units.junkyardKnightCount * tweaks.units.junkyard_knight.upkeep_food_per_min;
   const crossBowSniperPerMin = units.crossBowSniperCount * tweaks.units.cross_bow_sniper.upkeep_food_per_min;
-  return (scoutPerMin + militiaPerMin + junkyardKnightPerMin + crossBowSniperPerMin) / 60;
+  return (militiaPerMin + junkyardKnightPerMin + crossBowSniperPerMin) / 60;
 }
 
 /**
- * Advances food upkeep for stockpiled scouts and every standing unit type by
- * `elapsedSeconds`. If food can't cover the full upkeep, food is clamped at 0
- * and exactly one unit deserts — cheapest/most-replaceable first (militia,
- * then junkyard knight, then cross-bow sniper, then finally a scout, since
- * scouts are the rarer/costlier investment to lose) — a simple first-pass
- * penalty, not proportional to the shortfall size.
+ * Advances food upkeep for every standing unit type by `elapsedSeconds`. If
+ * food can't cover the full upkeep, food is clamped at 0 and exactly one unit
+ * deserts — cheapest/most-replaceable first (militia, then junkyard knight,
+ * then cross-bow sniper) — a simple first-pass penalty, not proportional to
+ * the shortfall size.
  */
 export function applyUpkeepTick(
   tweaks: Tweaks,
@@ -132,8 +122,6 @@ export function applyUpkeepTick(
     nextUnits.junkyardKnightCount -= 1;
   } else if (nextUnits.crossBowSniperCount > 0) {
     nextUnits.crossBowSniperCount -= 1;
-  } else if (nextUnits.scoutStockpile > 0) {
-    nextUnits.scoutStockpile -= 1;
   }
   return { food: 0, units: nextUnits };
 }
