@@ -43,6 +43,9 @@ export function ScoutingPanel({
         <SheetInfoCard>
           <span>Scout skiffs: {scoutSkiffs.length}</span>
           <span>Wandering scouts: {wanderingScouts.length}</span>
+          {lab.watchtowerSignal ? (
+            <span>Watchtower signal: {lab.watchtowerSignal.bearing}</span>
+          ) : null}
         </SheetInfoCard>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>

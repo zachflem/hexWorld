@@ -306,6 +306,22 @@ export function towersInRange(tweaks: Tweaks, towers: Tower[], coord: Axial): To
 }
 
 /**
+ * Watchtower early-warning (#38): ids newly entering tower range should toast
+ * once; ids that left range are dropped so a later re-entry alerts again.
+ */
+export function reconcileHordeWatchtowerAlerts(
+  currentlyInRangeIds: Iterable<string>,
+  previouslyAlerted: ReadonlySet<string>,
+): { nextAlerted: Set<string>; newlyAlertedIds: string[] } {
+  const stillInRange = new Set(currentlyInRangeIds);
+  const newlyAlertedIds: string[] = [];
+  for (const id of stillInRange) {
+    if (!previouslyAlerted.has(id)) newlyAlertedIds.push(id);
+  }
+  return { nextAlerted: stillInRange, newlyAlertedIds };
+}
+
+/**
  * Real per-tick attrition (DESIGN.md §10: "Towers deal damage at range,
  * every tick a horde remains within reach") — zombiesKilledPerTick per
  * in-range tower, converted to a continuous per-second rate the same way

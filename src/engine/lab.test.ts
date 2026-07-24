@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { LabRecord } from "../data/lab";
 import { tweaksSchema } from "../data/tweaksSchema";
 import { axialDistance } from "./hexCoords";
-import { labClueText, labSearchZoneCenter, resolveLabAssault, rollScoutClue } from "./lab";
+import { labClueText, labSearchZoneCenter, resolveLabAssault, rollScoutClue, rollWatchtowerSignal, watchtowerSignalChance, compass4Bearing, coordInCompass4Sector, makeWatchtowerSignal, WATCHTOWER_SIGNAL_MIN_LEVEL } from "./lab";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -93,5 +93,41 @@ describe("labSearchZoneCenter", () => {
     const radius = 6;
     const center = labSearchZoneCenter(seed, labCoord, radius, 128);
     expect(axialDistance(center, labCoord)).toBeLessThanOrEqual(radius);
+  });
+});
+
+describe("watchtower signals", () => {
+  const base = { q: 0, r: 0 };
+  const towerCoord = { q: 1, r: 0 };
+
+  it("L1 never has a signal chance", () => {
+    const tweaks = loadRealTweaks();
+    expect(watchtowerSignalChance(tweaks, 1)).toBe(0);
+    expect(WATCHTOWER_SIGNAL_MIN_LEVEL).toBe(2);
+    expect(rollWatchtowerSignal(tweaks, 42, towerCoord, 1, 0, 1000)).toBe(false);
+  });
+
+  it("L4 chance is base × multiplier", () => {
+    const tweaks = loadRealTweaks();
+    const baseChance = tweaks.lab_clues.passive_surfacing.per_watchtower_tick_base_chance;
+    const mult = tweaks.lab_clues.passive_surfacing.watchtower_intel_tier_multiplier;
+    expect(watchtowerSignalChance(tweaks, 2)).toBe(baseChance);
+    expect(watchtowerSignalChance(tweaks, 3)).toBe(baseChance);
+    expect(watchtowerSignalChance(tweaks, 4)).toBe(baseChance * mult);
+  });
+
+  it("rollWatchtowerSignal is deterministic", () => {
+    const tweaks = loadRealTweaks();
+    const a = rollWatchtowerSignal(tweaks, 99, towerCoord, 4, 12345, 50);
+    const b = rollWatchtowerSignal(tweaks, 99, towerCoord, 4, 12345, 50);
+    expect(b).toBe(a);
+  });
+
+  it("compass4Bearing / sector match for cardinal labs", () => {
+    expect(compass4Bearing(base, { q: 0, r: -10 })).toBe("north");
+    expect(coordInCompass4Sector(base, { q: 0, r: -5 }, "north")).toBe(true);
+    expect(coordInCompass4Sector(base, { q: 0, r: 5 }, "north")).toBe(false);
+    const signal = makeWatchtowerSignal(base, { q: 0, r: -10 }, 1);
+    expect(signal.bearing).toBe("north");
   });
 });

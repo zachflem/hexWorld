@@ -756,8 +756,10 @@
 
     "passive_surfacing": {
       "per_scout_action_chance": 0.02,
-      "per_watchtower_tick_base_chance": 0.005,
-      "watchtower_intel_tier_multiplier": 1.0, // chance scales as base_chance * intel_tier
+      // L2–L3 per tick; L1 never rolls. Rare — towers point scouts, they don't drip clues.
+      "per_watchtower_tick_base_chance": 0.001,
+      // Applied at tower level 4 only (chance = base * this).
+      "watchtower_intel_tier_multiplier": 2.0,
       "stops_once_all_clues_collected": true
     },
 
