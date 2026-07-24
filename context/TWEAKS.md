@@ -466,6 +466,7 @@ A person walking a goat track isn't silent, but nowhere near a highway's constan
 **Capturing a tile:** if a horde wins a tile fight (other than the base, which can never be stripped from `owned`), the tile flips to unowned and any structure on it goes `damaged` — DESIGN.md §12:
 - Any resources stored there are lost immediately.
 - The structure survives but stops functioning entirely: a damaged extraction tile yields nothing (existing stockpile frozen, not drained either); a damaged path tile breaks the auto-flow chain through it, same as if no path were there; a damaged tower/wall contributes no combat value at all (neither tile defense nor per-tick range attrition).
+- Fog knowledge is preserved: the captured tile is appended to `scoutedTiles` (`preserveCapturedTilesAsScouted`) so ownership loss does not hide the tile again — reclaim/repair without waiting for a Wandering Scout.
 - Reclaiming the tile (by attack, same as claiming any unowned tile) lets you repair the structure at 50% of its original build cost, instantly — see Territory Expansion / Tile Assault, below, for the reclaim mechanics and Repair, elsewhere in this doc, for the cost formula.
 - A tower's own viewshed claim (Territory Expansion / Tile Assault, above) will auto-reclaim the bare *ground* the moment the horde is gone, if the tile falls within that tower's range — but the structure itself stays damaged regardless, until separately repaired.
 

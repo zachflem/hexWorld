@@ -103,7 +103,7 @@ The base is a hub, not a fighting unit — it holds your storage, tech upgrades,
 - **Towers** deal ranged damage to any horde within reach, every tick, for as long as it stays in range. Both damage and range grow with tower level (levels 1–4). Militia stationed on a tower's own tile add their attack power straight onto its damage. A horde lingering in a tower's range is also visibly slowed.
 - **Walls** (wood → rock → steel, an upgrade path) don't fight back — they soak up horde damage via durability instead. They can only be repaired during peacetime, at a cost proportional to the damage they've taken.
 - **Demolishing** any structure refunds a fixed percentage of everything you ever spent on it (build + every upgrade).
-- A structure a horde captures goes **damaged** (non-functional) until you retake the tile and pay to repair it.
+- A structure a horde captures goes **damaged** (non-functional) until you retake the tile and pay to repair it. The tile stays known — hordes don't re-fog ground you've already held.
 
 There's no way to wall off everything — your build slot cap forces real choices about what to fortify and what to leave exposed.
 
@@ -159,7 +159,7 @@ Every structure you have contributes to an **ambient noise floor** — a steady-
 
 **Below 30dB — your quietest possible floor — hordes have nothing to hear and simply won't spawn.** Above that, each zombie den's chance to spawn a horde (and how big that horde is) scales with your current noise level and your distance from that specific den — loud and close is dangerous, quiet and far is comparatively safe. Your base level also throttles overall horde frequency: a fresh, low-level base sees only a fraction of the "full" spawn rate, ramping up to normal as you level up — early game is meant to give you room to build before the pressure ramps up.
 
-Hordes path toward the noise source (you), preferring open ground, avoiding mountains, and unable to cross water. They advance a tile at a time, fighting whatever's there — win, and the tile (and anything on it) is theirs until you retake it. A horde that severs a section of your territory from your base instantly costs you everything stored in that cut-off section, and its buildings go damaged until reconnected and repaired.
+Hordes path toward the noise source (you), preferring open ground, avoiding mountains, and unable to cross water. They advance a tile at a time, fighting whatever's there — win, and the tile (and anything on it) is theirs until you retake it. Captured ground stays known (no re-fog); structures go damaged until you reclaim and repair. A horde that severs a section of your territory from your base instantly costs you everything stored in that cut-off section, and its buildings go damaged until reconnected and repaired.
 
 Losing the game means the base's reinforcement HP (see above) is destroyed by a horde.
 

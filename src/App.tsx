@@ -121,6 +121,7 @@ import {
   checkHordeSpawns,
   hordeStructureCaptureEvents,
   markCapturedStructuresDamaged,
+  preserveCapturedTilesAsScouted,
   resolveGarrisonAutoAttacks,
   towersInRange,
   reconcileHordeWatchtowerAlerts,
@@ -339,6 +340,22 @@ function buildGameState(
 ): GameState {
   const resolvedDens = (data.dens ?? []).map(resolveDen);
   const migrated = migrateLegacyTrainingQueues(data.barracksList ?? [], { ...initialUnits(), ...(data.units as LegacyUnitsRecord | undefined) });
+  const extractionTiles = data.extractionTiles ?? [];
+  const pathTiles = data.pathTiles ?? [];
+  const towers = data.towers ?? [];
+  const walls = data.walls ?? [];
+  const barracksList = migrated.barracksList;
+  // One-shot heal for saves that lost fog when hordes stripped ownership:
+  // any damaged structure implies the tile was held/known — keep it scouted.
+  const scoutedTiles = preserveCapturedTilesAsScouted(data.scoutedTiles ?? [], [
+    ...extractionTiles,
+    ...pathTiles,
+    ...towers,
+    ...walls,
+    ...barracksList,
+  ]
+    .filter((s) => s.damaged)
+    .map((s) => s.coord));
   return {
     player: data.player,
     world: normalizeWorldRecord(data.world),
@@ -346,14 +363,14 @@ function buildGameState(
     base: resolveBase(tweaks, data.base),
     resources: data.resources,
     clock: { ...data.clock, virtualNow: data.clock.virtualNow ?? data.clock.lastTickAt },
-    extractionTiles: data.extractionTiles ?? [],
-    pathTiles: data.pathTiles ?? [],
-    towers: data.towers ?? [],
-    walls: data.walls ?? [],
-    barracksList: migrated.barracksList,
+    extractionTiles,
+    pathTiles,
+    towers,
+    walls,
+    barracksList,
     units: migrated.units,
     garrisons: data.garrisons ?? [],
-    scoutedTiles: data.scoutedTiles ?? [],
+    scoutedTiles,
     storageLevels: data.storageLevels,
     storageUpgrades: data.storageUpgrades ?? initialStorageUpgrades(),
     noise: data.noise ?? initialNoise(tweaks),
@@ -1043,6 +1060,9 @@ export default function App() {
       const towersAfterCapture = markCapturedStructuresDamaged(towers, capturedTiles);
       const wallsAfterCapture = markCapturedStructuresDamaged(walls, capturedTiles);
       const barracksListAfterCapture = markCapturedStructuresDamaged(barracksList, capturedTiles);
+      // Ownership drop must not re-fog known ground — keep captured tiles in
+      // scoutedTiles so reclaim/repair stays possible without rediscovery.
+      const scoutedTilesAfterCapture = preserveCapturedTilesAsScouted(scoutedTiles, capturedTiles);
 
       // Watchtower early-warning (#38): toast once when a horde first enters
       // any active tower's combat range; clear when it leaves so re-entry alerts again.
@@ -1541,7 +1561,7 @@ export default function App() {
         set(DOCKS_DB_KEY, docks),
         set(SCOUT_SKIFFS_DB_KEY, scoutSkiffs),
         set(WANDERING_SCOUTS_DB_KEY, wanderingScouts),
-        set(SCOUTED_TILES_DB_KEY, scoutedTiles),
+        set(SCOUTED_TILES_DB_KEY, scoutedTilesAfterCapture),
         set(DENS_DB_KEY, densAfterAssaults),
         set(DEN_ASSAULTS_DB_KEY, nextDenAssaults),
         set(OUTPOSTS_DB_KEY, outpostsAfterSieges),
@@ -1577,7 +1597,7 @@ export default function App() {
                 docks,
                 scoutSkiffs,
                 wanderingScouts,
-                scoutedTiles,
+                scoutedTiles: scoutedTilesAfterCapture,
                 dens: densAfterAssaults,
                 denAssaults: nextDenAssaults,
                 outposts: outpostsAfterSieges,

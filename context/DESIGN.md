@@ -143,7 +143,7 @@ Noise never fully goes silent once you have any standing structures — it settl
 
 **Zombie dens** (see §13) are the origin points of hordes. Each den's horde-trigger chance and horde size scale with **both** the player's current noise level *and* proximity to that specific den — a loud player near a den is at serious risk; a quiet player far from any den is comparatively safe.
 
-Hordes path toward the noise source using shortest-path logic, preferring open terrain (grassland/forest), avoiding mountains, and unable to cross water. They advance one tile per tick, fighting for each tile in their path — if a horde wins a tile fight, the player loses that tile and must retake it to reclaim territory.
+Hordes path toward the noise source using shortest-path logic, preferring open terrain (grassland/forest), avoiding mountains, and unable to cross water. They advance one tile per tick, fighting for each tile in their path — if a horde wins a tile fight, the player loses that tile and must retake it to reclaim territory. Capture strips ownership and damages structures, but **does not wipe fog knowledge**: the tile stays scouted so it remains visible and reclaimable without rediscovery (Wandering Scout / Scout Skiff are the only reveal paths).
 
 **Territory disconnection:** if a horde's advance fully severs a section of owned territory from the base, that section's stored resources are lost immediately and its buildings become damaged (though not destroyed) — repairable at a reduced cost once the connecting tile is retaken.
 

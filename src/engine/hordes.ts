@@ -384,7 +384,9 @@ export function sniperDamagePerSecond(tweaks: Tweaks, garrisons: GarrisonsRecord
  * (the first code path to shrink it — see data/territory.ts's doc comment);
  * any structure on that tile is left in place, not deleted — `capturedTiles`
  * reports which coords were captured this call so the caller can flag those
- * structures `damaged` (see markCapturedStructuresDamaged below). Each
+ * structures `damaged` (see markCapturedStructuresDamaged below) and keep
+ * them known via preserveCapturedTilesAsScouted (ownership loss must not
+ * re-fog ground the player already held). Each
  * successful tile advance also decays the horde's own `size` by its
  * (likewise spawn-fixed) `horde.decayPct`% (compounding) — ground covered is
  * itself a defense, so a horde that's traveled far arrives weaker; a
@@ -664,4 +666,22 @@ export function markCapturedStructuresDamaged<T extends CapturedStructureFields>
     return applyHordeCaptureDamage(structure);
   });
   return changed ? next : structures;
+}
+
+/**
+ * Losing ownership must not wipe fog knowledge. Owned tiles clear fog by
+ * themselves and are usually never mirrored into `scoutedTiles`, so stripping
+ * `territory.owned` on capture would otherwise hide the tile again — and with
+ * Wandering Scout / Scout Skiff as the only reveal paths, there is no manual
+ * rediscovery. Append each newly captured coord to scoutedTiles (deduped) so
+ * the tile stays visible and expeditionable; reclaim + repair are unchanged.
+ */
+export function preserveCapturedTilesAsScouted(
+  scoutedTiles: Axial[],
+  capturedTiles: Axial[],
+): Axial[] {
+  if (capturedTiles.length === 0) return scoutedTiles;
+  const keys = new Set(scoutedTiles.map(axialKey));
+  const newlyScouted = capturedTiles.filter((coord) => !keys.has(axialKey(coord)));
+  return newlyScouted.length > 0 ? [...scoutedTiles, ...newlyScouted] : scoutedTiles;
 }
