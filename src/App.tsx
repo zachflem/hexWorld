@@ -101,12 +101,19 @@ import {
 } from "./engine/base";
 import { autoClaimTowerRange, canRepairHordeDamagedTile, isTileScoutable } from "./engine/territory";
 import {
+  ASSAULT_CORRIDOR,
+  TERRITORY_CORRIDOR,
   expeditionPathIndexAt,
   expeditionProvisionsCost,
   expeditionTravelDurationMs,
   findBestExpeditionRoute,
+  findExpeditionRouteFrom,
   partyAttackPower,
+  planHomeRecall,
+  provisionsRefund,
   recallDurationMs,
+  reinforceProvisionsCost,
+  reinforceTravelDurationMs,
   stepCorridorWalk,
   type TombstoneCause,
 } from "./engine/expeditions";
@@ -300,6 +307,21 @@ function migrateLegacyTrainingQueues(
   return { barracksList: nextBarracks, units };
 }
 
+/** Backfill lifecycle fields for saves created before corridor-conquest (#73). */
+function normalizeExpedition(e: Expedition & { resolvedIndex?: number }): Expedition {
+  const path = e.path ?? [];
+  return {
+    ...e,
+    resolvedIndex: e.resolvedIndex ?? 0,
+    origin: e.origin ?? path[0] ?? { q: 0, r: 0 },
+    phase: e.phase ?? "marching",
+    provisionsPaid: e.provisionsPaid ?? 0,
+    outboundTileCount: e.outboundTileCount ?? Math.max(0, path.length - 1),
+    decisionDeadlineAt: e.decisionDeadlineAt ?? null,
+    joinExpeditionId: e.joinExpeditionId ?? null,
+  };
+}
+
 function buildGameState(
   tweaks: Tweaks,
   data: {
@@ -358,7 +380,7 @@ function buildGameState(
     noise: data.noise ?? initialNoise(tweaks),
     dens: resolvedDens,
     hordes: data.hordes ?? [],
-    expeditions: (data.expeditions ?? []).map((e) => ({ ...e, resolvedIndex: e.resolvedIndex ?? 0 })),
+    expeditions: (data.expeditions ?? []).map((e) => normalizeExpedition(e)),
     gameStatus: { ...initialGameStatus(), ...data.gameStatus },
     docks: data.docks ?? [],
     scoutSkiffs: data.scoutSkiffs ?? [],
@@ -1162,16 +1184,76 @@ export default function App() {
 
       let territoryAfterExpeditions = territoryAfterClaim;
       let unitsAfterExpeditions = unitsAfterAutoAttack;
+      let resourcesAfterExpeditions = resources;
+      let hordesAfterCorridor = hordesAfterAutoAttack;
       const nextExpeditions: Expedition[] = [];
+      const reinforceMerges: {
+        joinId: string;
+        militia: number;
+        knight: number;
+        sniper: number;
+      }[] = [];
 
-      for (const expedition of [...current.game.expeditions].sort((a, b) => a.departedAt - b.departedAt)) {
+      const speedMult = troopSpeedMultiplier(current.tweaks, current.game.research);
+      const gridSize = resolveWorldGridSize(current.game.world, current.tweaks);
+      const worldSeed = current.game.world.seed;
+      const scoutedForRecall = current.game.scoutedTiles;
+
+      const applyHomeRecall = (expedition: Expedition, applyRefund: boolean): void => {
+        const plan = planHomeRecall(
+          current.tweaks,
+          worldSeed,
+          expedition,
+          territoryAfterExpeditions,
+          scoutedForRecall,
+          gridSize,
+          speedMult,
+          virtualNow,
+          applyRefund,
+        );
+        if (plan.foodRefund > 0) {
+          resourcesAfterExpeditions = {
+            ...resourcesAfterExpeditions,
+            food: resourcesAfterExpeditions.food + plan.foodRefund,
+          };
+        }
+        if (plan.next) {
+          nextExpeditions.push({ ...expedition, ...plan.next });
+        }
+        // else dissolved at origin / no route — units return to standing army by dropping the record
+      };
+
+      for (const raw of [...current.game.expeditions].sort((a, b) => a.departedAt - b.departedAt)) {
+        const expedition = normalizeExpedition(raw);
         const attackPower = partyAttackPower(
           current.tweaks,
           expedition.militiaCommitted,
           expedition.junkyardKnightCommitted,
           expedition.crossBowSniperCommitted,
         );
-        const targetIndex = expeditionPathIndexAt(expedition.departedAt, expedition.arriveAt, virtualNow, expedition.path.length);
+
+        if (expedition.phase === "awaitingOrders") {
+          const deadline =
+            expedition.decisionDeadlineAt ??
+            virtualNow + current.tweaks.expeditions.arrival_decision_minutes * 60_000;
+          if (virtualNow >= deadline) {
+            applyHomeRecall({ ...expedition, decisionDeadlineAt: deadline }, false);
+            pushToast({
+              message: "Expedition returning home — no new orders received",
+              coord: expedition.target,
+            });
+          } else {
+            nextExpeditions.push({ ...expedition, decisionDeadlineAt: deadline });
+          }
+          continue;
+        }
+
+        const targetIndex = expeditionPathIndexAt(
+          expedition.departedAt,
+          expedition.arriveAt,
+          virtualNow,
+          expedition.path.length,
+        );
         const step = stepCorridorWalk(
           current.tweaks,
           expedition.path,
@@ -1181,6 +1263,7 @@ export default function App() {
           territoryAfterExpeditions.base,
           attackPower,
           hordeSizeByKey,
+          TERRITORY_CORRIDOR,
         );
 
         if (step.claimedTiles.length > 0) {
@@ -1190,17 +1273,85 @@ export default function App() {
           };
         }
 
+        if (step.clearedHordeKeys.length > 0) {
+          const cleared = new Set(step.clearedHordeKeys);
+          for (const key of cleared) hordeSizeByKey.delete(key);
+          hordesAfterCorridor = hordesAfterCorridor.filter(
+            (h) => !cleared.has(axialKey(h.path[h.pathIndex])),
+          );
+        }
+
         if (step.death) {
           unitsAfterExpeditions = debitParty(unitsAfterExpeditions, expedition);
           tombstonesFromThisTick.push(
             makeTombstone("expedition", expedition.target, step.death.tile, step.death.cause, expedition, attackPower),
           );
+          const cause =
+            step.death.cause.kind === "horde_blocked"
+              ? `horde (${step.death.cause.hordeSize}) beat party power ${attackPower}`
+              : `tile defense ${step.death.cause.defense} beat party power ${attackPower}`;
+          pushToast({
+            message: `Expedition wiped — ${cause}`,
+            coord: step.death.tile,
+          });
           continue;
         }
 
-        if (step.resolvedIndex >= expedition.path.length - 1) continue; // arrived home safely, no count change
+        if (step.resolvedIndex >= expedition.path.length - 1) {
+          if (expedition.phase === "recalling") {
+            continue; // home — standing army free again
+          }
+          if (expedition.phase === "reinforcing" && expedition.joinExpeditionId) {
+            reinforceMerges.push({
+              joinId: expedition.joinExpeditionId,
+              militia: expedition.militiaCommitted,
+              knight: expedition.junkyardKnightCommitted,
+              sniper: expedition.crossBowSniperCommitted,
+            });
+            continue;
+          }
+          // Outbound arrival — wait for orders
+          const decisionDeadlineAt =
+            virtualNow + current.tweaks.expeditions.arrival_decision_minutes * 60_000;
+          nextExpeditions.push({
+            ...expedition,
+            resolvedIndex: expedition.path.length - 1,
+            phase: "awaitingOrders",
+            decisionDeadlineAt,
+          });
+          pushToast({
+            message: "We made it. Where to next, boss?",
+            coord: expedition.target,
+          });
+          continue;
+        }
 
         nextExpeditions.push({ ...expedition, resolvedIndex: step.resolvedIndex });
+      }
+
+      for (const merge of reinforceMerges) {
+        const idx = nextExpeditions.findIndex(
+          (e) => e.id === merge.joinId && e.phase === "awaitingOrders",
+        );
+        if (idx >= 0) {
+          const host = nextExpeditions[idx]!;
+          nextExpeditions[idx] = {
+            ...host,
+            militiaCommitted: host.militiaCommitted + merge.militia,
+            junkyardKnightCommitted: host.junkyardKnightCommitted + merge.knight,
+            crossBowSniperCommitted: host.crossBowSniperCommitted + merge.sniper,
+          };
+          pushToast({
+            message: "Reinforcements joined the expedition",
+            coord: host.target,
+          });
+        } else {
+          // Host gone — reinforcements idle at destination as their own waiting party
+          // (units already committed on the reinforcing record which was dropped; restore by
+          // creating a synthetic awaiting party would double-count. Units stay in UnitsRecord
+          // and become available when the reinforcing record is dropped without merge — so
+          // if host is missing we simply free them by not re-adding. No action.)
+        }
       }
 
       // Den assaults resolve the same corridor-walk mechanism as expeditions
@@ -1263,6 +1414,7 @@ export default function App() {
           territoryAfterExpeditions.base,
           attackPower,
           hordeSizeByKey,
+          ASSAULT_CORRIDOR,
         );
 
         if (step.claimedTiles.length > 0) {
@@ -1456,6 +1608,7 @@ export default function App() {
           territoryAfterExpeditions.base,
           attackPower,
           hordeSizeByKey,
+          ASSAULT_CORRIDOR,
         );
 
         if (step.claimedTiles.length > 0) {
@@ -1522,7 +1675,7 @@ export default function App() {
           : gameStatusAfterHordes;
 
       void Promise.all([
-        set(RESOURCES_DB_KEY, resources),
+        set(RESOURCES_DB_KEY, resourcesAfterExpeditions),
         set(EXTRACTION_TILES_DB_KEY, extractionTilesAfterCapture),
         set(PATH_TILES_DB_KEY, pathTilesAfterCapture),
         set(TOWERS_DB_KEY, towersAfterCapture),
@@ -1533,7 +1686,7 @@ export default function App() {
         set(NOISE_DB_KEY, noiseAfterAutoAttack),
         set(CLOCK_DB_KEY, clock),
         set(BASE_DB_KEY, baseAfterHordes),
-        set(HORDES_DB_KEY, hordesAfterAutoAttack),
+        set(HORDES_DB_KEY, hordesAfterCorridor),
         set(TERRITORY_DB_KEY, territoryAfterExpeditions),
         set(EXPEDITIONS_DB_KEY, nextExpeditions),
         set(GAME_STATUS_DB_KEY, gameStatus),
@@ -1558,7 +1711,7 @@ export default function App() {
               ...prev,
               game: {
                 ...prev.game,
-                resources,
+                resources: resourcesAfterExpeditions,
                 extractionTiles: extractionTilesAfterCapture,
                 pathTiles: pathTilesAfterCapture,
                 towers: towersAfterCapture,
@@ -1569,7 +1722,7 @@ export default function App() {
                 noise: noiseAfterAutoAttack,
                 clock,
                 base: baseAfterHordes,
-                hordes: hordesAfterAutoAttack,
+                hordes: hordesAfterCorridor,
                 territory: territoryAfterExpeditions,
                 expeditions: nextExpeditions,
                 gameStatus,
@@ -3645,15 +3798,11 @@ export default function App() {
   }
 
   /**
-   * Dispatches a party to fight its way to `target` along the cheapest route
-   * from any non-damaged barracks, through owned-or-scouted ground only
-   * (engine/expeditions.ts:findBestExpeditionRoute) — replaces the old
-   * one-ring-at-a-time instant tile attack entirely (tweaks.jsonc
-   * territory_expansion's 2026-07-19 correction note). Provisions are paid
-   * upfront, same convention as training costs; the fight itself doesn't
-   * happen here — it resolves later in the tick loop once travel time
-   * elapses (runTick, above), so a successful return only confirms the
-   * party departed, not whether it survives the trip.
+   * Dispatches a party along the cheapest owned-preferring route through
+   * owned-or-scouted ground (engine/expeditions.ts:findBestExpeditionRoute).
+   * Provisions paid upfront; corridor resolves in the tick loop. On arrival
+   * the party awaits orders (redeploy / reinforce / recall) instead of
+   * dissolving immediately.
    */
   async function handleDispatchExpedition(
     target: Axial,
@@ -3668,13 +3817,9 @@ export default function App() {
 
     const ownedKeys = new Set(game.territory.owned.map(axialKey));
     if (ownedKeys.has(axialKey(target))) return { ok: false, reason: "Already owned" };
-    // A den isn't ordinary territory — it must be sieged (handleAssaultDen),
-    // not claimed via the much weaker generic tileDefense an expedition uses.
     if (game.dens.some((d) => axialKey(d.coord) === axialKey(target))) {
       return { ok: false, reason: "A den stands here — assault it instead" };
     }
-    // Same reasoning for the lab — it's guarded by a static defender far
-    // beyond tileDefense, not ordinary unowned territory (handleSecureLab).
     if (axialKey(game.lab.coord) === axialKey(target)) {
       return { ok: false, reason: "The lab is guarded — assault it instead" };
     }
@@ -3692,14 +3837,6 @@ export default function App() {
     );
     if (!route) {
       return { ok: false, reason: "No known route — scout a path there, and make sure you have a barracks" };
-    }
-
-    // Same reasoning as handleRepairStructure/handleGarrisonUnits's
-    // hordeOccupiedKeys guards — committing a party to a route a horde is
-    // already standing on is a fight already effectively lost.
-    const hordeOccupiedKeys = new Set(game.hordes.map((h) => axialKey(h.path[h.pathIndex])));
-    if (route.path.some((tile) => hordeOccupiedKeys.has(axialKey(tile)))) {
-      return { ok: false, reason: "A horde blocks this route" };
     }
 
     const party = clampPartyDispatch(
@@ -3724,6 +3861,7 @@ export default function App() {
     const expedition: Expedition = {
       id: `expedition-${axialKey(target)}-${departedAt}`,
       target,
+      origin: route.origin,
       path: route.path,
       militiaCommitted: party.militiaCommitted,
       junkyardKnightCommitted: party.junkyardKnightCommitted,
@@ -3731,9 +3869,203 @@ export default function App() {
       departedAt,
       arriveAt: departedAt + expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, game.research)),
       resolvedIndex: 0,
+      phase: "marching",
+      provisionsPaid: provisionsCost,
+      outboundTileCount: Math.max(0, route.path.length - 1),
+      decisionDeadlineAt: null,
+      joinExpeditionId: null,
     };
     const expeditions: ExpeditionsRecord = [...game.expeditions, expedition];
 
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(EXPEDITIONS_DB_KEY, expeditions)]);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, expeditions } } : prev,
+    );
+    return { ok: true };
+  }
+
+  /** Mid-march or arrival recall — pro-rata food refund only while still outbound. */
+  async function handleRecallExpedition(expeditionId: string): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+    const expedition = game.expeditions.find((e) => e.id === expeditionId);
+    if (!expedition) return { ok: false, reason: "Expedition not found" };
+    if (expedition.phase === "recalling" || expedition.phase === "reinforcing") {
+      return { ok: false, reason: "Already returning or reinforcing" };
+    }
+
+    const applyRefund = expedition.phase === "marching";
+    const plan = planHomeRecall(
+      tweaks,
+      game.world.seed,
+      normalizeExpedition(expedition),
+      game.territory,
+      game.scoutedTiles,
+      resolveWorldGridSize(game.world, tweaks),
+      troopSpeedMultiplier(tweaks, game.research),
+      game.clock.virtualNow,
+      applyRefund,
+    );
+
+    const resources =
+      plan.foodRefund > 0
+        ? { ...game.resources, food: game.resources.food + plan.foodRefund }
+        : game.resources;
+
+    const expeditions: ExpeditionsRecord = plan.next
+      ? game.expeditions.map((e) => (e.id === expeditionId ? { ...normalizeExpedition(e), ...plan.next! } : e))
+      : game.expeditions.filter((e) => e.id !== expeditionId);
+
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(EXPEDITIONS_DB_KEY, expeditions)]);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, expeditions } } : prev,
+    );
+    return { ok: true };
+  }
+
+  /** From awaitingOrders (or mid-march via UI), start a new outbound leg from the party's current hex. */
+  async function handleRedeployExpedition(
+    expeditionId: string,
+    target: Axial,
+  ): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+    const expedition = game.expeditions.find((e) => e.id === expeditionId);
+    if (!expedition) return { ok: false, reason: "Expedition not found" };
+    if (expedition.phase !== "awaitingOrders" && expedition.phase !== "marching") {
+      return { ok: false, reason: "Cannot redeploy now" };
+    }
+    if (!isWithinMapBounds(target, resolveWorldGridSize(game.world, tweaks))) {
+      return { ok: false, reason: "Out of bounds" };
+    }
+    if (game.dens.some((d) => axialKey(d.coord) === axialKey(target))) {
+      return { ok: false, reason: "A den stands here — assault it instead" };
+    }
+    if (axialKey(game.lab.coord) === axialKey(target)) {
+      return { ok: false, reason: "The lab is guarded — assault it instead" };
+    }
+
+    const normalized = normalizeExpedition(expedition);
+    const from =
+      normalized.phase === "awaitingOrders"
+        ? normalized.path[normalized.path.length - 1]!
+        : normalized.path[Math.min(normalized.resolvedIndex, normalized.path.length - 1)]!;
+
+    const route = findExpeditionRouteFrom(
+      tweaks,
+      game.world.seed,
+      from,
+      target,
+      game.territory,
+      game.scoutedTiles,
+      resolveWorldGridSize(game.world, tweaks),
+    );
+    if (!route) return { ok: false, reason: "No known route to that destination" };
+
+    const partySize =
+      normalized.militiaCommitted + normalized.junkyardKnightCommitted + normalized.crossBowSniperCommitted;
+    const provisionsCost = expeditionProvisionsCost(tweaks, partySize, route.cost);
+    if (game.resources.food < provisionsCost) return { ok: false, reason: "Not enough food" };
+
+    // Mid-march redeploy: refund unused outbound, then charge the new leg.
+    let food = game.resources.food;
+    if (normalized.phase === "marching") {
+      food += provisionsRefund(
+        normalized.provisionsPaid,
+        normalized.resolvedIndex,
+        normalized.outboundTileCount,
+      );
+    }
+    food -= provisionsCost;
+    if (food < 0) return { ok: false, reason: "Not enough food" };
+
+    const departedAt = game.clock.virtualNow;
+    const updated: Expedition = {
+      ...normalized,
+      target,
+      path: route.path,
+      departedAt,
+      arriveAt: departedAt + expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, game.research)),
+      resolvedIndex: 0,
+      phase: "marching",
+      provisionsPaid: provisionsCost,
+      outboundTileCount: Math.max(0, route.path.length - 1),
+      decisionDeadlineAt: null,
+      joinExpeditionId: null,
+    };
+    const resources = { ...game.resources, food };
+    const expeditions = game.expeditions.map((e) => (e.id === expeditionId ? updated : e));
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(EXPEDITIONS_DB_KEY, expeditions)]);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, expeditions } } : prev,
+    );
+    return { ok: true };
+  }
+
+  /** Send a half-cost/time detachment to join an awaitingOrders expedition. */
+  async function handleReinforceExpedition(
+    expeditionId: string,
+    militiaCommitted: number,
+    junkyardKnightCommitted: number,
+    crossBowSniperCommitted: number,
+  ): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+    const host = game.expeditions.find((e) => e.id === expeditionId);
+    if (!host || host.phase !== "awaitingOrders") {
+      return { ok: false, reason: "Expedition is not waiting for orders" };
+    }
+    const joinTile = host.path[host.path.length - 1]!;
+    const route = findBestExpeditionRoute(
+      tweaks,
+      game.world.seed,
+      game.barracksList,
+      game.towers,
+      game.outposts,
+      game.territory,
+      game.scoutedTiles,
+      resolveWorldGridSize(game.world, tweaks),
+      joinTile,
+    );
+    if (!route) return { ok: false, reason: "No known route to the party" };
+
+    const party = clampPartyDispatch(
+      game.units,
+      game.garrisons,
+      game.expeditions,
+      game.denAssaults,
+      game.garrisonRecalls,
+      game.labAssaults,
+      militiaCommitted,
+      junkyardKnightCommitted,
+      crossBowSniperCommitted,
+    );
+    const partySize = party.militiaCommitted + party.junkyardKnightCommitted + party.crossBowSniperCommitted;
+    if (partySize <= 0) return { ok: false, reason: "Commit at least one unit" };
+
+    const provisionsCost = reinforceProvisionsCost(tweaks, partySize, route.cost);
+    if (game.resources.food < provisionsCost) return { ok: false, reason: "Not enough food" };
+
+    const departedAt = game.clock.virtualNow;
+    const reinforcing: Expedition = {
+      id: `reinforce-${expeditionId}-${departedAt}`,
+      target: joinTile,
+      origin: route.origin,
+      path: route.path,
+      militiaCommitted: party.militiaCommitted,
+      junkyardKnightCommitted: party.junkyardKnightCommitted,
+      crossBowSniperCommitted: party.crossBowSniperCommitted,
+      departedAt,
+      arriveAt: departedAt + reinforceTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, game.research)),
+      resolvedIndex: 0,
+      phase: "reinforcing",
+      provisionsPaid: provisionsCost,
+      outboundTileCount: Math.max(0, route.path.length - 1),
+      decisionDeadlineAt: null,
+      joinExpeditionId: expeditionId,
+    };
+    const resources = { ...game.resources, food: game.resources.food - provisionsCost };
+    const expeditions = [...game.expeditions, reinforcing];
     await Promise.all([set(RESOURCES_DB_KEY, resources), set(EXPEDITIONS_DB_KEY, expeditions)]);
     setBoot((prev) =>
       prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, expeditions } } : prev,
@@ -4149,6 +4481,9 @@ export default function App() {
       onRepairOutpost={handleRepairOutpost}
       onRelocateBase={handleRelocateBase}
       onDispatchExpedition={handleDispatchExpedition}
+      onRecallExpedition={handleRecallExpedition}
+      onRedeployExpedition={handleRedeployExpedition}
+      onReinforceExpedition={handleReinforceExpedition}
       onAssaultDen={handleAssaultDen}
       onSecureLab={handleSecureLab}
       onGarrisonUnits={handleGarrisonUnits}

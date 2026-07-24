@@ -318,6 +318,14 @@ export const tweaksSchema = z.object({
     provisions_food_per_unit_per_cost: z.number(),
     travel_seconds_per_cost: z.number(),
     tombstone_lifetime_minutes: z.number(),
+    /** Extra Dijkstra weight for stepping onto scouted-but-unowned tiles (owned preferred). */
+    unowned_path_penalty: z.number(),
+    /** Reinforce detachment cost/time multiplier (path known/cleared). */
+    reinforce_cost_multiplier: z.number(),
+    /** How long the party waits at destination before auto-recall (virtual minutes). */
+    arrival_decision_minutes: z.number(),
+    /** How long the arrival decision notification stays expanded (realtime ms). */
+    arrival_notification_expanded_ms: z.number(),
     _note: z.string(),
   }),
 

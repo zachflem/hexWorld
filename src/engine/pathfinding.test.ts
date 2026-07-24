@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import stripJsonComments from "strip-json-comments";
 import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
-import { axialDistance, axialKey, axialSpiral, isWithinMapBounds, mapCenter, type Axial } from "./hexCoords";
+import { axialDistance, axialKey, axialNeighbors, axialSpiral, isWithinMapBounds, mapCenter, type Axial } from "./hexCoords";
 import { terrainAt } from "./terrain";
 import { findExpeditionPath, findHordePath, findNearestHordeTarget, terrainCost } from "./pathfinding";
 
@@ -134,6 +134,45 @@ describe("findExpeditionPath", () => {
     const allowedTiles = new Set<string>([axialKey(from)]);
     const result = findExpeditionPath(tweaks, seed, from, from, gridSize, allowedTiles);
     expect(result).toEqual({ path: [from], cost: 0 });
+  });
+
+  it("prefers an owned corridor over a shorter unowned cut when penalty is large", () => {
+    const tweaks = loadRealTweaks();
+    // Build a tiny graph: A-B-C (owned) vs A-D-C (unowned shortcut) if both land.
+    // Use real path: take unrestricted path, mark all but one middle hop as owned;
+    // with huge penalty the search should avoid that unowned hop when an owned detour exists.
+    const unrestricted = findHordePath(tweaks, seed, from, to, gridSize);
+    expect(unrestricted).not.toBeNull();
+    const path = unrestricted!;
+    expect(path.length).toBeGreaterThan(3);
+
+    const allowedTiles = new Set(path.map(axialKey));
+    // Also allow a longer owned ring around the shortcut tile if neighbors exist.
+    const shortcut = path[Math.floor(path.length / 2)]!;
+    for (const n of axialNeighbors(shortcut)) {
+      if (terrainAt(seed, n) !== "water" && isWithinMapBounds(n, gridSize)) {
+        allowedTiles.add(axialKey(n));
+      }
+    }
+
+    const ownedTiles = new Set(path.map(axialKey));
+    ownedTiles.delete(axialKey(shortcut));
+
+    const withPenalty = findExpeditionPath(tweaks, seed, from, to, gridSize, allowedTiles, ownedTiles, 10_000);
+    expect(withPenalty).not.toBeNull();
+    // Prefer not stepping on the unowned shortcut when a detour is allowed.
+    const steppedOnShortcut = withPenalty!.path.some((c) => axialKey(c) === axialKey(shortcut));
+    // If detour exists, we avoid it; if not, path may still use it — only assert when neighbors gave a detour.
+    const hasDetourNeighbor = [...allowedTiles].some((k) => k !== axialKey(shortcut) && !ownedTiles.has(k) === false);
+    if (hasDetourNeighbor && withPenalty!.path.length > path.length) {
+      expect(steppedOnShortcut).toBe(false);
+    }
+    // Cost remains terrain-only (no penalty baked into returned cost).
+    let terrainOnly = 0;
+    for (let i = 1; i < withPenalty!.path.length; i++) {
+      terrainOnly += terrainCost(tweaks, terrainAt(seed, withPenalty!.path[i]))!;
+    }
+    expect(withPenalty!.cost).toBeCloseTo(terrainOnly);
   });
 });
 

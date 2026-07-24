@@ -47,6 +47,8 @@ export function CollapsibleNotificationRow({
   /** Show once, then remove — no collapse-to-icon linger. */
   ephemeral = false,
   onEphemeralDismiss,
+  /** Emphasize the collapsed icon peek (arrival decisions). */
+  highlightPeek = false,
 }: {
   rowKey: string;
   icon: ReactNode;
@@ -59,6 +61,7 @@ export function CollapsibleNotificationRow({
   wrapText?: boolean;
   ephemeral?: boolean;
   onEphemeralDismiss?: () => void;
+  highlightPeek?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -95,6 +98,12 @@ export function CollapsibleNotificationRow({
         maxWidth: "min(90vw, 320px)",
         overflow: "hidden",
         transition: `gap ${slideMs}ms ease`,
+        ...(highlightPeek && !expanded
+          ? {
+              boxShadow: "0 0 0 2px rgba(255, 180, 70, 0.85)",
+              borderRadius: 8,
+            }
+          : null),
         ...panelStyle,
       }}
     >
@@ -107,10 +116,11 @@ export function CollapsibleNotificationRow({
           display: "flex",
           alignItems: "center",
           flexShrink: 0,
-          padding: wrapping ? "0.1rem 0 0" : 0,
+          padding: wrapping ? "0.1rem 0 0" : highlightPeek && !expanded ? "0.2rem" : 0,
           margin: 0,
           border: "none",
-          background: "transparent",
+          background: highlightPeek && !expanded ? "rgba(255, 180, 70, 0.25)" : "transparent",
+          borderRadius: highlightPeek && !expanded ? 999 : 0,
           color: "inherit",
           cursor: expanded || ephemeral ? "default" : "pointer",
           WebkitTapHighlightColor: "transparent",

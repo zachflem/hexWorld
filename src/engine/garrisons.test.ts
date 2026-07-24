@@ -41,6 +41,7 @@ function makeExpedition(overrides: Partial<Expedition> = {}): Expedition {
   return {
     id: "expedition-test",
     target: { q: 9, r: 9 },
+    origin: { q: 0, r: 0 },
     path: [],
     militiaCommitted: 0,
     junkyardKnightCommitted: 0,
@@ -48,6 +49,11 @@ function makeExpedition(overrides: Partial<Expedition> = {}): Expedition {
     departedAt: 0,
     arriveAt: 0,
     resolvedIndex: 0,
+    phase: "marching",
+    provisionsPaid: 0,
+    outboundTileCount: 0,
+    decisionDeadlineAt: null,
+    joinExpeditionId: null,
     ...overrides,
   };
 }

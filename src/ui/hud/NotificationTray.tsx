@@ -10,6 +10,29 @@ import { CollapsibleNotificationRow, NOTIFICATION_ICON_SIZE } from "./Collapsibl
 import { CoordLink, coordLinkStyle } from "./CoordLink";
 import { formatDuration } from "../format";
 
+function TrayActionButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        marginLeft: "0.15rem",
+        padding: "0.15rem 0.45rem",
+        fontSize: "0.72rem",
+        fontWeight: 600,
+        color: "white",
+        background: "transparent",
+        border: "1px solid rgba(255, 255, 255, 0.35)",
+        borderRadius: 6,
+        cursor: "pointer",
+        WebkitTapHighlightColor: "transparent",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 function TrayRow({
   rowKey,
   icon,
@@ -19,6 +42,9 @@ function TrayRow({
   onRush,
   onLabelClick,
   onGoToTile,
+  actions,
+  expandedMs,
+  highlightPeek,
 }: {
   rowKey: string;
   icon: ReactNode;
@@ -29,6 +55,9 @@ function TrayRow({
   /** When set (and no coord), the label itself is tappable — e.g. open the Research panel. */
   onLabelClick?: () => void;
   onGoToTile?: (coord: Axial) => void;
+  actions?: { label: string; onClick: () => void }[];
+  expandedMs?: number;
+  highlightPeek?: boolean;
 }) {
   const labelNode =
     onLabelClick != null ? (
@@ -44,6 +73,8 @@ function TrayRow({
       rowKey={rowKey}
       icon={icon}
       panelStyle={{ padding: "0.4rem 0.65rem", fontSize: "0.8rem" }}
+      expandedMs={expandedMs}
+      highlightPeek={highlightPeek}
     >
       {labelNode}
       {coord != null && onGoToTile != null ? (
@@ -52,26 +83,10 @@ function TrayRow({
           <CoordLink coord={coord} onGoToTile={onGoToTile} />
         </>
       ) : null}
-      {onRush && (
-        <button
-          type="button"
-          onClick={onRush}
-          style={{
-            marginLeft: "0.15rem",
-            padding: "0.15rem 0.45rem",
-            fontSize: "0.72rem",
-            fontWeight: 600,
-            color: "white",
-            background: "transparent",
-            border: "1px solid rgba(255, 255, 255, 0.35)",
-            borderRadius: 6,
-            cursor: "pointer",
-            WebkitTapHighlightColor: "transparent",
-          }}
-        >
-          Rush
-        </button>
-      )}
+      {onRush && <TrayActionButton label="Rush" onClick={onRush} />}
+      {actions?.map((a) => (
+        <TrayActionButton key={a.label} label={a.label} onClick={a.onClick} />
+      ))}
       <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.7)" }}>{formatDuration(remaining)}</span>
     </CollapsibleNotificationRow>
   );
@@ -88,11 +103,8 @@ export type NotificationCountdownRow = {
 };
 
 /**
- * Compact rows, one per active expedition/den-assault/lab-assault/garrison-recall
- * — replaces the old single grouped box (previously top-left, one internal
- * `<strong>` header per type). Renders bare rows, not its own positioned
- * container — the parent (GameScreen) composes this alongside `ToastStack`
- * inside one shared fixed top-right column so the two never overlap.
+ * Compact rows, one per active expedition/den-assault/lab-assault/garrison-recall.
+ * Arrival decisions linger longer with a highlighted collapsed pill.
  */
 export function NotificationTray({
   expeditions,
@@ -102,19 +114,24 @@ export function NotificationTray({
   siegedDens,
   countdowns,
   now,
+  arrivalExpandedMs,
   onGoToTile,
+  onRecallExpedition,
+  onBeginRedeploy,
+  onBeginReinforce,
 }: {
   expeditions: ExpeditionsRecord;
   denAssaults: DenAssaultsRecord;
   labAssaults: LabAssaultsRecord;
   garrisonRecalls: GarrisonRecallsRecord;
-  /** Coord + hold-countdown for every den currently under siege — computed in GameScreen (engine/denSiegeStatusFor's math), kept to just what a row needs so this component stays presentation-only. */
   siegedDens: { coord: Axial; holdRemainingMs: number }[];
-  /** Every active build/upgrade/repair timer across every owned structure (GameScreen:activeCountdownRows) — the default home for any user-created action with a countdown, not just what happens to be selected. */
   countdowns: NotificationCountdownRow[];
   now: number;
-  /** Pan to and select a tile when the player taps a coord link in a row. */
+  arrivalExpandedMs?: number;
   onGoToTile?: (coord: Axial) => void;
+  onRecallExpedition?: (expeditionId: string) => void;
+  onBeginRedeploy?: (expeditionId: string) => void;
+  onBeginReinforce?: (expeditionId: string) => void;
 }) {
   return (
     <>
@@ -142,17 +159,58 @@ export function NotificationTray({
           onGoToTile={onGoToTile}
         />
       ))}
-      {expeditions.map((expedition) => (
-        <TrayRow
-          key={expedition.id}
-          rowKey={expedition.id}
-          icon={<Footprints size={NOTIFICATION_ICON_SIZE} />}
-          label="Expedition"
-          coord={expedition.target}
-          remaining={remainingMs(expedition.departedAt, expedition.arriveAt - expedition.departedAt, now)}
-          onGoToTile={onGoToTile}
-        />
-      ))}
+      {expeditions.map((expedition) => {
+        const phase = expedition.phase ?? "marching";
+        if (phase === "awaitingOrders") {
+          const deadline = expedition.decisionDeadlineAt ?? now;
+          return (
+            <TrayRow
+              key={expedition.id}
+              rowKey={expedition.id}
+              icon={<Footprints size={NOTIFICATION_ICON_SIZE} />}
+              label="We made it. Where to next, boss?"
+              coord={expedition.target}
+              remaining={Math.max(0, deadline - now)}
+              onGoToTile={onGoToTile}
+              expandedMs={arrivalExpandedMs}
+              highlightPeek
+              actions={[
+                ...(onBeginRedeploy
+                  ? [{ label: "Redeploy", onClick: () => onBeginRedeploy(expedition.id) }]
+                  : []),
+                ...(onBeginReinforce
+                  ? [{ label: "Reinforce", onClick: () => onBeginReinforce(expedition.id) }]
+                  : []),
+                ...(onRecallExpedition
+                  ? [{ label: "Recall", onClick: () => onRecallExpedition(expedition.id) }]
+                  : []),
+              ]}
+            />
+          );
+        }
+        const label =
+          phase === "recalling"
+            ? "Expedition returning"
+            : phase === "reinforcing"
+              ? "Reinforcements"
+              : "Expedition";
+        return (
+          <TrayRow
+            key={expedition.id}
+            rowKey={expedition.id}
+            icon={<Footprints size={NOTIFICATION_ICON_SIZE} />}
+            label={label}
+            coord={expedition.target}
+            remaining={remainingMs(expedition.departedAt, expedition.arriveAt - expedition.departedAt, now)}
+            onGoToTile={onGoToTile}
+            actions={
+              phase === "marching" && onRecallExpedition
+                ? [{ label: "Recall", onClick: () => onRecallExpedition(expedition.id) }]
+                : undefined
+            }
+          />
+        );
+      })}
       {denAssaults.map((assault) => (
         <TrayRow
           key={assault.id}

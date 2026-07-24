@@ -27,7 +27,7 @@ import type { DenRecord } from "../data/dens";
 import type { OutpostRecord } from "../data/outposts";
 import type { HordeRecord } from "../data/hordes";
 import type { Expedition, ExpeditionsRecord } from "../data/expeditions";
-import { expeditionPathIndexAt } from "../engine/expeditions";
+import { expeditionMarkerIndex, expeditionPathIndexAt } from "../engine/expeditions";
 import type { DenAssaultRecord, DenAssaultsRecord } from "../data/denAssaults";
 import type { TombstoneRecord, TombstonesRecord } from "../data/tombstones";
 import type { DockRecord, DocksRecord } from "../data/docks";
@@ -362,7 +362,7 @@ export const HexCanvas = forwardRef<
   const expeditionsByKey = useMemo(() => {
     const map = new Map<string, Expedition>();
     for (const expedition of expeditions) {
-      const index = expeditionPathIndexAt(expedition.departedAt, expedition.arriveAt, now, expedition.path.length);
+      const index = expeditionMarkerIndex(expedition, now);
       map.set(axialKey(expedition.path[index]), expedition);
     }
     return map;

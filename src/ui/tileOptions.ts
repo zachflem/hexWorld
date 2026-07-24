@@ -133,6 +133,10 @@ export interface ExpeditionOption {
   provisionsCost: Partial<Record<ResourceType, number>>;
   affordable: boolean;
   etaMs: number;
+  /** Territory expedition preview — party attack power at current stepper counts. */
+  attackPower?: number;
+  /** Strongest path horde that outguns the party, if any. */
+  wipeRisk?: { hordeSize: number; tile: { q: number; r: number } } | null;
 }
 
 /** Same shape as ExpeditionOption (a den assault is dispatched/resolved exactly like an expedition) plus the den's own defense value, shown so the assault isn't blind. */

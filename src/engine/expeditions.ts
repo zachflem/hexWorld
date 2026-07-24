@@ -17,20 +17,22 @@ export interface ExpeditionRoute {
   origin: Axial;
 }
 
+/** Corridor rules — territory expeditions free-claim; den/lab assaults keep legacy tile fights. */
+export interface CorridorWalkOptions {
+  /** When true, unowned tiles are claimed without a tileDefense fight (territory expeditions). */
+  freeClaimUnowned: boolean;
+  /** When true, party fights hordes (win clears, lose wipes). When false, any horde wipes (legacy assaults). */
+  engageHordes: boolean;
+}
+
+export const TERRITORY_CORRIDOR: CorridorWalkOptions = { freeClaimUnowned: true, engageHordes: true };
+export const ASSAULT_CORRIDOR: CorridorWalkOptions = { freeClaimUnowned: false, engageHordes: false };
+
 /**
- * Tries every active barracks or tower (engine/formulas.ts:isStructureActive
- * — none of the capacity helpers in engine/barracks.ts filter damaged/
- * under-construction barracks, so this does it explicitly) plus every
- * outpost (OutpostRecord has no damaged/under-construction concept — any
- * outpost present in the array is usable) as a candidate origin, and keeps
- * whichever produces the cheapest route by accumulated terrain cost — not
- * just the geometrically nearest structure, since a farther one might have
- * an easier path. That "cheapest accounting for terrain" standard is exactly
- * what "closest" should mean here, so widening the candidate pool to towers
- * and outposts reuses the same metric rather than introducing a second one.
- * Returns null if no candidate structure has any route to `destination`
- * through owned-or-scouted ground (including if there are no candidate
- * structures at all).
+ * Tries every active barracks or tower plus every outpost as a candidate
+ * origin, and keeps whichever produces the cheapest route by accumulated
+ * terrain cost — with owned-preferring path weights so longer owned
+ * corridors beat short scouted-unowned cuts when possible.
  */
 export function findBestExpeditionRoute(
   tweaks: Tweaks,
@@ -43,16 +45,27 @@ export function findBestExpeditionRoute(
   gridSize: number,
   destination: Axial,
 ): ExpeditionRoute | null {
+  const ownedKeys = new Set(territory.owned.map(axialKey));
   const allowedTiles = new Set<string>([...territory.owned, ...scoutedTiles].map(axialKey));
   const candidateOrigins: Axial[] = [
     ...barracksList.filter(isStructureActive).map((b) => b.coord),
     ...towers.filter(isStructureActive).map((t) => t.coord),
     ...outposts.map((o) => o.coord),
   ];
+  const penalty = tweaks.expeditions.unowned_path_penalty;
 
   let best: ExpeditionRoute | null = null;
   for (const origin of candidateOrigins) {
-    const result = findExpeditionPath(tweaks, seed, origin, destination, gridSize, allowedTiles);
+    const result = findExpeditionPath(
+      tweaks,
+      seed,
+      origin,
+      destination,
+      gridSize,
+      allowedTiles,
+      ownedKeys,
+      penalty,
+    );
     if (!result) continue;
     if (!best || result.cost < best.cost) {
       best = { path: result.path, cost: result.cost, origin };
@@ -61,82 +74,94 @@ export function findBestExpeditionRoute(
   return best;
 }
 
-/** Food to provision the party for the whole trip — scales with both party size and how difficult the route is (engine/pathfinding.ts's terrain cost), not just distance in tiles. */
+/**
+ * Route from an arbitrary current hex (redeploy / reinforce join target) through
+ * owned ∪ scouted, with the same owned-preferring weights as dispatch.
+ */
+export function findExpeditionRouteFrom(
+  tweaks: Tweaks,
+  seed: number,
+  from: Axial,
+  destination: Axial,
+  territory: TerritoryRecord,
+  scoutedTiles: Axial[],
+  gridSize: number,
+): ExpeditionRoute | null {
+  const ownedKeys = new Set(territory.owned.map(axialKey));
+  const allowedTiles = new Set<string>([...territory.owned, ...scoutedTiles].map(axialKey));
+  const result = findExpeditionPath(
+    tweaks,
+    seed,
+    from,
+    destination,
+    gridSize,
+    allowedTiles,
+    ownedKeys,
+    tweaks.expeditions.unowned_path_penalty,
+  );
+  if (!result) return null;
+  return { path: result.path, cost: result.cost, origin: from };
+}
+
+/** Food to provision the party for the whole trip — scales with party size and route terrain cost. */
 export function expeditionProvisionsCost(tweaks: Tweaks, partySize: number, pathCost: number): number {
   return partySize * pathCost * tweaks.expeditions.provisions_food_per_unit_per_cost;
 }
 
-/**
- * Travel duration scales with route difficulty alone (party size doesn't
- * slow the whole group down further in this first pass). `speedMultiplier`
- * is the troop-movement research bonus (engine/research.ts:
- * troopSpeedMultiplier — 1.0 by default, up to 2.0x fully researched);
- * callers pass 1 to opt out.
- */
+/** Reinforce detachments pay a fraction of normal provisions (path already known/cleared). */
+export function reinforceProvisionsCost(tweaks: Tweaks, partySize: number, pathCost: number): number {
+  return expeditionProvisionsCost(tweaks, partySize, pathCost) * tweaks.expeditions.reinforce_cost_multiplier;
+}
+
 export function expeditionTravelDurationMs(tweaks: Tweaks, pathCost: number, speedMultiplier: number): number {
   return (pathCost * tweaks.expeditions.travel_seconds_per_cost * 1000) / speedMultiplier;
 }
 
+/** Reinforce travel time — same fraction as cost. */
+export function reinforceTravelDurationMs(tweaks: Tweaks, pathCost: number, speedMultiplier: number): number {
+  return expeditionTravelDurationMs(tweaks, pathCost, speedMultiplier) * tweaks.expeditions.reinforce_cost_multiplier;
+}
+
 /**
  * A recalled garrison's march home — half of expeditionTravelDurationMs's
- * outbound time for the same route cost. Troops retreating through ground
- * they already hold don't need to fight their way back, so they're faster
- * than an outbound party pushing through unclaimed/hostile tiles, but it's
- * still a real march, not a teleport (App.tsx:handleRecallMilitia).
+ * outbound time for the same route cost.
  */
 export function recallDurationMs(tweaks: Tweaks, pathCost: number, speedMultiplier: number): number {
   return expeditionTravelDurationMs(tweaks, pathCost, speedMultiplier) / 2;
 }
 
-/**
- * Deterministic path index for time `now` given a fixed
- * departedAt/arriveAt/path.length schedule — the ONE formula both the tick
- * loop's incremental corridor resolution (App.tsx's runTick) and
- * HexCanvas's visual marker interpolation use, so a party's logical
- * progress and its on-screen position can never diverge. A schedule with
- * `arriveAt <= departedAt` (shouldn't happen, but matches the old
- * HexCanvas-only formula's guard) is treated as already fully arrived.
- */
+/** Pro-rata food refund for mid-march cancel: paid × (tiles remaining / outbound total). */
+export function provisionsRefund(paid: number, tilesResolved: number, outboundTileCount: number): number {
+  if (outboundTileCount <= 0 || paid <= 0) return 0;
+  const remaining = Math.max(0, outboundTileCount - tilesResolved);
+  return paid * (remaining / outboundTileCount);
+}
+
 export function expeditionPathIndexAt(departedAt: number, arriveAt: number, now: number, pathLength: number): number {
   const totalMs = arriveAt - departedAt;
   const fraction = totalMs > 0 ? Math.min(1, Math.max(0, (now - departedAt) / totalMs)) : 1;
   return Math.round(fraction * (pathLength - 1));
 }
 
-/** Why a party died on a corridor tile — carried onto its tombstone (data/tombstones.ts) so a click-to-inspect can explain it. */
+/** Why a party died on a corridor tile — carried onto its tombstone. */
 export type TombstoneCause =
   | { kind: "horde_blocked"; hordeSize: number }
   | { kind: "tile_defense"; attackPower: number; defense: number };
 
 export interface CorridorStepResult {
-  /** Furthest index now resolved — equal to the input `resolvedIndex` if `targetIndex` granted no new progress this step. */
   resolvedIndex: number;
-  /** Tiles fought-and-won this step (already-owned tiles aren't included — there's nothing to merge for those). */
   claimedTiles: Axial[];
-  /** Non-null only if the party died stepping onto a specific tile this step. */
   death: { tile: Axial; cause: TombstoneCause } | null;
+  /** Horde tile keys cleared this step when engageHordes won the fight. */
+  clearedHordeKeys: string[];
 }
 
 /**
- * Advances a party from `resolvedIndex` toward `targetIndex` (the caller
- * caps this at path.length-1 for a plain expedition, or at path.length-2 for
- * a den/lab assault's corridor — see App.tsx), one tile at a time, in path
- * order. This is the real-time generalization of the old whole-path,
- * resolve-once-at-arrival walk: called every tick for every in-flight party
- * (not just the ones due to arrive), so territory claims and deaths happen
- * the instant the party's visual position (expeditionPathIndexAt above)
- * reaches each tile, not all at once at the end of the trip.
+ * Advances a party from `resolvedIndex` toward `targetIndex`.
  *
- * Per tile, in priority order: horde-occupied -> death (this folds what used
- * to be a separate whole-path "the road was overrun" pre-check into the same
- * per-tile loop, so a horde far ahead of the party's real position doesn't
- * prematurely wipe it, and a horde-block death gets a concrete tile for its
- * tombstone); already `owned` -> free passage, no fight; otherwise -> fight
- * the SAME resolveHordeTileFight/tileDefense formula a horde uses to advance
- * toward the base, just checked from the opposite direction (DESIGN.md §10),
- * no attrition on a win. A win claims the tile; a loss stops the walk right
- * there and reports the death tile + cause for a tombstone. Resuming from a
- * non-zero `resolvedIndex` never re-fights an already-resolved tile.
+ * Territory mode (`TERRITORY_CORRIDOR`): horde fight-or-wipe; unowned tiles
+ * free-claim. Assault mode (`ASSAULT_CORRIDOR`): any horde wipes; unowned
+ * tiles still require beating tileDefense (legacy den/lab corridor).
  */
 export function stepCorridorWalk(
   tweaks: Tweaks,
@@ -147,31 +172,67 @@ export function stepCorridorWalk(
   base: Axial,
   attackPower: number,
   hordeSizeByKey: Map<string, number>,
+  options: CorridorWalkOptions = ASSAULT_CORRIDOR,
 ): CorridorStepResult {
   const ownedKeys = new Set(owned.map(axialKey));
   const claimedTiles: Axial[] = [];
+  const clearedHordeKeys: string[] = [];
+  const remainingHordes = new Map(hordeSizeByKey);
 
   for (let i = resolvedIndex + 1; i <= targetIndex; i++) {
     const tile = path[i];
     const key = axialKey(tile);
 
-    const hordeSize = hordeSizeByKey.get(key);
+    const hordeSize = remainingHordes.get(key);
     if (hordeSize !== undefined) {
-      return { resolvedIndex: i - 1, claimedTiles, death: { tile, cause: { kind: "horde_blocked", hordeSize } } };
+      if (!options.engageHordes || !resolveHordeTileFight(attackPower, hordeSize)) {
+        return {
+          resolvedIndex: i - 1,
+          claimedTiles,
+          death: { tile, cause: { kind: "horde_blocked", hordeSize } },
+          clearedHordeKeys,
+        };
+      }
+      clearedHordeKeys.push(key);
+      remainingHordes.delete(key);
     }
 
     if (ownedKeys.has(key)) continue;
 
-    const defense = tileDefense(tweaks, axialDistance(tile, base));
-    if (!resolveHordeTileFight(attackPower, defense)) {
-      return { resolvedIndex: i - 1, claimedTiles, death: { tile, cause: { kind: "tile_defense", attackPower, defense } } };
+    if (!options.freeClaimUnowned) {
+      const defense = tileDefense(tweaks, axialDistance(tile, base));
+      if (!resolveHordeTileFight(attackPower, defense)) {
+        return {
+          resolvedIndex: i - 1,
+          claimedTiles,
+          death: { tile, cause: { kind: "tile_defense", attackPower, defense } },
+          clearedHordeKeys,
+        };
+      }
     }
+
     claimedTiles.push(tile);
+    ownedKeys.add(key);
   }
-  return { resolvedIndex: targetIndex, claimedTiles, death: null };
+  return { resolvedIndex: targetIndex, claimedTiles, death: null, clearedHordeKeys };
 }
 
-/** Total combined attack power of a party's committed units — reuses garrisonAttackPower (engine/garrisons.ts), which never actually reads `coord`, rather than a second near-duplicate formula. */
+/** Strongest known path horde that outguns the party, if any — for pre-dispatch wipe-risk UI. */
+export function pathHordeWipeRisk(
+  path: Axial[],
+  attackPower: number,
+  hordeSizeByKey: Map<string, number>,
+): { hordeSize: number; tile: Axial } | null {
+  let worst: { hordeSize: number; tile: Axial } | null = null;
+  for (const tile of path) {
+    const hordeSize = hordeSizeByKey.get(axialKey(tile));
+    if (hordeSize === undefined) continue;
+    if (resolveHordeTileFight(attackPower, hordeSize)) continue;
+    if (!worst || hordeSize > worst.hordeSize) worst = { hordeSize, tile };
+  }
+  return worst;
+}
+
 export function partyAttackPower(
   tweaks: Tweaks,
   militiaCommitted: number,
@@ -184,4 +245,110 @@ export function partyAttackPower(
     junkyardKnightCount: junkyardKnightCommitted,
     crossBowSniperCount: crossBowSniperCommitted,
   });
+}
+
+/** Current hex for an in-flight / waiting party (path clamp). */
+export function expeditionCurrentTile(expedition: {
+  path: Axial[];
+  resolvedIndex: number;
+  phase?: string;
+  departedAt: number;
+  arriveAt: number;
+}, now: number): Axial {
+  if (expedition.phase === "awaitingOrders") {
+    return expedition.path[expedition.path.length - 1]!;
+  }
+  const index = expeditionPathIndexAt(
+    expedition.departedAt,
+    expedition.arriveAt,
+    now,
+    expedition.path.length,
+  );
+  return expedition.path[Math.min(index, expedition.path.length - 1)]!;
+}
+
+/** Marker index for canvas — awaiting parties sit on the destination hex. */
+export function expeditionMarkerIndex(
+  expedition: { path: Axial[]; phase?: string; departedAt: number; arriveAt: number },
+  now: number,
+): number {
+  if (expedition.phase === "awaitingOrders") return expedition.path.length - 1;
+  return expeditionPathIndexAt(expedition.departedAt, expedition.arriveAt, now, expedition.path.length);
+}
+
+export interface HomeRecallPlan {
+  /** Null when the party is already at origin (or no route) and should dissolve into the standing army. */
+  next: {
+    path: Axial[];
+    target: Axial;
+    departedAt: number;
+    arriveAt: number;
+    resolvedIndex: number;
+    phase: "recalling";
+    provisionsPaid: number;
+    outboundTileCount: number;
+    decisionDeadlineAt: null;
+    joinExpeditionId: null;
+  } | null;
+  foodRefund: number;
+}
+
+/**
+ * Plan a march home to `origin`. Mid-march cancel sets `applyRefund`; arrival
+ * auto-return / recall after destination does not (return already prepaid).
+ */
+export function planHomeRecall(
+  tweaks: Tweaks,
+  seed: number,
+  expedition: {
+    origin: Axial;
+    path: Axial[];
+    resolvedIndex: number;
+    provisionsPaid: number;
+    outboundTileCount: number;
+    phase?: string;
+    departedAt: number;
+    arriveAt: number;
+  },
+  territory: TerritoryRecord,
+  scoutedTiles: Axial[],
+  gridSize: number,
+  speedMultiplier: number,
+  now: number,
+  applyRefund: boolean,
+): HomeRecallPlan {
+  const foodRefund = applyRefund
+    ? provisionsRefund(expedition.provisionsPaid, expedition.resolvedIndex, expedition.outboundTileCount)
+    : 0;
+  const current = expeditionCurrentTile(expedition, now);
+  if (axialKey(current) === axialKey(expedition.origin)) {
+    return { next: null, foodRefund };
+  }
+  const route = findExpeditionRouteFrom(
+    tweaks,
+    seed,
+    current,
+    expedition.origin,
+    territory,
+    scoutedTiles,
+    gridSize,
+  );
+  if (!route) {
+    return { next: null, foodRefund };
+  }
+  return {
+    next: {
+      path: route.path,
+      target: expedition.origin,
+      departedAt: now,
+      arriveAt: now + recallDurationMs(tweaks, route.cost, speedMultiplier),
+      resolvedIndex: 0,
+      phase: "recalling",
+      provisionsPaid: 0,
+      outboundTileCount: Math.max(0, route.path.length - 1),
+      decisionDeadlineAt: null,
+      joinExpeditionId: null,
+    },
+    foodRefund,
+  };
 }

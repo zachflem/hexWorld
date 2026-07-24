@@ -8,11 +8,16 @@ import type { TerritoryRecord } from "../data/territory";
 import type { Tower } from "../data/towers";
 import { tweaksSchema } from "../data/tweaksSchema";
 import {
+  ASSAULT_CORRIDOR,
+  TERRITORY_CORRIDOR,
   expeditionPathIndexAt,
   expeditionProvisionsCost,
   expeditionTravelDurationMs,
   findBestExpeditionRoute,
   partyAttackPower,
+  provisionsRefund,
+  reinforceProvisionsCost,
+  reinforceTravelDurationMs,
   stepCorridorWalk,
 } from "./expeditions";
 import { axialDistance, axialKey, axialNeighbors, axialSpiral, mapCenter, type Axial } from "./hexCoords";
@@ -327,7 +332,7 @@ describe("stepCorridorWalk", () => {
     const tweaks = loadRealTweaks();
     const path: Axial[] = [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 2, r: 0 }];
     const hordeSizeByKey = new Map([[axialKey(path[1]), 5]]);
-    const result = stepCorridorWalk(tweaks, path, 0, path.length - 1, [], base, 1_000_000, hordeSizeByKey);
+    const result = stepCorridorWalk(tweaks, path, 0, path.length - 1, [], base, 1_000_000, hordeSizeByKey, ASSAULT_CORRIDOR);
     expect(result.resolvedIndex).toBe(0);
     expect(result.claimedTiles).toEqual([]);
     expect(result.death).toEqual({ tile: path[1], cause: { kind: "horde_blocked", hordeSize: 5 } });
@@ -338,9 +343,97 @@ describe("stepCorridorWalk", () => {
     const path: Axial[] = [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 2, r: 0 }];
     const hordeSizeByKey = new Map([[axialKey(path[2]), 5]]);
     // attackPower of 0 would fail path[1]'s fight if it weren't owned.
-    const result = stepCorridorWalk(tweaks, path, 0, path.length - 1, [path[1]], base, 0, hordeSizeByKey);
+    const result = stepCorridorWalk(tweaks, path, 0, path.length - 1, [path[1]], base, 0, hordeSizeByKey, ASSAULT_CORRIDOR);
     expect(result.resolvedIndex).toBe(1); // free-passed path[1], then died at the horde on path[2]
     expect(result.claimedTiles).toEqual([]);
     expect(result.death).toEqual({ tile: path[2], cause: { kind: "horde_blocked", hordeSize: 5 } });
+  });
+});
+
+describe("stepCorridorWalk territory mode", () => {
+  const base = { q: 0, r: 0 };
+  const noHordes = new Map<string, number>();
+
+  it("free-claims unowned scouted tiles without a tileDefense fight", () => {
+    const tweaks = loadRealTweaks();
+    const path: Axial[] = [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 100, r: 0 }];
+    const result = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      0,
+      noHordes,
+      TERRITORY_CORRIDOR,
+    );
+    expect(result.death).toBeNull();
+    expect(result.resolvedIndex).toBe(path.length - 1);
+    expect(result.claimedTiles).toEqual([path[1], path[2]]);
+  });
+
+  it("clears a weaker horde and continues with no losses", () => {
+    const tweaks = loadRealTweaks();
+    const path: Axial[] = [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 2, r: 0 }];
+    const hordeSizeByKey = new Map([[axialKey(path[1]), 5]]);
+    const result = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      10,
+      hordeSizeByKey,
+      TERRITORY_CORRIDOR,
+    );
+    expect(result.death).toBeNull();
+    expect(result.clearedHordeKeys).toEqual([axialKey(path[1])]);
+    expect(result.claimedTiles).toEqual([path[1], path[2]]);
+    expect(result.resolvedIndex).toBe(path.length - 1);
+  });
+
+  it("wipes when a path horde outguns the party", () => {
+    const tweaks = loadRealTweaks();
+    const path: Axial[] = [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 2, r: 0 }];
+    const hordeSizeByKey = new Map([[axialKey(path[1]), 50]]);
+    const result = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      10,
+      hordeSizeByKey,
+      TERRITORY_CORRIDOR,
+    );
+    expect(result.death).toEqual({ tile: path[1], cause: { kind: "horde_blocked", hordeSize: 50 } });
+    expect(result.claimedTiles).toEqual([]);
+  });
+});
+
+describe("provisionsRefund", () => {
+  it("refunds half when recalled halfway through a 20-tile outbound", () => {
+    expect(provisionsRefund(100, 10, 20)).toBe(50);
+  });
+
+  it("refunds nothing when outbound is complete (arrival recall)", () => {
+    expect(provisionsRefund(100, 20, 20)).toBe(0);
+  });
+
+  it("refunds everything when nothing has been resolved yet", () => {
+    expect(provisionsRefund(100, 0, 20)).toBe(100);
+  });
+});
+
+describe("reinforce quotes", () => {
+  it("halves provisions and travel vs a normal expedition quote", () => {
+    const tweaks = loadRealTweaks();
+    const fullFood = expeditionProvisionsCost(tweaks, 10, 5);
+    const fullMs = expeditionTravelDurationMs(tweaks, 5, 1);
+    expect(reinforceProvisionsCost(tweaks, 10, 5)).toBeCloseTo(fullFood * tweaks.expeditions.reinforce_cost_multiplier);
+    expect(reinforceTravelDurationMs(tweaks, 5, 1)).toBeCloseTo(fullMs * tweaks.expeditions.reinforce_cost_multiplier);
   });
 });

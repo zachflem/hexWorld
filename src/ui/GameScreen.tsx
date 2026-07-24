@@ -91,6 +91,10 @@ import {
   expeditionProvisionsCost,
   expeditionTravelDurationMs,
   findBestExpeditionRoute,
+  partyAttackPower,
+  pathHordeWipeRisk,
+  reinforceProvisionsCost,
+  reinforceTravelDurationMs,
 } from "../engine/expeditions";
 import { troopSpeedMultiplier, researchDurationMs } from "../engine/research";
 import type { ResearchId, ResearchRecord } from "../data/research";
@@ -376,6 +380,9 @@ export function GameScreen({
   onRepairOutpost,
   onRelocateBase,
   onDispatchExpedition,
+  onRecallExpedition,
+  onRedeployExpedition,
+  onReinforceExpedition,
   onAssaultDen,
   onSecureLab,
   onGarrisonUnits,
@@ -464,6 +471,14 @@ export function GameScreen({
     junkyardKnightCommitted: number,
     crossBowSniperCommitted: number,
   ) => Promise<BuildResult>;
+  onRecallExpedition: (expeditionId: string) => Promise<BuildResult>;
+  onRedeployExpedition: (expeditionId: string, target: Axial) => Promise<BuildResult>;
+  onReinforceExpedition: (
+    expeditionId: string,
+    militiaCommitted: number,
+    junkyardKnightCommitted: number,
+    crossBowSniperCommitted: number,
+  ) => Promise<BuildResult>;
   onAssaultDen: (
     denId: string,
     militiaCommitted: number,
@@ -504,6 +519,10 @@ export function GameScreen({
   const hoverTooltipRef = useRef<HoverTooltipHandle>(null);
   const collectPinOverlayRef = useRef<CollectPinOverlayHandle>(null);
   const [selected, setSelected] = useState<Axial | null>(null);
+  /** When set, next eligible tile selection redeploys this awaiting/marching expedition. */
+  const [redeployExpeditionId, setRedeployExpeditionId] = useState<string | null>(null);
+  /** When set, tile sheet shows reinforce form for this awaitingOrders expedition. */
+  const [reinforceExpeditionId, setReinforceExpeditionId] = useState<string | null>(null);
   /** Desktop-mouse hover target (HexCanvas's onTileHover) — null on touch devices, which never report hover. Only changes when the hovered tile itself changes (deduped in HexCanvas), not on every mousemove pixel. */
   const [hoveredCoord, setHoveredCoord] = useState<Axial | null>(null);
   /** Which of the global hex cluster's five panel slots (flag/binoculars/gear/chart — hammer is a toggle, not a panel) is open, if any. Only one at a time. Dismissed via BottomSheet Close/backdrop. */
@@ -920,12 +939,17 @@ export function GameScreen({
     const provisionsCost: Partial<Record<ResourceType, number>> = {
       food: expeditionProvisionsCost(tweaks, partySize, route.cost),
     };
+    const attackPower = partyAttackPower(tweaks, militiaToSend, junkyardKnightToSend, crossBowSniperToSend);
+    const hordeSizeByKey = new Map(hordes.map((h) => [axialKey(h.path[h.pathIndex]), h.size]));
+    const wipeRisk = pathHordeWipeRisk(route.path, attackPower, hordeSizeByKey);
     return {
       distanceTiles: route.path.length - 1,
       pathCost: route.cost,
       provisionsCost,
       affordable: affordable(provisionsCost),
       etaMs: expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, research)),
+      attackPower,
+      wipeRisk,
     };
   }
 
@@ -1078,6 +1102,16 @@ export function GameScreen({
     // Tile sheet and global cluster panels share BottomSheet — never stack them.
     setOpenPanel(null);
     setActionError(null);
+
+    if (redeployExpeditionId) {
+      void (async () => {
+        const result = await onRedeployExpedition(redeployExpeditionId, coord);
+        setRedeployExpeditionId(null);
+        applyActionResult(result);
+      })();
+      return;
+    }
+
     setSelected(coord);
     setMilitiaToSend(1);
     setScoutsToTrain(1);
@@ -1630,6 +1664,23 @@ export function GameScreen({
    */
   function unownedClaimActionsFor(): SheetAction[] {
     if (!selected || isOwned(selected)) return [];
+
+    if (redeployExpeditionId) {
+      return [
+        {
+          key: "redeploy-here",
+          icon: <Swords size={18} />,
+          title: "Redeploy expedition here",
+          onClick: () => {
+            void (async () => {
+              const result = await onRedeployExpedition(redeployExpeditionId, selected);
+              setRedeployExpeditionId(null);
+              applyActionResult(result);
+            })();
+          },
+        },
+      ];
+    }
 
     if (!isScouted(selected)) {
       const canScout =
@@ -2272,9 +2323,25 @@ export function GameScreen({
     const availMilitia = availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
     const availKnight = availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
     const availSniper = availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults);
+    const powerLine =
+      option.attackPower != null ? (
+        <span>
+          Party power: {option.attackPower}
+          {option.wipeRisk
+            ? ` — wipe risk: horde ${option.wipeRisk.hordeSize} on route (need ≥${option.wipeRisk.hordeSize})`
+            : " — no wipe risk from known hordes"}
+        </span>
+      ) : null;
+    const combinedExtra =
+      extraInfo || powerLine ? (
+        <>
+          {extraInfo}
+          {powerLine}
+        </>
+      ) : undefined;
     return (
       <PartyDispatchForm
-        extraInfo={extraInfo}
+        extraInfo={combinedExtra}
         distanceTiles={option.distanceTiles}
         pathCost={option.pathCost}
         provisionsCost={option.provisionsCost}
@@ -2714,7 +2781,20 @@ export function GameScreen({
       );
     }
     if (selectedTombstone) {
-      rows.push(<div key="tombstone">Tombstone — fades in {formatDuration(Math.max(0, selectedTombstone.expiresAt - now))}</div>);
+      const lost =
+        selectedTombstone.militiaLost +
+        selectedTombstone.junkyardKnightLost +
+        selectedTombstone.crossBowSniperLost;
+      const cause =
+        selectedTombstone.cause.kind === "horde_blocked"
+          ? `Horde (${selectedTombstone.cause.hordeSize}) vs party power ${selectedTombstone.attackPower}`
+          : `Tile defense ${selectedTombstone.cause.defense} vs party power ${selectedTombstone.attackPower}`;
+      rows.push(
+        <div key="tombstone">
+          Tombstone — lost {lost}; {cause}. Fades in{" "}
+          {formatDuration(Math.max(0, selectedTombstone.expiresAt - now))}
+        </div>,
+      );
     }
     if (rows.length === 0) return null;
     return <>{rows}</>;
@@ -2934,9 +3014,14 @@ export function GameScreen({
     const tombstone = tombstones.find((t) => axialEquals(t.coord, coord));
     if (tombstone) {
       const lost = tombstone.militiaLost + tombstone.junkyardKnightLost + tombstone.crossBowSniperLost;
+      const cause =
+        tombstone.cause.kind === "horde_blocked"
+          ? `Horde (${tombstone.cause.hordeSize}) vs power ${tombstone.attackPower}`
+          : `Defense ${tombstone.cause.defense} vs power ${tombstone.attackPower}`;
       return (
         <HoverPanel icon={<Info size={22} />} title="Tombstone" status={`Fades in ${formatDuration(Math.max(0, tombstone.expiresAt - now))}`}>
           <span>Lost: {lost} unit{lost === 1 ? "" : "s"}</span>
+          <span>{cause}</span>
         </HoverPanel>
       );
     }
@@ -2954,6 +3039,54 @@ export function GameScreen({
   function sheetActionsFor(): SheetAction[] {
     if (!selected) return [];
     const actions = structuralActionsFor();
+
+    if (reinforceExpeditionId) {
+      const host = expeditions.find((e) => e.id === reinforceExpeditionId);
+      if (host?.phase === "awaitingOrders") {
+        const joinTile = host.path[host.path.length - 1]!;
+        const route = findBestExpeditionRoute(
+          tweaks,
+          world.seed,
+          barracksList,
+          towers,
+          outposts,
+          territory,
+          scoutedTiles,
+          gridSize,
+          joinTile,
+        );
+        if (route) {
+          const partySize = militiaToSend + junkyardKnightToSend + crossBowSniperToSend;
+          const provisionsCost = { food: reinforceProvisionsCost(tweaks, partySize, route.cost) };
+          const option: ExpeditionOption = {
+            distanceTiles: route.path.length - 1,
+            pathCost: route.cost,
+            provisionsCost,
+            affordable: affordable(provisionsCost),
+            etaMs: reinforceTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, research)),
+          };
+          actions.unshift({
+            key: "reinforce-expedition",
+            icon: <Swords size={18} />,
+            title: "Reinforce expedition",
+            detail: `½ cost/time — ${formatCost(provisionsCost)}`,
+            disabled: !option.affordable,
+            formContent: dispatchFormContent(option, <span>Path known & cleared — half provisions and travel time.</span>, "Send reinforcements", () => {
+              void (async () => {
+                const result = await onReinforceExpedition(
+                  reinforceExpeditionId,
+                  militiaToSend,
+                  junkyardKnightToSend,
+                  crossBowSniperToSend,
+                );
+                setReinforceExpeditionId(null);
+                applyActionResult(result);
+              })();
+            }),
+          });
+        }
+      }
+    }
 
     // Unlike Collect/Garrison/Demolish below, Info isn't owned-tile-only — a
     // tombstone can sit on unowned ground, so this is pushed before the
@@ -3221,7 +3354,26 @@ export function GameScreen({
             }))}
           countdowns={activeCountdownRows()}
           now={now}
+          arrivalExpandedMs={tweaks.expeditions.arrival_notification_expanded_ms}
           onGoToTile={goToTile}
+          onRecallExpedition={(id) => {
+            void onRecallExpedition(id).then(applyActionResult);
+          }}
+          onBeginRedeploy={(id) => {
+            setRedeployExpeditionId(id);
+            setReinforceExpeditionId(null);
+            setActionError(null);
+            setSelected(null);
+          }}
+          onBeginReinforce={(id) => {
+            setReinforceExpeditionId(id);
+            setRedeployExpeditionId(null);
+            const host = expeditions.find((e) => e.id === id);
+            if (host) {
+              const tile = host.path[host.path.length - 1]!;
+              goToTile(tile);
+            }
+          }}
         />
       </div>
     </div>
