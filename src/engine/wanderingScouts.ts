@@ -1,7 +1,7 @@
 import type { WatchtowerSignal } from "../data/lab";
 import type { WanderingScoutRecord } from "../data/wanderingScouts";
 import type { Tweaks } from "../data/tweaksSchema";
-import { bearingStepScore, coordInCompass4Sector, rollScoutClue } from "./lab";
+import { bearingStepScore, rollScoutClue } from "./lab";
 import { axialKey, axialNeighbors, isWithinMapBounds, type Axial } from "./hexCoords";
 import { seededRandom } from "./noise";
 import { terrainAt } from "./terrain";
@@ -37,10 +37,10 @@ function pickWeightedNeighbor(
 }
 
 export type AdvanceWanderingScoutsOptions = {
-  /** Active watchtower listening focus — biases steps and enables sector clue rolls. */
+  /** Active watchtower listening focus — biases steps toward that sector. */
   signal: WatchtowerSignal | null;
   base: Axial;
-  /** Current lab clue count — sector rolls stop once at the cap (and when stops_once is set). */
+  /** Current lab clue count — passive rolls stop once at the cap. */
   cluesCollected: number;
 };
 
@@ -54,12 +54,12 @@ export type AdvanceWanderingScoutsOptions = {
  * mirror of engine/scoutSkiffs.ts's water-only confinement. Excludes the
  * tile it just came from when another option exists, so it doesn't just
  * oscillate between two tiles forever. Each new tile visited is appended to
- * `scoutedTiles` if not already present — the same reveal mechanism manual
- * land scouting and the scout skiff both use.
+ * `scoutedTiles` if not already present — the same reveal mechanism the
+ * scout skiff uses.
  *
- * With an active watchtower signal (#38), neighbor picks are biased toward
- * that compass sector; newly scouted tiles in-sector can award a real lab
- * clue (same chance as a manual scout action). At most one clue per advance.
+ * Newly scouted tiles roll a passive lab clue (`per_scout_action_chance`);
+ * at most one clue per advance. An active watchtower signal (#38) only biases
+ * neighbor picks toward that compass sector (it does not gate the clue roll).
  */
 export function advanceWanderingScouts(
   tweaks: Tweaks,
@@ -78,10 +78,8 @@ export function advanceWanderingScouts(
   if (steps <= 0) return { scouts, scoutedTiles, clueAwarded: false };
 
   const signal = options?.signal ?? null;
-  const base = options?.base;
   const cluesCollected = options?.cluesCollected ?? 0;
-  const canRollClue =
-    signal != null && base != null && cluesCollected < tweaks.lab_clues.total_clues;
+  const canRollClue = cluesCollected < tweaks.lab_clues.total_clues;
 
   const scoutedKeys = new Set(scoutedTiles.map(axialKey));
   const newlyScouted: Axial[] = [];
@@ -119,14 +117,7 @@ export function advanceWanderingScouts(
         newlyScouted.push(coord);
         scoutCount += 1;
 
-        if (
-          canRollClue &&
-          !clueAwarded &&
-          base &&
-          signal &&
-          coordInCompass4Sector(base, coord, signal.bearing) &&
-          rollScoutClue(tweaks, seed, coord, scoutCount)
-        ) {
+        if (canRollClue && !clueAwarded && rollScoutClue(tweaks, seed, coord, scoutCount)) {
           clueAwarded = true;
         }
       }

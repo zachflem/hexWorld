@@ -6,7 +6,6 @@ import {
   crossBowSniperCapacity,
   junkyardKnightCapacity,
   militiaCapacity,
-  scoutCapacity,
 } from "../../engine/barracks";
 import { garrisonedCrossBowSniperTotal, garrisonedJunkyardKnightTotal, garrisonedMilitiaTotal } from "../../engine/garrisons";
 import { BottomSheet } from "../primitives/BottomSheet";
@@ -26,7 +25,6 @@ export function MilitaryPanel({
   barracksList: Barracks[];
   onClose: () => void;
 }) {
-  const scoutCap = scoutCapacity(tweaks, barracksList);
   const militiaCap = militiaCapacity(tweaks, barracksList);
   const knightCap = junkyardKnightCapacity(tweaks, barracksList);
   const sniperCap = crossBowSniperCapacity(tweaks, barracksList);
@@ -37,7 +35,6 @@ export function MilitaryPanel({
   return (
     <BottomSheet open title="Military" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
-        <StatRow label="Scouts" current={units.scoutStockpile} max={scoutCap} />
         <StatRow
           label="Militia"
           current={units.militiaCount}

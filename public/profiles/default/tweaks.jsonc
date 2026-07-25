@@ -197,7 +197,7 @@
       "seconds_per_step": 10,
       "build_time_minutes": 9
     },
-    "_scout_skiff_note": "CORRECTION (2026-07-20 balance pass, playtesting feedback: scout skiffs were reasonably overpowered for their cost — unlimited free map reveal from a single cheap, instant build). Cost doubled from wood:120/food:40, and it now takes build_time_minutes to construct (previously instant, unlike the fishing boat) before it launches and starts wandering its connected body of water at one tile per seconds_per_step, revealing every tile it visits (same mechanism as manual land scouting) — engine/scoutSkiffs.ts."
+    "_scout_skiff_note": "CORRECTION (2026-07-20 balance pass, playtesting feedback: scout skiffs were reasonably overpowered for their cost — unlimited free map reveal from a single cheap, instant build). Cost doubled from wood:120/food:40, and it now takes build_time_minutes to construct (previously instant, unlike the fishing boat) before it launches and starts wandering its connected body of water at one tile per seconds_per_step, revealing every tile it visits (same mechanism as the land Wandering Scout) — engine/scoutSkiffs.ts."
   },
 
   // --------------------------------------------------------------------------
@@ -305,30 +305,23 @@
     "upgrade_time_minutes_base": 3,
     "_upgrade_time_note": "barracksUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=6min, L3=9min, L4=12min. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
     "militia_capacity_per_level": 10,
-    "scout_capacity_per_level": 3,
     "junkyard_knight_capacity_per_level": 6,
     "cross_bow_sniper_capacity_per_level": 6,
-    "_capacity_note": "Each barracks contributes capacity = per_level_value * its own level to a shared, player-wide pool; multiple barracks sum. A single L1 barracks supports 10 militia and 3 stockpiled scouts. Training SPEED scales the same way (2026-07-16) — barracksTrainingCapacity (engine/barracks.ts) sums each non-damaged barracks's own level, and scoutTrainDurationMs/militiaTrainDurationMs (engine/units.ts) divide the base per-unit time by that sum. A lone L4 barracks trains as fast as 4 L1s, not just 1 — higher-level barracks aren't just bigger, they're faster too. First pass, untested. junkyard_knight/cross_bow_sniper capacity is also per-barracks-level, but only barracks meeting units.<type>.min_barracks_level contribute anything at all — a barracks below that level has no wing built for the unit yet. CORRECTION (2026-07-19): militia/junkyard_knight/cross_bow_sniper capacities doubled from their original 5/3/3 — the new expeditions system (see the expeditions tweaks block) needs a party strong enough to beat the single hardest tile's defense along a whole multi-tile route in one go (no attrition divides the cost across tiles it fights through), so a much bigger standing army is needed to make a deep push viable at all. Scout capacity is untouched — scouts don't fight."
+    "_capacity_note": "Each barracks contributes capacity = per_level_value * its own level to a shared, player-wide pool; multiple barracks sum. A single L1 barracks supports 10 militia. Training SPEED scales the same way — trainingUnitDurationMs (engine/barracks.ts) divides the base per-unit time by that barracks's level. A lone L4 barracks trains as fast as 4 L1s. junkyard_knight/cross_bow_sniper capacity is also per-barracks-level, but only barracks meeting units.<type>.min_barracks_level contribute — a barracks below that level has no wing for the unit yet. CORRECTION (2026-07-19): militia/junkyard_knight/cross_bow_sniper capacities doubled from their original 5/3/3 — expeditions need a party strong enough to beat the hardest tile along a multi-tile route. Stockpile scouts removed (#76) — land exploration is Wandering Scout only."
   },
 
   // --------------------------------------------------------------------------
-  // UNITS (trained at a barracks — scouts are one-time use, militia/junkyard_knight/cross_bow_sniper stand and defend)
+  // UNITS (trained at a barracks — militia/junkyard_knight/cross_bow_sniper stand and defend; land exploration is Wandering Scout)
   // --------------------------------------------------------------------------
   "units": {
     "_status": "first pass, untested — new system.",
-    "scout": {
-      "train_cost": { "food": 30, "wood": 20 },
-      "train_time_seconds": 20,
-      "upkeep_food_per_min": 7,
-      "_note": "Flat cost, no Formula A scaling — replaces the old per-scout resource cost (previously scaled with the target tile's level) with a flat per-unit training cost. Costs food upkeep even while stockpiled, unspent. Training now trickles in one at a time via a queue (engine/units.ts:resolveTrainingQueue) — the whole batch's cost is paid upfront when the queue starts, and queued-but-undelivered units cost no upkeep. First pass, untested."
-    },
     "militia": {
       "train_cost": { "food": 15, "wood": 10 },
       "train_time_seconds": 30,
       "upkeep_food_per_min": 3.5,
       "attack_per_unit": 2,
       "defense_per_unit": 2,
-      "_note": "Standing army — not consumed on use. attack_per_unit feeds den assault power (§13); defense_per_unit adds to base last-stand defense alongside base reinforcement HP (§9). Training trickles in one at a time via a queue, same as scouts — see scout._note. First pass, untested."
+      "_note": "Standing army — not consumed on use. attack_per_unit feeds den assault power (§13); defense_per_unit adds to base last-stand defense alongside base reinforcement HP (§9). Training trickles in one at a time via a queue (engine/units.ts:resolveTrainingQueue) — the whole batch's cost is paid upfront when the queue starts, and queued-but-undelivered units cost no upkeep. First pass, untested."
     },
     "junkyard_knight": {
       "train_cost": { "food": 25, "wood": 15, "stone": 15 },
@@ -351,15 +344,14 @@
       "_note": "Barracks L3 unlock (2026-07-17 milestone) — the first ranged unit. Garrisoned snipers add continuous per-tick ranged_damage_per_unit*count damage to any horde within range_tiles of their garrison's tile (engine/hordes.ts, same shape as tower damage), on top of the usual attack_per_unit/defense_per_unit used for adjacent-tile fights/auto-attacks like every other garrisoned unit. First pass, untested."
     },
     "wandering_scout": {
-      "scout_cost": 10,
-      "cost": { "wood": 150, "stone": 75 },
+      "cost": { "food": 300, "wood": 200 },
       "max_per_barracks": 1,
       "seconds_per_step": 5,
       "build_time_minutes": 9,
-      "_note": "Land counterpart of the water-bound scout skiff (docks.scout_skiff) — built at a Barracks by retiring scout_cost regular scouts from the stockpile, ON TOP OF a flat resource cost (previously scouts-only, no resource price at all). Wanders randomly across connected land at one tile per seconds_per_step, revealing every tile it visits (engine/wanderingScouts.ts), same mechanism as manual land scouting. Capped at max_per_barracks per barracks. CORRECTION (2026-07-20 balance pass, playtesting feedback: reasonably overpowered for its cost, same issue as scout_skiff) — added the resource `cost` (mid-tier, on par with a barracks/tower upgrade) and build_time_minutes (previously instant). CORRECTION 2 (2026-07-21 playtest pass: felt static/rooted next to the skiff, which 'feels good... just out and about') — seconds_per_step halved from 10 to 5, so the land scout now moves twice as fast as the water-bound skiff (docks.scout_skiff.seconds_per_step, unchanged at 10); every other stat (cost, cap, build timer) stays identical, so speed is the deliberate asymmetry between the two."
+      "_note": "Land counterpart of the water-bound scout skiff (docks.scout_skiff) — built at a Barracks for a flat resource cost equal to 10× the old one-shot scout train_cost (300 food + 200 wood). No scout stockpile / retire gate (#76). Wanders randomly across connected land at one tile per seconds_per_step, revealing every tile it visits (engine/wanderingScouts.ts). Capped at max_per_barracks per barracks. build_time_minutes kept from the prior mid-tier timer; tune later if still too late."
     },
-    "_desertion_note": "If food can't cover total upkeep for a tick's elapsed time, food is clamped at 0 and exactly one unit deserts (lowest-upkeep-priority standing unit preferred, else a scout) — a simple first-pass penalty, not proportional to the shortfall size.",
-    "_upkeep_balance_note": "CORRECTION (2026-07-21 balance pass, playtesting feedback: food reserves sat permanently full — a single small grassland food tile alone yields ~2.25 food/sec, while a 20-30 unit standing army at the old rates only cost ~0.3-0.6 food/sec total, so upkeep could never meaningfully compete with production). upkeep_food_per_min raised roughly 10x across all four unit types (scout 1->10, militia 0.5->5, junkyard_knight 0.8->8, cross_bow_sniper 1->10). CORRECTION 2 (2026-07-21, same-day follow-up: 10x read as too aggressive in play) — walked back to roughly 7x the original rates (scout 10->7, militia 5->3.5, junkyard_knight 8->5.5, cross_bow_sniper 10->7), still a real ongoing drain but less punishing than the initial pass. First pass at these numbers, still subject to further tuning."
+    "_desertion_note": "If food can't cover total upkeep for a tick's elapsed time, food is clamped at 0 and exactly one unit deserts (lowest-upkeep-priority standing unit first: militia, then junkyard knight, then cross-bow sniper) — a simple first-pass penalty, not proportional to the shortfall size.",
+    "_upkeep_balance_note": "CORRECTION (2026-07-21 balance pass, playtesting feedback: food reserves sat permanently full). upkeep_food_per_min raised roughly 10x across standing unit types, then walked back to roughly 7x (militia 5->3.5, junkyard_knight 8->5.5, cross_bow_sniper 10->7). Stockpile scout upkeep removed with the unit (#76). First pass at these numbers, still subject to further tuning."
   },
 
   // --------------------------------------------------------------------------
@@ -564,7 +556,7 @@
     "floor_convergence_half_life_seconds": 30,
     "_floor_convergence_note": "Noise continuously converges toward its current 'ambient floor' (below) rather than accumulating without bound or draining to zero. Every half-life, half the remaining gap between current noise and the floor closes — so a build/upgrade spike rolls back down to the floor in under a minute, and if the floor ever drops (e.g. a structure is lost later), noise settles down to meet it. CORRECTION (2026-07-12): lowered from 90 to 30 — the original value made post-build/upgrade rolloff feel sluggish in playtesting. First pass, still untested at this new value.",
 
-    "_one_time_action_noise_note": "upgrade_extraction_tile (10) is reused as the generic 'any structure tier-up' noise for tower, wall, barracks, and base-level upgrades too — there was no dedicated value for those in the original design, and upgrade noise intuitively doesn't vary much by structure type the way build noise does. build_wall (20) fills a similar gap: walls had repair noise but no build noise defined. build_barracks (20) matches it — same weight class as a wall or extraction tile. train_scout/train_militia are much quieter (a person leaving/joining camp, not construction). attack_tile (25) matches build_tower, the current loudest action — a militia assault is about as far from stealthy as it gets. garrison_militia (2026-07-16, militia garrisons) sits just above train_militia — marching troops into position is a bit more noticeable than one recruit joining camp, but nowhere near build/assault weight. Recalling a garrison is silent (matches demolish, which also has no noise cost) — pulling back doesn't announce itself. rush_train_scout/rush_train_militia (2026-07-16) are the odd ones out: every other value here is a flat one-time spike regardless of quantity, but addActionNoise's new `multiplier` param (engine/noiseMeter.ts) scales these BY the rushed quantity — rushing 1 unit is already 5x louder than calmly training one (15 vs 3, 'shouting orders to skip the line'), and rushing 10 at once is a full-blown commotion (150, most of the noise cap in one action). This is the drawback that balances rush training's real upside — instant delivery, no queue timer at all (App.tsx:handleRushTrainScouts/handleRushTrainMilitia) — against calm training's quiet-but-slow queue. First pass, untested.",
+    "_one_time_action_noise_note": "upgrade_extraction_tile (10) is reused as the generic 'any structure tier-up' noise for tower, wall, barracks, and base-level upgrades too — there was no dedicated value for those in the original design, and upgrade noise intuitively doesn't vary much by structure type the way build noise does. build_wall (20) fills a similar gap: walls had repair noise but no build noise defined. build_barracks (20) matches it — same weight class as a wall or extraction tile. train_militia is much quieter (a person leaving/joining camp, not construction). attack_tile (25) matches build_tower, the current loudest action — a militia assault is about as far from stealthy as it gets. garrison_militia (2026-07-16, militia garrisons) sits just above train_militia — marching troops into position is a bit more noticeable than one recruit joining camp, but nowhere near build/assault weight. Recalling a garrison is silent (matches demolish, which also has no noise cost) — pulling back doesn't announce itself. rush_train_militia (2026-07-16) is the odd one out: every other value here is a flat one-time spike regardless of quantity, but addActionNoise's `multiplier` param (engine/noiseMeter.ts) scales this BY the rushed quantity — rushing 1 militia is already 5x louder than calmly training one (15 vs 3), and rushing 10 at once is a full-blown commotion. This balances rush training's instant delivery against calm training's quiet-but-slow queue. Stockpile scout rush noise removed with the unit (#76). First pass, untested.",
     "one_time_action_noise": {
       "build_path_tile": 10,
       "repair_wall": 15,
@@ -575,12 +567,10 @@
       "upgrade_extraction_tile": 10,
       "upgrade_infrastructure_tile": 10,
       "manual_resource_collection": 5,
-      "train_scout": 3,
       "train_militia": 3,
       "attack_tile": 25,
       "garrison_militia": 5,
       "attack_horde": 25,
-      "rush_train_scout": 15,
       "rush_train_militia": 15,
       "build_dock": 20,
       "build_fishing_boat": 10,

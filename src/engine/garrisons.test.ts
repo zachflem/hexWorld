@@ -103,7 +103,6 @@ function makeGarrisonRecall(overrides: Partial<GarrisonRecallRecord> = {}): Garr
 }
 
 const units = (overrides: Partial<UnitsRecord> = {}): UnitsRecord => ({
-  scoutStockpile: 0,
   militiaCount: 0,
   junkyardKnightCount: 0,
   crossBowSniperCount: 0,

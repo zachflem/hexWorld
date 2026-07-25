@@ -99,7 +99,7 @@ import {
   reinforcementUpgradeCost,
   resolveBaseAction,
 } from "./engine/base";
-import { autoClaimTowerRange, canRepairHordeDamagedTile, isTileScoutable } from "./engine/territory";
+import { autoClaimTowerRange, canRepairHordeDamagedTile } from "./engine/territory";
 import {
   ASSAULT_CORRIDOR,
   TERRITORY_CORRIDOR,
@@ -128,6 +128,7 @@ import {
   checkHordeSpawns,
   hordeStructureCaptureEvents,
   markCapturedStructuresDamaged,
+  preserveCapturedTilesAsScouted,
   resolveGarrisonAutoAttacks,
   towersInRange,
   reconcileHordeWatchtowerAlerts,
@@ -149,7 +150,6 @@ import {
   labClueText,
   makeWatchtowerSignal,
   resolveLabAssault,
-  rollScoutClue,
   rollWatchtowerSignal,
   watchtowerSignalToastText,
 } from "./engine/lab";
@@ -186,14 +186,12 @@ import {
   junkyardKnightCapacity,
   militiaCapacity,
   nextBarracksLevel,
-  scoutCapacity,
 } from "./engine/barracks";
 import {
   applyUpkeepTick,
   crossBowSniperTrainCost,
   junkyardKnightTrainCost,
   militiaTrainCost,
-  scoutTrainCost,
 } from "./engine/units";
 import { GameScreen } from "./ui/GameScreen";
 import { NOTIFICATION_ICON_SIZE } from "./ui/hud/CollapsibleNotificationRow";
@@ -277,25 +275,29 @@ function resolveBase(tweaks: Tweaks, base: StoredBaseRecord | undefined): BaseRe
   return resolved;
 }
 
-/** Moves pre-#5 player-global training queues onto the first idle active barracks. */
+/**
+ * Moves pre-#5 player-global training queues onto the first idle active barracks.
+ * Drops stockpile-scout state (#76): scoutStockpile, legacy scoutQueue, and any
+ * barracks trainingQueue still typed as "scout".
+ */
 function migrateLegacyTrainingQueues(
   barracksList: Barracks[],
   rawUnits: LegacyUnitsRecord,
 ): { barracksList: Barracks[]; units: UnitsRecord } {
   const units: UnitsRecord = {
-    scoutStockpile: rawUnits.scoutStockpile ?? 0,
     militiaCount: rawUnits.militiaCount ?? 0,
     junkyardKnightCount: rawUnits.junkyardKnightCount ?? 0,
     crossBowSniperCount: rawUnits.crossBowSniperCount ?? 0,
   };
 
-  const legacyQueues: { unitType: TrainingUnitType; queue: NonNullable<LegacyUnitsRecord["scoutQueue"]> }[] = [];
-  if (rawUnits.scoutQueue) legacyQueues.push({ unitType: "scout", queue: rawUnits.scoutQueue });
+  const legacyQueues: { unitType: TrainingUnitType; queue: NonNullable<LegacyUnitsRecord["militiaQueue"]> }[] = [];
   if (rawUnits.militiaQueue) legacyQueues.push({ unitType: "militia", queue: rawUnits.militiaQueue });
   if (rawUnits.junkyardKnightQueue) legacyQueues.push({ unitType: "junkyard_knight", queue: rawUnits.junkyardKnightQueue });
   if (rawUnits.crossBowSniperQueue) legacyQueues.push({ unitType: "cross_bow_sniper", queue: rawUnits.crossBowSniperQueue });
 
-  let nextBarracks = barracksList;
+  let nextBarracks = barracksList.map((b) =>
+    b.trainingQueue && (b.trainingQueue.unitType as string) === "scout" ? { ...b, trainingQueue: null } : b,
+  );
   for (const { unitType, queue } of legacyQueues) {
     const idx = nextBarracks.findIndex((b) => isStructureActive(b) && !b.trainingQueue);
     if (idx < 0) break;
@@ -360,6 +362,22 @@ function buildGameState(
 ): GameState {
   const resolvedDens = (data.dens ?? []).map(resolveDen);
   const migrated = migrateLegacyTrainingQueues(data.barracksList ?? [], { ...initialUnits(), ...(data.units as LegacyUnitsRecord | undefined) });
+  const extractionTiles = data.extractionTiles ?? [];
+  const pathTiles = data.pathTiles ?? [];
+  const towers = data.towers ?? [];
+  const walls = data.walls ?? [];
+  const barracksList = migrated.barracksList;
+  // One-shot heal for saves that lost fog when hordes stripped ownership:
+  // any damaged structure implies the tile was held/known — keep it scouted.
+  const scoutedTiles = preserveCapturedTilesAsScouted(data.scoutedTiles ?? [], [
+    ...extractionTiles,
+    ...pathTiles,
+    ...towers,
+    ...walls,
+    ...barracksList,
+  ]
+    .filter((s) => s.damaged)
+    .map((s) => s.coord));
   return {
     player: data.player,
     world: normalizeWorldRecord(data.world),
@@ -367,14 +385,14 @@ function buildGameState(
     base: resolveBase(tweaks, data.base),
     resources: data.resources,
     clock: { ...data.clock, virtualNow: data.clock.virtualNow ?? data.clock.lastTickAt },
-    extractionTiles: data.extractionTiles ?? [],
-    pathTiles: data.pathTiles ?? [],
-    towers: data.towers ?? [],
-    walls: data.walls ?? [],
-    barracksList: migrated.barracksList,
+    extractionTiles,
+    pathTiles,
+    towers,
+    walls,
+    barracksList,
     units: migrated.units,
     garrisons: data.garrisons ?? [],
-    scoutedTiles: data.scoutedTiles ?? [],
+    scoutedTiles,
     storageLevels: data.storageLevels,
     storageUpgrades: data.storageUpgrades ?? initialStorageUpgrades(),
     noise: data.noise ?? initialNoise(tweaks),
@@ -1064,6 +1082,9 @@ export default function App() {
       const towersAfterCapture = markCapturedStructuresDamaged(towers, capturedTiles);
       const wallsAfterCapture = markCapturedStructuresDamaged(walls, capturedTiles);
       const barracksListAfterCapture = markCapturedStructuresDamaged(barracksList, capturedTiles);
+      // Ownership drop must not re-fog known ground — keep captured tiles in
+      // scoutedTiles so reclaim/repair stays possible without rediscovery.
+      const scoutedTilesAfterCapture = preserveCapturedTilesAsScouted(scoutedTiles, capturedTiles);
 
       // Watchtower early-warning (#38): toast once when a horde first enters
       // any active tower's combat range; clear when it leaves so re-entry alerts again.
@@ -1693,7 +1714,7 @@ export default function App() {
         set(DOCKS_DB_KEY, docks),
         set(SCOUT_SKIFFS_DB_KEY, scoutSkiffs),
         set(WANDERING_SCOUTS_DB_KEY, wanderingScouts),
-        set(SCOUTED_TILES_DB_KEY, scoutedTiles),
+        set(SCOUTED_TILES_DB_KEY, scoutedTilesAfterCapture),
         set(DENS_DB_KEY, densAfterAssaults),
         set(DEN_ASSAULTS_DB_KEY, nextDenAssaults),
         set(OUTPOSTS_DB_KEY, outpostsAfterSieges),
@@ -1729,7 +1750,7 @@ export default function App() {
                 docks,
                 scoutSkiffs,
                 wanderingScouts,
-                scoutedTiles,
+                scoutedTiles: scoutedTilesAfterCapture,
                 dens: densAfterAssaults,
                 denAssaults: nextDenAssaults,
                 outposts: outpostsAfterSieges,
@@ -2461,7 +2482,7 @@ export default function App() {
     return { ok: true };
   }
 
-  /** Land counterpart of handleBuildScoutSkiff — retires scout_cost regular scouts from the stockpile instead of spending resources, since a trained scout already paid its own train_cost. */
+  /** Land counterpart of handleBuildScoutSkiff — flat resource cost (10× old one-shot scout train_cost). */
   async function handleBuildWanderingScout(coord: Axial): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
@@ -2475,11 +2496,6 @@ export default function App() {
       return { ok: false, reason: "This barracks already has a wandering scout" };
     }
 
-    const scoutCost = tweaks.units.wandering_scout.scout_cost;
-    if (game.units.scoutStockpile < scoutCost) {
-      return { ok: false, reason: `Not enough scouts (needs ${scoutCost})` };
-    }
-
     const cost = tweaks.units.wandering_scout.cost;
     for (const [key, amount] of Object.entries(cost)) {
       if (game.resources[key as keyof ResourceAmounts] < (amount ?? 0)) {
@@ -2491,7 +2507,6 @@ export default function App() {
     for (const [key, amount] of Object.entries(cost)) {
       resources[key as keyof ResourceAmounts] -= amount ?? 0;
     }
-    const units: UnitsRecord = { ...game.units, scoutStockpile: game.units.scoutStockpile - scoutCost };
     const wanderingScouts: WanderingScoutsRecord = [
       ...game.wanderingScouts,
       {
@@ -2507,13 +2522,12 @@ export default function App() {
 
     await Promise.all([
       set(RESOURCES_DB_KEY, resources),
-      set(UNITS_DB_KEY, units),
       set(WANDERING_SCOUTS_DB_KEY, wanderingScouts),
       set(NOISE_DB_KEY, noise),
     ]);
     setBoot((prev) =>
       prev.status === "ready" && prev.game
-        ? { ...prev, game: { ...prev.game, resources, units, wanderingScouts, noise } }
+        ? { ...prev, game: { ...prev.game, resources, wanderingScouts, noise } }
         : prev,
     );
     return { ok: true };
@@ -3174,44 +3188,6 @@ export default function App() {
     return { ok: true, barracks };
   }
 
-  async function handleTrainScouts(coord: Axial, quantity: number): Promise<BuildResult> {
-    const barracksResult = barracksForTraining(coord);
-    if (!barracksResult.ok) return barracksResult;
-    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { tweaks, game } = boot;
-
-    if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
-
-    const capacity = scoutCapacity(tweaks, game.barracksList);
-    if (game.units.scoutStockpile + quantity > capacity) return { ok: false, reason: "Not enough scout capacity" };
-
-    const perUnitCost = scoutTrainCost(tweaks);
-    const cost: Record<string, number> = {};
-    for (const [key, amount] of Object.entries(perUnitCost)) cost[key] = amount * quantity;
-    for (const [key, amount] of Object.entries(cost)) {
-      if (game.resources[key as keyof ResourceAmounts] < amount) {
-        return { ok: false, reason: `Not enough ${key}` };
-      }
-    }
-
-    const resources = { ...game.resources };
-    for (const [key, amount] of Object.entries(cost)) {
-      resources[key as keyof ResourceAmounts] -= amount;
-    }
-    const barracksList = game.barracksList.map((b) =>
-      axialKey(b.coord) === axialKey(coord)
-        ? { ...b, trainingQueue: { unitType: "scout" as const, remaining: quantity, currentUnitStartedAt: game.clock.virtualNow } }
-        : b,
-    );
-    const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "train_scout", game.base.level) };
-
-    await Promise.all([set(RESOURCES_DB_KEY, resources), set(BARRACKS_DB_KEY, barracksList), set(NOISE_DB_KEY, noise)]);
-    setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, barracksList, noise } } : prev,
-    );
-    return { ok: true };
-  }
-
   async function handleTrainMilitia(coord: Axial, quantity: number): Promise<BuildResult> {
     const barracksResult = barracksForTraining(coord);
     if (!barracksResult.ok) return barracksResult;
@@ -3350,8 +3326,7 @@ export default function App() {
    * addActionNoise's multiplier scales the spike by quantity (every other
    * one-time action is a flat spike regardless of how much you did), so
    * rushing a handful of units is loud and rushing a big batch is a full
-   * commotion — "very noisy" per playtesting discussion, unlike the queued
-   * path's barely-audible train_scout/train_militia.
+   * commotion — unlike the queued path's barely-audible train_militia.
    */
   async function handleRushActiveTraining(coord: Axial): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
@@ -3363,71 +3338,26 @@ export default function App() {
 
     const queue = barracks.trainingQueue;
     if (!queue || queue.remaining <= 0) return { ok: false, reason: "No training in progress" };
-    if (queue.unitType !== "scout" && queue.unitType !== "militia") {
+    if (queue.unitType !== "militia") {
       return { ok: false, reason: "This unit type cannot be rushed" };
     }
 
     const remaining = queue.remaining;
-    let units: UnitsRecord = game.units;
-    if (queue.unitType === "scout") {
-      if (game.units.scoutStockpile + remaining > scoutCapacity(tweaks, game.barracksList)) {
-        return { ok: false, reason: "Not enough scout capacity" };
-      }
-      units = { ...units, scoutStockpile: units.scoutStockpile + remaining };
-    } else {
-      if (game.units.militiaCount + remaining > militiaCapacity(tweaks, game.barracksList)) {
-        return { ok: false, reason: "Not enough militia capacity" };
-      }
-      units = { ...units, militiaCount: units.militiaCount + remaining };
+    if (game.units.militiaCount + remaining > militiaCapacity(tweaks, game.barracksList)) {
+      return { ok: false, reason: "Not enough militia capacity" };
     }
+    const units: UnitsRecord = { ...game.units, militiaCount: game.units.militiaCount + remaining };
 
     const barracksList = game.barracksList.map((b) =>
       axialKey(b.coord) === axialKey(coord) ? { ...b, trainingQueue: null } : b,
     );
-    const noiseAction = queue.unitType === "scout" ? "rush_train_scout" : "rush_train_militia";
     const noise: NoiseRecord = {
-      value: addActionNoise(tweaks, game.noise.value, noiseAction, game.base.level, remaining),
+      value: addActionNoise(tweaks, game.noise.value, "rush_train_militia", game.base.level, remaining),
     };
 
     await Promise.all([set(UNITS_DB_KEY, units), set(BARRACKS_DB_KEY, barracksList), set(NOISE_DB_KEY, noise)]);
     setBoot((prev) =>
       prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, units, barracksList, noise } } : prev,
-    );
-    return { ok: true };
-  }
-
-  async function handleRushTrainScouts(coord: Axial, quantity: number): Promise<BuildResult> {
-    const barracksResult = barracksForTraining(coord);
-    if (!barracksResult.ok) return barracksResult;
-    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { tweaks, game } = boot;
-
-    if (!Number.isInteger(quantity) || quantity <= 0) return { ok: false, reason: "Invalid quantity" };
-
-    const capacity = scoutCapacity(tweaks, game.barracksList);
-    if (game.units.scoutStockpile + quantity > capacity) return { ok: false, reason: "Not enough scout capacity" };
-
-    const perUnitCost = scoutTrainCost(tweaks);
-    const cost: Record<string, number> = {};
-    for (const [key, amount] of Object.entries(perUnitCost)) cost[key] = amount * quantity;
-    for (const [key, amount] of Object.entries(cost)) {
-      if (game.resources[key as keyof ResourceAmounts] < amount) {
-        return { ok: false, reason: `Not enough ${key}` };
-      }
-    }
-
-    const resources = { ...game.resources };
-    for (const [key, amount] of Object.entries(cost)) {
-      resources[key as keyof ResourceAmounts] -= amount;
-    }
-    const units: UnitsRecord = { ...game.units, scoutStockpile: game.units.scoutStockpile + quantity };
-    const noise: NoiseRecord = {
-      value: addActionNoise(tweaks, game.noise.value, "rush_train_scout", game.base.level, quantity),
-    };
-
-    await Promise.all([set(RESOURCES_DB_KEY, resources), set(UNITS_DB_KEY, units), set(NOISE_DB_KEY, noise)]);
-    setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, units, noise } } : prev,
     );
     return { ok: true };
   }
@@ -3464,46 +3394,6 @@ export default function App() {
     await Promise.all([set(RESOURCES_DB_KEY, resources), set(UNITS_DB_KEY, units), set(NOISE_DB_KEY, noise)]);
     setBoot((prev) =>
       prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, units, noise } } : prev,
-    );
-    return { ok: true };
-  }
-
-  async function handleScoutTile(coord: Axial): Promise<BuildResult> {
-    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { tweaks, game } = boot;
-
-    const ownedKeys = new Set(game.territory.owned.map(axialKey));
-    if (ownedKeys.has(axialKey(coord))) return { ok: false, reason: "Already owned" };
-    if (game.scoutedTiles.some((c) => axialKey(c) === axialKey(coord))) {
-      return { ok: false, reason: "Already scouted" };
-    }
-    if (!isTileScoutable(game.world.seed, coord, game.territory.owned, game.scoutedTiles)) {
-      return {
-        ok: false,
-        reason: "Not scoutable — must be adjacent to owned or already-scouted land (no crossing water)",
-      };
-    }
-    if (game.units.scoutStockpile <= 0) return { ok: false, reason: "No scout units available" };
-
-    const units: UnitsRecord = { ...game.units, scoutStockpile: game.units.scoutStockpile - 1 };
-    const scoutedTiles = [...game.scoutedTiles, coord];
-
-    // Passive lab-clue roll (DESIGN.md §13) — deterministic per scout action,
-    // capped at total_clues (guaranteed den-clear clues, App.tsx's tick loop,
-    // can also fill the count independently).
-    let lab: LabRecord = game.lab;
-    if (
-      game.lab.cluesCollected < tweaks.lab_clues.total_clues &&
-      rollScoutClue(tweaks, game.world.seed, coord, game.scoutedTiles.length)
-    ) {
-      lab = { ...game.lab, cluesCollected: game.lab.cluesCollected + 1 };
-      const clueText = labClueText(lab.cluesCollected, game.territory.base, lab.coord);
-      pushToast({ message: `New lab clue (${lab.cluesCollected}/${tweaks.lab_clues.total_clues}): ${clueText}` });
-    }
-
-    await Promise.all([set(UNITS_DB_KEY, units), set(SCOUTED_TILES_DB_KEY, scoutedTiles), set(LAB_DB_KEY, lab)]);
-    setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, units, scoutedTiles, lab } } : prev,
     );
     return { ok: true };
   }
@@ -4466,14 +4356,11 @@ export default function App() {
       onDemolish={handleDemolish}
       onBuildBarracks={handleBuildBarracks}
       onUpgradeBarracks={handleUpgradeBarracks}
-      onTrainScouts={handleTrainScouts}
       onTrainMilitia={handleTrainMilitia}
       onTrainJunkyardKnight={handleTrainJunkyardKnight}
       onTrainCrossBowSniper={handleTrainCrossBowSniper}
-      onRushTrainScouts={handleRushTrainScouts}
       onRushTrainMilitia={handleRushTrainMilitia}
       onRushActiveTraining={handleRushActiveTraining}
-      onScoutTile={handleScoutTile}
       onUpgradeBase={handleUpgradeBase}
       onUpgradeReinforcement={handleUpgradeReinforcement}
       onRepairBase={handleRepairBase}

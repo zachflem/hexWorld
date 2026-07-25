@@ -186,12 +186,12 @@ Added during playtesting — not in the original design pass, see `DESIGN.md` §
 **Scout Skiff (per dock, water-side scouting):**
 - Capped at `max_per_dock` (1) per dock: 240 wood + 80 food, 9-minute timer (lowered from 10, 2026-07-23 pacing pass). Doubled from 120 wood + 40 food and given a build timer (2026-07-20 balance pass, playtesting feedback: free/instant unlimited map reveal from a single cheap build was reasonably overpowered).
 - Moves one tile per `seconds_per_step` (10s), always onto a water tile, excluding the tile it just left whenever another option exists (so it doesn't just oscillate between two tiles) — otherwise unconfined, free to wander anywhere in its connected body of water. Doesn't move (or scout) until its build timer completes.
-- Reveals every tile it steps onto, the same `scoutedTiles` mechanism manual land scouting uses — but automatic and ongoing instead of one reveal per unit spent.
+- Reveals every tile it steps onto via `scoutedTiles` — automatic and ongoing.
 - Noise: build 5 (`build_scout_skiff`).
 
-**Wandering Scout (land counterpart, trained at a Barracks):**
-- Capped at `units.wandering_scout.max_per_barracks` (1) per barracks. Costs `scout_cost` (10) regular scouts retired from the stockpile **plus** a resource cost (150 wood + 75 stone) and a 9-minute build timer (lowered from 10, 2026-07-23 pacing pass) — added 2026-07-20 balance pass, same overpowered-for-its-cost reasoning as the Scout Skiff (previously scouts-only, no resource price, instant).
-- Same movement rule as the Scout Skiff (one tile per `seconds_per_step`, excludes its last tile when another option exists), except confined to non-water terrain instead of water. Doesn't move (or scout) until its build timer completes. Moves twice as fast as the Scout Skiff — `seconds_per_step` halved from 10s to 5s (2026-07-21 playtest pass: felt static next to the skiff) — every other stat (cost, cap, build timer) is identical between the two.
+**Wandering Scout (land counterpart, built at a Barracks):**
+- Capped at `units.wandering_scout.max_per_barracks` (1) per barracks. Flat resource cost **300 food + 200 wood** (10× the retired one-shot scout `train_cost`) and a 9-minute build timer. Stockpile scouts / `scout_cost` retire gate removed (#76) so auto-exploration unlocks earlier.
+- Same movement rule as the Scout Skiff (one tile per `seconds_per_step`, excludes its last tile when another option exists), except confined to non-water terrain instead of water. Doesn't move (or scout) until its build timer completes. Moves twice as fast as the Scout Skiff — `seconds_per_step` 5s vs skiff 10s.
 - Noise: build 8 (`build_wandering_scout`).
 
 ---
@@ -254,18 +254,12 @@ damage_per_tick = wall_base_damage × (horde_size / 100)
 
 ## Barracks & Units
 
-A tile-based structure (exclusive with extraction tiles, paths, towers, and walls — same one-structure-per-hex rule as everything else), levels 1–4 like towers. Trains the two unit types needed for scouting and combat.
+A tile-based structure (exclusive with extraction tiles, paths, towers, and walls — same one-structure-per-hex rule as everything else), levels 1–4 like towers. Trains standing combat units and builds the Wandering Scout.
 
 **Build cost:** Formula A (250 wood + 150 stone base for the first barracks; each additional barracks costs more).
 **Upgrade cost:** Formula B (150 wood + 75 stone base), tech progression L1→L2 (wood+stone), L2→L3 (+steel), L3→L4 (+power) — same reused-baseline resolution as towers and walls, above.
 
-**Capacity:** each barracks contributes `militia_capacity_per_level` (5) and `scout_capacity_per_level` (3), each multiplied by *that barracks' own level*, to a shared player-wide pool. Multiple barracks stack — a single L1 barracks supports 5 militia and 3 stockpiled scouts; two L1 barracks support 10 and 6.
-
-**Scouts — one-time use:**
-- Trained at a barracks for a flat cost: 30 food + 20 wood. No Formula A scaling — this replaces the old design's per-scout cost that scaled with the target tile's level.
-- Stockpiled up to scout capacity.
-- Spending one on an unowned tile reveals it permanently — a new "scouted" fog tier, distinct from both owned and the distance-based hidden/light/heavy tiers introduced in Milestone 2. Scouting doesn't upgrade an already-owned tile's fog tier. Only tiles adjacent to owned territory or an already-scouted tile can be targeted (`engine/territory.ts:isTileScoutable`) — knowledge has to spread outward from your footprint, matching the adjacency rule attack gating uses (Territory Expansion / Tile Assault, Milestone 10), rather than letting scouts jump to arbitrary distant tiles. A scouted tile's own fog-clearing halo (§6/Milestone 10) is roll-off only — heavy/light shading, never a fully-clear plateau — identical to how an owned tile's halo behaves; only the literal owned or scouted tile itself is ever fully clear, so this doesn't become a way to "see" far ahead of your actual claimed ground. The connecting owned/scouted tile must also be **land** — there's no water-capable unit (yet), so a scout can survey the water tile at a shoreline (adjacent to land you know) but can't chain further out hop-by-hop across open water; a water tile can never itself anchor the next scout.
-- Costs food upkeep even while just sitting in the stockpile, unspent: 7 food/min per stockpiled scout.
+**Capacity:** each barracks contributes `militia_capacity_per_level` (10), multiplied by *that barracks' own level*, to a shared player-wide pool. Multiple barracks stack — a single L1 barracks supports 10 militia. (`scout_capacity_per_level` removed with stockpile scouts, #76.)
 
 **Militia — standing army:**
 - Trained at a barracks for a flat, cheaper cost: 15 food + 10 wood.
@@ -274,15 +268,13 @@ A tile-based structure (exclusive with extraction tiles, paths, towers, and wall
 - **Attack:** `militia_count × 2` (attack_per_unit) — this is the assault power used both to claim unowned tiles (Milestone 10) and against zombie dens (Milestone 14), resolving the previously-undefined "assault stats vs den defense" formula.
 - **Defense:** `militia_count × 2` (defense_per_unit) — contributes to base last-stand defense alongside base reinforcement HP (Milestone 12).
 
-**Upkeep and desertion:** every tick, total upkeep (stockpiled scouts + standing militia + junkyard knights + cross-bow snipers, summed) is deducted from food. If food can't cover it for that tick's elapsed time, food clamps to 0 and exactly one unit deserts — cheapest-upkeep unit preferred, else a scout. A simple first-pass penalty, not proportional to the shortfall size.
+**Upkeep and desertion:** every tick, total upkeep (standing militia + junkyard knights + cross-bow snipers, summed) is deducted from food. If food can't cover it for that tick's elapsed time, food clamps to 0 and exactly one unit deserts — cheapest-upkeep unit first (militia, then junkyard knight, then cross-bow sniper). A simple first-pass penalty, not proportional to the shortfall size.
 
-**CORRECTION (2026-07-21 balance pass, playtesting feedback):** food reserves sat permanently full at the original upkeep rates — a single small grassland food tile alone yields ~2.25 food/sec, while even a 20-30 unit standing army cost only ~0.3-0.6 food/sec total upkeep, two orders of magnitude below what one tile produces. `upkeep_food_per_min` raised roughly 10x across all four unit types: scout 1→10, militia 0.5→5, junkyard_knight 0.8→8, cross_bow_sniper 1→10 (`public/tweaks.jsonc`) — a moderate standing army's upkeep is now the same order of magnitude as a food tile or two, not negligible next to it.
+**CORRECTION (2026-07-21 balance pass, playtesting feedback):** food reserves sat permanently full at the original upkeep rates — a single small grassland food tile alone yields ~2.25 food/sec, while even a 20-30 unit standing army cost only ~0.3-0.6 food/sec total upkeep, two orders of magnitude below what one tile produces. `upkeep_food_per_min` raised roughly 10x across standing unit types, then walked back to roughly 7x (militia 5→3.5, junkyard_knight 8→5.5, cross_bow_sniper 10→7). Stockpile scout upkeep removed with the unit (#76).
 
-**CORRECTION 2 (2026-07-21, same-day follow-up, playtesting feedback: 10x read as too aggressive in play):** walked back to roughly 7x the original rates — scout 10→7, militia 5→3.5, junkyard_knight 8→5.5, cross_bow_sniper 10→7. Still a real ongoing drain, just less punishing than the initial pass. First pass at these numbers, still subject to further tuning.
+**Noise:** build noise 20 (`build_barracks`, same weight as a wall or extraction tile). Upgrade noise reuses `upgrade_extraction_tile` (10), same generic "any structure tier-up" value as towers and walls. Training a militia unit makes a small amount of noise (`train_militia`: 3). First pass, untested.
 
-**Noise:** build noise 20 (`build_barracks`, same weight as a wall or extraction tile). Upgrade noise reuses `upgrade_extraction_tile` (10), same generic "any structure tier-up" value as towers and walls. Training a scout or militia unit makes a small amount of noise too (3 each, `train_scout`/`train_militia`) — a person joining or leaving camp, not construction. Scouting a tile generates no noise at all (it's a stealth reveal, not an action at the target site). First pass, untested.
-
-**Wandering Scout** (also trained here, one per barracks, added during playtesting) — see Docks & Water Units, below, for its full tuning; it's grouped there alongside its water counterpart, the Scout Skiff.
+**Wandering Scout** (built here, one per barracks) — see Docks & Water Units, above, for its full tuning; it's grouped there alongside its water counterpart, the Scout Skiff.
 
 ---
 
@@ -430,7 +422,6 @@ The core tension mechanic. Every action makes noise; noise attracts hordes.
 | Upgrade extraction tile (also reused for tower/wall/barracks/base upgrades) | 10 |
 | Upgrade infrastructure tile | 10 |
 | Manual resource collection | 5 |
-| Train scout | 3 |
 | Train militia | 3 |
 | Attack tile (Milestone 10) | 25 |
 
@@ -479,6 +470,7 @@ A person walking a goat track isn't silent, but nowhere near a highway's constan
 **Capturing a tile:** if a horde wins a tile fight (other than the base, which can never be stripped from `owned`), the tile flips to unowned and any structure on it goes `damaged` — DESIGN.md §12:
 - Any resources stored there are lost immediately.
 - The structure survives but stops functioning entirely: a damaged extraction tile yields nothing (existing stockpile frozen, not drained either); a damaged path tile breaks the auto-flow chain through it, same as if no path were there; a damaged tower/wall contributes no combat value at all (neither tile defense nor per-tick range attrition).
+- Fog knowledge is preserved: the captured tile is appended to `scoutedTiles` (`preserveCapturedTilesAsScouted`) so ownership loss does not hide the tile again — reclaim/repair without waiting for a Wandering Scout.
 - Reclaiming the tile (by attack, same as claiming any unowned tile) lets you repair the structure at 50% of its original build cost, instantly — see Territory Expansion / Tile Assault, below, for the reclaim mechanics and Repair, elsewhere in this doc, for the cost formula.
 - A tower's own viewshed claim (Territory Expansion / Tile Assault, above) will auto-reclaim the bare *ground* the moment the horde is gone, if the tile falls within that tower's range — but the structure itself stays damaged regardless, until separately repaired.
 
@@ -522,11 +514,11 @@ A converted den becomes a second, independent economic/defensive hub — a real 
 
 ## Hidden Lab — Rumor/Clue System
 
-**Total clues:** 5, fixed. Each clue is a directional hint relative to base — early clues give a coarse compass quadrant ("something calls from the north"), later clues refine that into a narrower arc. The final clue narrows the search down to a cluster roughly 6 tiles in radius — not the exact tile, so the player still has to scout that cluster manually.
+**Total clues:** 5, fixed. Each clue is a directional hint relative to base — early clues give a coarse compass quadrant ("something calls from the north"), later clues refine that into a narrower arc. The final clue narrows the search down to a cluster roughly 6 tiles in radius — not the exact tile, so Wandering Scouts still have to reveal that cluster.
 
 **Surfacing:**
-- Passive scout: 2% chance per manual scout action.
-- Watchtower signal (#38): L2–L3 towers roll `per_watchtower_tick_base_chance` (0.1%/tick); L4 multiplies by `watchtower_intel_tier_multiplier` (2×). A success sets a vague 4-point **signal** (not a clue) that biases wandering scouts; newly scouted tiles in that sector can roll a real clue at the scout chance. Signal clears when a wandering scout awards a clue.
+- Passive scout: 2% chance per newly revealed wandering-scout tile (`per_scout_action_chance`, applied in `advanceWanderingScouts` — no longer gated on a watchtower signal).
+- Watchtower signal (#38): L2–L3 towers roll `per_watchtower_tick_base_chance` (0.1%/tick); L4 multiplies by `watchtower_intel_tier_multiplier` (2×). A success sets a vague 4-point **signal** (not a clue) that biases wandering scouts toward that sector. Signal clears when a wandering scout awards a clue.
 - Guaranteed: clearing a den always awards exactly one clue.
 - Stops once all 5 clues are collected (no further clues or signals).
 - Horde alert: toast when a horde first enters an active tower's combat range.

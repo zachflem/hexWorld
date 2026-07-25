@@ -1,7 +1,7 @@
 import type { Axial } from "../engine/hexCoords";
 import type { ResourceType } from "./resources";
 
-export type TrainingUnitType = "scout" | "militia" | "junkyard_knight" | "cross_bow_sniper";
+export type TrainingUnitType = "militia" | "junkyard_knight" | "cross_bow_sniper";
 
 /** One trickle-delivery batch at a single barracks — any unit type, one queue per barracks. */
 export interface BarracksTrainingQueue {

@@ -24,11 +24,11 @@ export function resolveLabAssault(tweaks: Tweaks, lab: LabRecord, attackPower: n
 }
 
 /**
- * Passive clue roll for a single scout action (DESIGN.md §13 — "every scout
- * action... carries a small passive chance to surface a clue"). Deterministic
- * via seededRandom, same style as engine/hordes.ts:denRollIndex — the index
- * mixes the scouted coord with `scoutCount` (a running total of scout
- * actions so far) so repeat scouting of the same tile, or two different
+ * Passive clue roll for a newly revealed tile (DESIGN.md §13 — wandering scout
+ * steps and similar reveal actions carry a small passive chance to surface a
+ * clue). Deterministic via seededRandom, same style as engine/hordes.ts:denRollIndex —
+ * the index mixes the scouted coord with `scoutCount` (a running total of
+ * revealed tiles so far) so repeat reveals of the same tile, or two different
  * players on the same seed, don't collapse onto the same roll.
  */
 export function rollScoutClue(tweaks: Tweaks, seed: number, coord: Axial, scoutCount: number): boolean {

@@ -103,7 +103,7 @@ The base is a hub, not a fighting unit — it holds your storage, tech upgrades,
 - **Towers** deal ranged damage to any horde within reach, every tick, for as long as it stays in range. Both damage and range grow with tower level (levels 1–4). Militia stationed on a tower's own tile add their attack power straight onto its damage. A horde lingering in a tower's range is also visibly slowed.
 - **Walls** (wood → rock → steel, an upgrade path) don't fight back — they soak up horde damage via durability instead. They can only be repaired during peacetime, at a cost proportional to the damage they've taken.
 - **Demolishing** any structure refunds a fixed percentage of everything you ever spent on it (build + every upgrade).
-- A structure a horde captures goes **damaged** (non-functional) until you retake the tile and pay to repair it.
+- A structure a horde captures goes **damaged** (non-functional) until you retake the tile and pay to repair it. The tile stays known — hordes don't re-fog ground you've already held.
 
 There's no way to wall off everything — your build slot cap forces real choices about what to fortify and what to leave exposed.
 
@@ -111,18 +111,17 @@ There's no way to wall off everything — your build slot cap forces real choice
 
 ## Barracks & units
 
-Barracks (levels 1–4, same one-structure-per-tile rule as everything else) train:
+Barracks (levels 1–4, same one-structure-per-tile rule as everything else) train combat units and build land explorers:
 
-- **Scouts** — one-time use. Spend one on an unowned tile adjacent to your existing land/scouted footprint to reveal it permanently (this also shows its defense value before you attack it). Trained scouts sitting in reserve still cost food upkeep.
 - **Militia** — a standing army. Feeds both your **attack power** (used to claim unowned tiles and to fight hordes automatically from a garrison) and your **defense** (adds to the base's last-stand HP pool). Costs ongoing food upkeep; units desert if you can't pay it.
 - **Junkyard Knights** (barracks level 2+) and **Cross-Bow Snipers** (barracks level 3+) — tougher/pricier units with their own attack/defense stats. Snipers additionally deal ranged damage to any horde within range of wherever they're garrisoned.
-- **Wandering Scout** — a persistent unit built by retiring 10 regular scouts from your stockpile (max 1 per barracks). Instead of a single reveal, it wanders your connected land automatically, forever, quietly revealing tiles as it roams. Shown on the map as a walking icon.
+- **Wandering Scout** — a persistent land explorer (max 1 per barracks) built for **300 food + 200 wood** (about the cost of ten old one-shot scouts). It wanders your connected land automatically, forever, quietly revealing tiles as it roams. Shown on the map as a walking icon. There is no trainable stockpile scout and no manual one-tile reveal — fog on land clears only via Wandering Scouts (and water via Scout Skiffs).
 
 You can **garrison** militia/knights/snipers on any owned tile — a garrison automatically attacks any horde on its own tile or a neighboring one, and stacks additively with whatever structure is on that tile. **Recalling** a garrison marches it home along the same route at half the travel time and no provisions cost — it's walking back through ground you already hold, not fighting, so nothing can be lost or tombstoned along the way.
 
 **Expeditions:** the way you claim any unowned tile, adjacent or distant — dispatch a mixed party of militia/knights/snipers along a route through **owned or scouted** ground only (routes prefer owned corridors). Provisions are paid up front (return trip implied). The party walks tile by tile in real time and **auto-claims** each unowned scouted hex it crosses — there is no tile-defense wipe. The only full wipe on the road is a **horde** the party cannot beat (`party power < horde size`); a stronger party clears the horde with no losses. Pre-dispatch UI shows party power and wipe risk from known path hordes. You can **Recall** mid-march (pro-rata food refund for unused outbound tiles). On arrival the party waits (~3 minutes): **Redeploy** (new leg from here), **Reinforce** (half cost/time join), or **Recall** / auto-return home (return already prepaid — no extra food). A wipe leaves a **tombstone** showing units lost, power, and cause.
 
-Training scouts or militia normally queues them at your barracks over time, but you can also **rush** the queue to finish instantly for a noise spike — useful when you need bodies right now and are willing to accept the extra attention.
+Training militia normally queues them at your barracks over time, but you can also **rush** the queue to finish instantly for a noise spike — useful when you need bodies right now and are willing to accept the extra attention.
 
 Towers also **passively claim territory** just by existing — every tile within a tower's range becomes owned automatically, no assault needed, as if the tower gave you a better vantage point.
 
@@ -160,7 +159,7 @@ Every structure you have contributes to an **ambient noise floor** — a steady-
 
 **Below 30dB — your quietest possible floor — hordes have nothing to hear and simply won't spawn.** Above that, each zombie den's chance to spawn a horde (and how big that horde is) scales with your current noise level and your distance from that specific den — loud and close is dangerous, quiet and far is comparatively safe. Your base level also throttles overall horde frequency: a fresh, low-level base sees only a fraction of the "full" spawn rate, ramping up to normal as you level up — early game is meant to give you room to build before the pressure ramps up.
 
-Hordes path toward the noise source (you), preferring open ground, avoiding mountains, and unable to cross water. They advance a tile at a time, fighting whatever's there — win, and the tile (and anything on it) is theirs until you retake it. A horde that severs a section of your territory from your base instantly costs you everything stored in that cut-off section, and its buildings go damaged until reconnected and repaired.
+Hordes path toward the noise source (you), preferring open ground, avoiding mountains, and unable to cross water. They advance a tile at a time, fighting whatever's there — win, and the tile (and anything on it) is theirs until you retake it. Captured ground stays known (no re-fog); structures go damaged until you reclaim and repair. A horde that severs a section of your territory from your base instantly costs you everything stored in that cut-off section, and its buildings go damaged until reconnected and repaired.
 
 Losing the game means the base's reinforcement HP (see above) is destroyed by a horde.
 
@@ -184,7 +183,7 @@ Losing an outpost to a horde doesn't end the game — it just reverts back to a 
 
 Somewhere out past every zombie den — deliberately farther out than any of them — sits a **hidden lab**, guarded, and finding + securing it is the win condition. There's nothing else to do to win; you don't need to clear every den or build a particular economy size, just reach the lab and beat its guardian.
 
-**Finding it** takes clues — 5 total, each a directional hint relative to your base that narrows the search area, from a rough compass quadrant down to a small cluster of hexes on the last one. Clues surface from a small passive chance every time you use a scout, and a **guaranteed clue every time you successfully clear a den's hold**. **Watchtowers (level 2+)** sometimes pick up a vague distant signal ("something in the north — send the scouts"); that does not count as a clue, but it steers wandering scouts toward that direction, where they can uncover a real clue. Level 4 towers hear signals more often. Once you've collected all 5, you'll know roughly where to look.
+**Finding it** takes clues — 5 total, each a directional hint relative to your base that narrows the search area, from a rough compass quadrant down to a small cluster of hexes on the last one. Clues surface from a small passive chance when a **Wandering Scout** newly reveals a tile, and a **guaranteed clue every time you successfully clear a den's hold**. **Watchtowers (level 2+)** sometimes pick up a vague distant signal ("something in the north — send the scouts"); that does not count as a clue, but it steers wandering scouts toward that direction. Level 4 towers hear signals more often. Once you've collected all 5, you'll know roughly where to look.
 
 Watchtowers also **alert** when a horde first enters their combat range.
 
@@ -205,6 +204,8 @@ When a row appears it stays **fully expanded for 5 seconds**, then the text/coun
 
 When several timers are running, collapsed icons stack in that column so you can see at a glance how much is in flight.
 
+On the map, any building with a timed job also shows a **circular progress ring** that fills as the timer runs — amber for builds, orange for upgrades, green for repairs, purple for training, blue for base relocation. Opening that tile’s sheet adds an **In progress** tab listing those jobs with remaining time — handy when you want the detail without hunting the notification tray.
+
 ---
 
 ## Quick tips
@@ -213,7 +214,7 @@ When several timers are running, collapsed icons stack in that column so you can
 - Don't overbuild early — your build slot cap is tight at base level 1, and every structure (even a quiet one) raises your noise floor a little.
 - A tower's passive claim range is a cheap way to expand territory without spending militia.
 - Keep at least a little garrison on exposed tiles once hordes start showing up — a bare tile has almost no defense of its own.
-- Scouting before attacking a tile shows you its defense value, so you're not committing militia blind.
+- Scouting a tile (via Wandering Scout / Scout Skiff) shows you its defense value before an expedition, so you're not committing militia blind.
 - If you're not making noise-triggering moves, hordes need real time to get moving again — recovering the "quiet" state is worth doing between pushes.
 - Before assaulting a den, have your garrison/tower/wall plan ready to execute the moment you win — the last-stand hold starts immediately, and its waves escalate fast.
 - Every den you clear also hands you a guaranteed lab clue, so working toward outposts naturally works toward finding the lab too.

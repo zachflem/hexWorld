@@ -46,7 +46,7 @@ describe("structureBusy slot counts", () => {
   it("isBarracksAtTaskCap is true at two tasks with parallel_upgrades", () => {
     const busy = {
       upgrade: { targetLevel: 2, startedAt: 0 },
-      trainingQueue: { unitType: "scout", remaining: 1, currentUnitStartedAt: 0 },
+      trainingQueue: { unitType: "militia", remaining: 1, currentUnitStartedAt: 0 },
     };
     expect(countBarracksTasks(busy)).toBe(2);
     expect(isBarracksAtTaskCap(busy, withParallel)).toBe(true);

@@ -59,9 +59,8 @@ export interface SkiffBuildOption {
   durationMinutes: number;
 }
 
-/** Costs regular scouts from the stockpile, on top of a resource cost — unlike every other SimpleCostOption. */
+/** Same shape as SkiffBuildOption — flat resource cost at a barracks. */
 export interface WanderingScoutOption {
-  scoutCost: number;
   cost: Partial<Record<ResourceType, number>>;
   affordable: boolean;
   durationMinutes: number;

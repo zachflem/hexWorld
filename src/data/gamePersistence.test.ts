@@ -23,7 +23,7 @@ function minimalSnapshot(overrides: Partial<PersistableGameSnapshot> = {}): Pers
     towers: [],
     walls: [],
     barracksList: [],
-    units: { scoutStockpile: 0, militiaCount: 0, junkyardKnightCount: 0, crossBowSniperCount: 0 },
+    units: { militiaCount: 0, junkyardKnightCount: 0, crossBowSniperCount: 0 },
     garrisons: [],
     scoutedTiles: [],
     storageLevels: { food: 1, wood: 1, stone: 1, steel: 1, power: 1 },

@@ -21,6 +21,7 @@ import {
   checkHordeSpawns,
   hordeTileDefense,
   markCapturedStructuresDamaged,
+  preserveCapturedTilesAsScouted,
   hordeStructureCaptureEvents,
   resolveGarrisonAutoAttacks,
   resolveHordeAttack,
@@ -407,7 +408,6 @@ describe("resolveHordeAttack", () => {
 
 describe("resolveGarrisonAutoAttacks", () => {
   const units = (militiaCount: number): UnitsRecord => ({
-    scoutStockpile: 0,
     militiaCount,
     junkyardKnightCount: 0,
     crossBowSniperCount: 0,
@@ -1060,6 +1060,50 @@ describe("markCapturedStructuresDamaged", () => {
     expect(result.damaged).toBe(true);
     expect(result.upgrade).toBeNull();
     expect(result.buildStartedAt).toBeNull();
+  });
+});
+
+describe("preserveCapturedTilesAsScouted", () => {
+  it("appends newly captured tiles that were never scouted", () => {
+    const scouted = [{ q: 0, r: 0 }];
+    const result = preserveCapturedTilesAsScouted(scouted, [
+      { q: 1, r: 0 },
+      { q: 2, r: 0 },
+    ]);
+    expect(result).toEqual([
+      { q: 0, r: 0 },
+      { q: 1, r: 0 },
+      { q: 2, r: 0 },
+    ]);
+  });
+
+  it("does not duplicate tiles already in scoutedTiles", () => {
+    const scouted = [
+      { q: 0, r: 0 },
+      { q: 1, r: 0 },
+    ];
+    const result = preserveCapturedTilesAsScouted(scouted, [
+      { q: 1, r: 0 },
+      { q: 2, r: 0 },
+    ]);
+    expect(result).toEqual([
+      { q: 0, r: 0 },
+      { q: 1, r: 0 },
+      { q: 2, r: 0 },
+    ]);
+  });
+
+  it("returns the same array reference when nothing was captured", () => {
+    const scouted = [{ q: 0, r: 0 }];
+    expect(preserveCapturedTilesAsScouted(scouted, [])).toBe(scouted);
+  });
+
+  it("returns the same array reference when every captured tile was already scouted", () => {
+    const scouted = [
+      { q: 0, r: 0 },
+      { q: 1, r: 0 },
+    ];
+    expect(preserveCapturedTilesAsScouted(scouted, [{ q: 1, r: 0 }])).toBe(scouted);
   });
 });
 

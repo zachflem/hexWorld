@@ -43,7 +43,6 @@ import {
   junkyardKnightCapacity as junkyardKnightCapacityFor,
   militiaCapacity as militiaCapacityFor,
   nextBarracksLevel,
-  scoutCapacity as scoutCapacityFor,
   trainingUnitDurationMs,
   trainingUnitLabel,
 } from "../engine/barracks";
@@ -51,7 +50,6 @@ import {
   crossBowSniperTrainCost,
   junkyardKnightTrainCost,
   militiaTrainCost,
-  scoutTrainCost,
 } from "../engine/units";
 import {
   baseReinforcementHp,
@@ -86,7 +84,7 @@ import {
   wallFloorContribution,
 } from "../engine/noiseMeter";
 import { computeResourceRates } from "../engine/resourceRates";
-import { canRepairHordeDamagedTile, isTileScoutable } from "../engine/territory";
+import { canRepairHordeDamagedTile } from "../engine/territory";
 import {
   expeditionProvisionsCost,
   expeditionTravelDurationMs,
@@ -180,6 +178,7 @@ import {
 } from "./tileOptions";
 import { ResearchPanel } from "./ResearchPanel";
 import { NotificationTray, type NotificationCountdownRow } from "./hud/NotificationTray";
+import { structureProgressByKey } from "./structureProgress";
 import { NOTIFICATION_ICON_SIZE } from "./hud/CollapsibleNotificationRow";
 import { RESEARCH_LABEL } from "./researchLabels";
 import { ResourceHud } from "./hud/ResourceHud";
@@ -204,7 +203,6 @@ import {
   Archive,
   ArrowUpCircle,
   Binoculars,
-  Eye,
   Flag,
   FlaskConical,
   Footprints,
@@ -365,14 +363,11 @@ export function GameScreen({
   onDemolish,
   onBuildBarracks,
   onUpgradeBarracks,
-  onTrainScouts,
   onTrainMilitia,
   onTrainJunkyardKnight,
   onTrainCrossBowSniper,
-  onRushTrainScouts,
   onRushTrainMilitia,
   onRushActiveTraining,
-  onScoutTile,
   onUpgradeBase,
   onUpgradeReinforcement,
   onRepairBase,
@@ -451,14 +446,11 @@ export function GameScreen({
   onDemolish: (coord: Axial) => Promise<BuildResult>;
   onBuildBarracks: (coord: Axial) => Promise<BuildResult>;
   onUpgradeBarracks: (coord: Axial) => Promise<BuildResult>;
-  onTrainScouts: (coord: Axial, quantity: number) => Promise<BuildResult>;
   onTrainMilitia: (coord: Axial, quantity: number) => Promise<BuildResult>;
   onTrainJunkyardKnight: (coord: Axial, quantity: number) => Promise<BuildResult>;
   onTrainCrossBowSniper: (coord: Axial, quantity: number) => Promise<BuildResult>;
-  onRushTrainScouts: (coord: Axial, quantity: number) => Promise<BuildResult>;
   onRushTrainMilitia: (coord: Axial, quantity: number) => Promise<BuildResult>;
   onRushActiveTraining: (coord: Axial) => Promise<BuildResult>;
-  onScoutTile: (coord: Axial) => Promise<BuildResult>;
   onUpgradeBase: () => Promise<BuildResult>;
   onUpgradeReinforcement: () => Promise<BuildResult>;
   onRepairBase: () => Promise<BuildResult>;
@@ -544,7 +536,6 @@ export function GameScreen({
   const [militiaToSend, setMilitiaToSend] = useState(1);
   const [junkyardKnightToSend, setJunkyardKnightToSend] = useState(0);
   const [crossBowSniperToSend, setCrossBowSniperToSend] = useState(0);
-  const [scoutsToTrain, setScoutsToTrain] = useState(1);
   const [militiaToTrain, setMilitiaToTrain] = useState(1);
   const [junkyardKnightToTrain, setJunkyardKnightToTrain] = useState(1);
   const [crossBowSniperToTrain, setCrossBowSniperToTrain] = useState(1);
@@ -754,12 +745,10 @@ export function GameScreen({
     if (isBarracksAtTaskCap(b, research)) return null;
     const existing = wanderingScouts.filter((s) => axialKey(s.homeBarracksCoord) === axialKey(b.coord)).length;
     if (existing >= tweaks.units.wandering_scout.max_per_barracks) return null;
-    const scoutCost = tweaks.units.wandering_scout.scout_cost;
     const cost = tweaks.units.wandering_scout.cost;
     return {
-      scoutCost,
       cost,
-      affordable: units.scoutStockpile >= scoutCost && affordable(cost),
+      affordable: affordable(cost),
       durationMinutes: tweaks.units.wandering_scout.build_time_minutes,
     };
   }
@@ -780,16 +769,6 @@ export function GameScreen({
   }
 
 
-  function scoutTrainOptionFor(): TrainOption | null {
-    const capacityGap = scoutCapacityFor(tweaks, barracksList) - units.scoutStockpile;
-    if (capacityGap <= 0) return null;
-    const perUnitCost = scoutTrainCost(tweaks);
-    const maxQuantity = Math.min(capacityGap, maxAffordableQuantity(perUnitCost));
-    const totalCost: Partial<Record<ResourceType, number>> = {};
-    for (const [key, amount] of Object.entries(perUnitCost)) totalCost[key as ResourceType] = amount * scoutsToTrain;
-    const rushNoise = tweaks.noise.one_time_action_noise.rush_train_scout * scoutsToTrain;
-    return { totalCost, affordable: affordable(totalCost), maxQuantity, rushNoise };
-  }
 
   function militiaTrainOptionFor(): TrainOption | null {
     const capacityGap = militiaCapacityFor(tweaks, barracksList) - units.militiaCount;
@@ -1083,7 +1062,6 @@ export function GameScreen({
       hexCanvasRef.current?.centerOnCoord(coord);
     });
     setMilitiaToSend(1);
-    setScoutsToTrain(1);
     setMilitiaToTrain(1);
     setMilitiaToGarrison(1);
     setJunkyardKnightToGarrison(0);
@@ -1114,7 +1092,6 @@ export function GameScreen({
 
     setSelected(coord);
     setMilitiaToSend(1);
-    setScoutsToTrain(1);
     setMilitiaToTrain(1);
     setMilitiaToGarrison(1);
     setJunkyardKnightToGarrison(0);
@@ -1240,12 +1217,6 @@ export function GameScreen({
     applyActionResult(result);
   }
 
-  async function handleTrainScouts(quantity = scoutsToTrain) {
-    if (!selected) return;
-    const result = await onTrainScouts(selected, quantity);
-    applyActionResult(result, { keepSelection: true });
-  }
-
   async function handleTrainMilitia(quantity = militiaToTrain) {
     if (!selected) return;
     const result = await onTrainMilitia(selected, quantity);
@@ -1319,12 +1290,6 @@ export function GameScreen({
     return queue != null && queue.remaining > 0 && queue.unitType !== unitType;
   }
 
-  async function handleRushTrainScouts() {
-    if (!selected) return;
-    const result = await onRushTrainScouts(selected, scoutsToTrain);
-    applyActionResult(result, { keepSelection: true });
-  }
-
   async function handleRushTrainMilitia() {
     if (!selected) return;
     const result = await onRushTrainMilitia(selected, militiaToTrain);
@@ -1333,12 +1298,6 @@ export function GameScreen({
 
   async function handleRushActiveTraining(coord: Axial) {
     const result = await onRushActiveTraining(coord);
-    applyActionResult(result);
-  }
-
-  async function handleScoutTile() {
-    if (!selected) return;
-    const result = await onScoutTile(selected);
     applyActionResult(result);
   }
 
@@ -1458,7 +1417,6 @@ export function GameScreen({
   const selectedTower = selected ? towerAt(selected) : null;
   const selectedWall = selected ? wallAt(selected) : null;
   const selectedBarracks = selected ? barracksAt(selected) : null;
-  const scoutQueueStatus = trainQueueStatusFor(selectedBarracks, "scout");
   const militiaQueueStatus = trainQueueStatusFor(selectedBarracks, "militia");
   const junkyardKnightQueueStatus = trainQueueStatusFor(selectedBarracks, "junkyard_knight");
   const crossBowSniperQueueStatus = trainQueueStatusFor(selectedBarracks, "cross_bow_sniper");
@@ -1659,8 +1617,9 @@ export function GameScreen({
   }
 
   /**
-   * Scout or expedition for unowned tiles — empty hexes and horde-captured
-   * structures (#17). Reclaim ownership before repair is allowed.
+   * Expedition for unowned scouted tiles — empty hexes and horde-captured
+   * structures (#17). Reclaim ownership before repair is allowed. Fog reveal
+   * is Wandering Scout / Scout Skiff only (#76).
    */
   function unownedClaimActionsFor(): SheetAction[] {
     if (!selected || isOwned(selected)) return [];
@@ -1682,12 +1641,8 @@ export function GameScreen({
       ];
     }
 
-    if (!isScouted(selected)) {
-      const canScout =
-        units.scoutStockpile > 0 && isTileScoutable(world.seed, selected, territory.owned, scoutedTiles);
-      if (!canScout) return [];
-      return [{ key: "scout", icon: <Eye size={18} />, title: "Scout this tile", onClick: handleScoutTile }];
-    }
+    // Fog reveal is Wandering Scout / Scout Skiff only (#76).
+    if (!isScouted(selected)) return [];
 
     const expedition = expeditionRouteOptionFor(selected);
     if (!expedition) return [];
@@ -2094,41 +2049,22 @@ export function GameScreen({
             onClick: handleUpgradeBarracks,
           });
         }
+
+        const trainSubActions: SheetAction[] = [];
+        // Wandering Scout lives under Train (replaced stockpile scouts there) —
+        // not a leaf Actions row, so it isn't buried behind Upgrades/Train tabs.
         const wanderingScout = wanderingScoutOptionFor(selectedBarracks);
         if (wanderingScout) {
-          actions.push({
+          trainSubActions.push({
             key: "wandering-scout",
             icon: <Footprints size={18} />,
-            title: "Build wandering scout",
-            detail: `Retires ${wanderingScout.scoutCost} scouts, ${formatCost(wanderingScout.cost)}, ${wanderingScout.durationMinutes}m`,
-            disabled: !wanderingScout.affordable || wanderingScout.scoutCost > units.scoutStockpile,
+            title: "Wandering scout",
+            detail: `${formatCost(wanderingScout.cost)}, ${wanderingScout.durationMinutes}m`,
+            disabled: !wanderingScout.affordable,
             onClick: handleBuildWanderingScout,
           });
         }
-
-        const trainSubActions: SheetAction[] = [];
         if (isStructureActive(selectedBarracks) && !isBarracksAtTaskCap(selectedBarracks, research)) {
-        const scoutOption = otherTrainingBlocks(selectedBarracks, "scout") ? null : scoutTrainOptionFor();
-        trainSubActions.push({
-          key: "train-scouts",
-          icon: <Footprints size={18} />,
-          title: "Scouts",
-          detail: trainQueueDetail(scoutQueueStatus),
-          formContent: (
-            <TrainForm
-              label="scouts"
-              queueStatus={scoutQueueStatus}
-              option={scoutOption}
-              toTrain={scoutsToTrain}
-              onChangeToTrain={setScoutsToTrain}
-              onTrain={() => handleTrainScouts()}
-              onRush={handleRushTrainScouts}
-            />
-          ),
-          quickActions: trainQuickActions(scoutOption, scoutQueueStatus, otherTrainingBlocks(selectedBarracks, "scout"), (qty) => {
-            void handleTrainScouts(qty);
-          }),
-        });
         const militiaOption = otherTrainingBlocks(selectedBarracks, "militia") ? null : militiaTrainOptionFor();
         trainSubActions.push({
           key: "train-militia",
@@ -2411,30 +2347,39 @@ export function GameScreen({
     for (const tile of extractionTiles) {
       const key = axialKey(tile.coord);
       if (tile.buildStartedAt) {
+        const durationMs = extractionTileBuildDurationMs(tweaks);
         rows.push({
           key: `tile-build-${key}`,
+          kind: "build",
           icon: buildIcon,
           label: `Building ${tile.resource} tile`,
           coord: tile.coord,
-          remainingMs: remainingMs(tile.buildStartedAt, extractionTileBuildDurationMs(tweaks), now),
+          durationMs,
+          remainingMs: remainingMs(tile.buildStartedAt, durationMs, now),
         });
       }
       if (tile.upgrade) {
+        const durationMs = tierUpgradeDurationMs(tweaks, tile.upgrade.targetTier);
         rows.push({
           key: `tile-upgrade-${key}`,
+          kind: "upgrade",
           icon: upgradeIcon,
           label: `Upgrading ${tile.resource} tile to ${tile.upgrade.targetTier}`,
           coord: tile.coord,
-          remainingMs: remainingMs(tile.upgrade.startedAt, tierUpgradeDurationMs(tweaks, tile.upgrade.targetTier), now),
+          durationMs,
+          remainingMs: remainingMs(tile.upgrade.startedAt, durationMs, now),
         });
       }
       if (tile.damageRepair) {
+        const durationMs = structureRepairDurationMs(tweaks);
         rows.push({
           key: `tile-repair-${key}`,
+          kind: "repair",
           icon: repairIcon,
           label: `Repairing ${tile.resource} tile`,
           coord: tile.coord,
-          remainingMs: remainingMs(tile.damageRepair.startedAt, structureRepairDurationMs(tweaks), now),
+          durationMs,
+          remainingMs: remainingMs(tile.damageRepair.startedAt, durationMs, now),
         });
       }
     }
@@ -2442,30 +2387,39 @@ export function GameScreen({
     for (const path of pathTiles) {
       const key = axialKey(path.coord);
       if (path.buildStartedAt) {
+        const durationMs = pathBuildDurationMs(tweaks);
         rows.push({
           key: `path-build-${key}`,
+          kind: "build",
           icon: buildIcon,
           label: "Building path",
           coord: path.coord,
-          remainingMs: remainingMs(path.buildStartedAt, pathBuildDurationMs(tweaks), now),
+          durationMs,
+          remainingMs: remainingMs(path.buildStartedAt, durationMs, now),
         });
       }
       if (path.upgrade) {
+        const durationMs = pathUpgradeDurationMs(tweaks, path.upgrade.targetTier);
         rows.push({
           key: `path-upgrade-${key}`,
+          kind: "upgrade",
           icon: upgradeIcon,
           label: `Upgrading path to ${path.upgrade.targetTier}`,
           coord: path.coord,
-          remainingMs: remainingMs(path.upgrade.startedAt, pathUpgradeDurationMs(tweaks, path.upgrade.targetTier), now),
+          durationMs,
+          remainingMs: remainingMs(path.upgrade.startedAt, durationMs, now),
         });
       }
       if (path.damageRepair) {
+        const durationMs = structureRepairDurationMs(tweaks);
         rows.push({
           key: `path-repair-${key}`,
+          kind: "repair",
           icon: repairIcon,
           label: "Repairing path",
           coord: path.coord,
-          remainingMs: remainingMs(path.damageRepair.startedAt, structureRepairDurationMs(tweaks), now),
+          durationMs,
+          remainingMs: remainingMs(path.damageRepair.startedAt, durationMs, now),
         });
       }
     }
@@ -2473,30 +2427,39 @@ export function GameScreen({
     for (const tower of towers) {
       const key = axialKey(tower.coord);
       if (tower.buildStartedAt) {
+        const durationMs = towerBuildDurationMs(tweaks);
         rows.push({
           key: `tower-build-${key}`,
+          kind: "build",
           icon: buildIcon,
           label: "Building tower",
           coord: tower.coord,
-          remainingMs: remainingMs(tower.buildStartedAt, towerBuildDurationMs(tweaks), now),
+          durationMs,
+          remainingMs: remainingMs(tower.buildStartedAt, durationMs, now),
         });
       }
       if (tower.upgrade) {
+        const durationMs = towerUpgradeDurationMs(tweaks, tower.upgrade.targetLevel);
         rows.push({
           key: `tower-upgrade-${key}`,
+          kind: "upgrade",
           icon: upgradeIcon,
           label: `Upgrading tower to L${tower.upgrade.targetLevel}`,
           coord: tower.coord,
-          remainingMs: remainingMs(tower.upgrade.startedAt, towerUpgradeDurationMs(tweaks, tower.upgrade.targetLevel), now),
+          durationMs,
+          remainingMs: remainingMs(tower.upgrade.startedAt, durationMs, now),
         });
       }
       if (tower.damageRepair) {
+        const durationMs = structureRepairDurationMs(tweaks);
         rows.push({
           key: `tower-repair-${key}`,
+          kind: "repair",
           icon: repairIcon,
           label: "Repairing tower",
           coord: tower.coord,
-          remainingMs: remainingMs(tower.damageRepair.startedAt, structureRepairDurationMs(tweaks), now),
+          durationMs,
+          remainingMs: remainingMs(tower.damageRepair.startedAt, durationMs, now),
         });
       }
     }
@@ -2504,31 +2467,53 @@ export function GameScreen({
     for (const wall of walls) {
       const key = axialKey(wall.coord);
       if (wall.buildStartedAt) {
+        const durationMs = wallBuildDurationMs(tweaks);
         rows.push({
           key: `wall-build-${key}`,
+          kind: "build",
           icon: buildIcon,
           label: "Building wall",
           coord: wall.coord,
-          remainingMs: remainingMs(wall.buildStartedAt, wallBuildDurationMs(tweaks), now),
+          durationMs,
+          remainingMs: remainingMs(wall.buildStartedAt, durationMs, now),
         });
       }
-      const wallStatus = wallActionStatusFor(wall);
-      if (wallStatus) {
-        rows.push({
-          key: `wall-action-${key}`,
-          icon: wallStatus.kind === "upgrade" ? upgradeIcon : repairIcon,
-          label: wallStatus.kind === "upgrade" ? `Upgrading wall to ${wallStatus.targetTier}` : "Repairing wall",
-          coord: wall.coord,
-          remainingMs: wallStatus.remainingMs,
-        });
+      if (wall.action) {
+        if (wall.action.kind === "upgrade") {
+          const durationMs = wallUpgradeDurationMs(tweaks, wall.action.targetTier);
+          rows.push({
+            key: `wall-action-${key}`,
+            kind: "upgrade",
+            icon: upgradeIcon,
+            label: `Upgrading wall to ${wall.action.targetTier}`,
+            coord: wall.coord,
+            durationMs,
+            remainingMs: remainingMs(wall.action.startedAt, durationMs, now),
+          });
+        } else {
+          const maxHp = maxWallDurability(tweaks, wall.tier);
+          const durationMs = wallRepairDurationMs(tweaks, wall, maxHp);
+          rows.push({
+            key: `wall-action-${key}`,
+            kind: "repair",
+            icon: repairIcon,
+            label: "Repairing wall",
+            coord: wall.coord,
+            durationMs,
+            remainingMs: remainingMs(wall.action.startedAt, durationMs, now),
+          });
+        }
       }
       if (wall.damageRepair) {
+        const durationMs = structureRepairDurationMs(tweaks);
         rows.push({
           key: `wall-damage-repair-${key}`,
+          kind: "repair",
           icon: repairIcon,
           label: "Repairing wall (horde damage)",
           coord: wall.coord,
-          remainingMs: remainingMs(wall.damageRepair.startedAt, structureRepairDurationMs(tweaks), now),
+          durationMs,
+          remainingMs: remainingMs(wall.damageRepair.startedAt, durationMs, now),
         });
       }
     }
@@ -2536,44 +2521,56 @@ export function GameScreen({
     for (const b of barracksList) {
       const key = axialKey(b.coord);
       if (b.buildStartedAt) {
+        const durationMs = barracksBuildDurationMs(tweaks);
         rows.push({
           key: `barracks-build-${key}`,
+          kind: "build",
           icon: buildIcon,
           label: "Building barracks",
           coord: b.coord,
-          remainingMs: remainingMs(b.buildStartedAt, barracksBuildDurationMs(tweaks), now),
+          durationMs,
+          remainingMs: remainingMs(b.buildStartedAt, durationMs, now),
         });
       }
       if (b.upgrade) {
+        const durationMs = barracksUpgradeDurationMs(tweaks, b.upgrade.targetLevel);
         rows.push({
           key: `barracks-upgrade-${key}`,
+          kind: "upgrade",
           icon: upgradeIcon,
           label: `Upgrading barracks to L${b.upgrade.targetLevel}`,
           coord: b.coord,
-          remainingMs: remainingMs(b.upgrade.startedAt, barracksUpgradeDurationMs(tweaks, b.upgrade.targetLevel), now),
+          durationMs,
+          remainingMs: remainingMs(b.upgrade.startedAt, durationMs, now),
         });
       }
       if (b.damageRepair) {
+        const durationMs = structureRepairDurationMs(tweaks);
         rows.push({
           key: `barracks-repair-${key}`,
+          kind: "repair",
           icon: repairIcon,
           label: "Repairing barracks",
           coord: b.coord,
-          remainingMs: remainingMs(b.damageRepair.startedAt, structureRepairDurationMs(tweaks), now),
+          durationMs,
+          remainingMs: remainingMs(b.damageRepair.startedAt, durationMs, now),
         });
       }
       const training = b.trainingQueue;
       if (training && training.remaining > 0 && isStructureActive(b)) {
         const perUnitMs = trainingUnitDurationMs(tweaks, training.unitType, b.level);
         const nextUnitRemainingMs = remainingMs(training.currentUnitStartedAt, perUnitMs, now);
+        const remainingMsTotal = nextUnitRemainingMs + (training.remaining - 1) * perUnitMs;
         rows.push({
           key: `barracks-train-${key}`,
+          kind: "train",
           icon: <GraduationCap size={NOTIFICATION_ICON_SIZE} />,
           label: `Training ${trainingUnitLabel(training.unitType)}`,
           coord: b.coord,
-          remainingMs: nextUnitRemainingMs + (training.remaining - 1) * perUnitMs,
+          durationMs: training.remaining * perUnitMs,
+          remainingMs: remainingMsTotal,
           onRush:
-            training.unitType === "scout" || training.unitType === "militia"
+            training.unitType === "militia"
               ? () => {
                   void handleRushActiveTraining(b.coord);
                 }
@@ -2585,45 +2582,57 @@ export function GameScreen({
     for (const dock of docks) {
       const key = axialKey(dock.coord);
       if (dock.buildStartedAt) {
+        const durationMs = dockBuildDurationMs(tweaks);
         rows.push({
           key: `dock-build-${key}`,
+          kind: "build",
           icon: buildIcon,
           label: "Building dock",
           coord: dock.coord,
-          remainingMs: remainingMs(dock.buildStartedAt, dockBuildDurationMs(tweaks), now),
+          durationMs,
+          remainingMs: remainingMs(dock.buildStartedAt, durationMs, now),
         });
       }
       if (dock.fishingBoatUpgrade) {
+        const durationMs = tweaks.docks.fishing_boat.build_time_minutes * 60_000;
         rows.push({
           key: `dock-boat-${key}`,
+          kind: "build",
           icon: buildIcon,
           label: "Building fishing boat",
           coord: dock.coord,
-          remainingMs: remainingMs(dock.fishingBoatUpgrade.startedAt, tweaks.docks.fishing_boat.build_time_minutes * 60_000, now),
+          durationMs,
+          remainingMs: remainingMs(dock.fishingBoatUpgrade.startedAt, durationMs, now),
         });
       }
     }
 
     for (const skiff of scoutSkiffs) {
       if (skiff.buildStartedAt != null) {
+        const durationMs = tweaks.docks.scout_skiff.build_time_minutes * 60_000;
         rows.push({
           key: `skiff-${skiff.id}`,
+          kind: "build",
           icon: buildIcon,
           label: "Building scout skiff",
           coord: skiff.homeDockCoord,
-          remainingMs: remainingMs(skiff.buildStartedAt, tweaks.docks.scout_skiff.build_time_minutes * 60_000, now),
+          durationMs,
+          remainingMs: remainingMs(skiff.buildStartedAt, durationMs, now),
         });
       }
     }
 
     for (const scout of wanderingScouts) {
       if (scout.buildStartedAt != null) {
+        const durationMs = tweaks.units.wandering_scout.build_time_minutes * 60_000;
         rows.push({
           key: `wscout-${scout.id}`,
+          kind: "train",
           icon: buildIcon,
           label: "Training wandering scout",
           coord: scout.homeBarracksCoord,
-          remainingMs: remainingMs(scout.buildStartedAt, tweaks.units.wandering_scout.build_time_minutes * 60_000, now),
+          durationMs,
+          remainingMs: remainingMs(scout.buildStartedAt, durationMs, now),
         });
       }
     }
@@ -2631,29 +2640,38 @@ export function GameScreen({
     if (base.action) {
       const action = base.action;
       if (action.kind === "level_upgrade") {
+        const durationMs = baseUpgradeDurationMs(tweaks, action.targetLevel);
         rows.push({
           key: "base-upgrade",
+          kind: "upgrade",
           icon: upgradeIcon,
           label: `Upgrading base to L${action.targetLevel}`,
           coord: territory.base,
-          remainingMs: remainingMs(action.startedAt, baseUpgradeDurationMs(tweaks, action.targetLevel), now),
+          durationMs,
+          remainingMs: remainingMs(action.startedAt, durationMs, now),
         });
       } else if (action.kind === "reinforcement_upgrade") {
+        const durationMs = baseReinforcementUpgradeDurationMs(tweaks, action.targetLevel);
         rows.push({
           key: "base-reinforce",
+          kind: "upgrade",
           icon: upgradeIcon,
           label: `Upgrading base reinforcement to L${action.targetLevel}`,
           coord: territory.base,
-          remainingMs: remainingMs(action.startedAt, baseReinforcementUpgradeDurationMs(tweaks, action.targetLevel), now),
+          durationMs,
+          remainingMs: remainingMs(action.startedAt, durationMs, now),
         });
       } else {
         const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
+        const durationMs = baseReinforcementRepairDurationMs(tweaks, base.currentHp, maxHp);
         rows.push({
           key: "base-reinforce-repair",
+          kind: "repair",
           icon: repairIcon,
           label: "Repairing base reinforcement",
           coord: territory.base,
-          remainingMs: remainingMs(action.startedAt, baseReinforcementRepairDurationMs(tweaks, base.currentHp, maxHp), now),
+          durationMs,
+          remainingMs: remainingMs(action.startedAt, durationMs, now),
         });
       }
     }
@@ -2662,33 +2680,45 @@ export function GameScreen({
       if (!outpost.reinforcementAction) continue;
       const action = outpost.reinforcementAction;
       if (action.kind === "upgrade") {
+        const durationMs = outpostReinforcementUpgradeDurationMs(tweaks, action.targetLevel);
         rows.push({
           key: `outpost-reinforce-${outpost.id}`,
+          kind: "upgrade",
           icon: upgradeIcon,
           label: `Upgrading outpost reinforcement to L${action.targetLevel}`,
           coord: outpost.coord,
-          remainingMs: remainingMs(action.startedAt, outpostReinforcementUpgradeDurationMs(tweaks, action.targetLevel), now),
+          durationMs,
+          remainingMs: remainingMs(action.startedAt, durationMs, now),
         });
       } else {
         const maxHp = outpostReinforcementHp(tweaks, outpost.reinforcementLevel);
+        const durationMs = outpostReinforcementRepairDurationMs(tweaks, outpost.currentHp, maxHp);
         rows.push({
           key: `outpost-reinforce-repair-${outpost.id}`,
+          kind: "repair",
           icon: repairIcon,
           label: "Repairing outpost reinforcement",
           coord: outpost.coord,
-          remainingMs: remainingMs(action.startedAt, outpostReinforcementRepairDurationMs(tweaks, outpost.currentHp, maxHp), now),
+          durationMs,
+          remainingMs: remainingMs(action.startedAt, durationMs, now),
         });
       }
     }
 
-    if (baseRelocationInProgress) {
+    if (base.relocation && baseRelocationInProgress) {
+      const durationMs = baseRelocationDurationMs(
+        tweaks,
+        axialDistance(territory.base, base.relocation.destination),
+      );
       rows.push({
         key: "base-relocation",
+        kind: "relocate",
         icon: <Navigation size={NOTIFICATION_ICON_SIZE} />,
         label: "Relocating base",
         coord: baseRelocationInProgress.destination,
+        durationMs,
         remainingMs: baseRelocationInProgress.remainingMs,
-      });
+        });
     }
 
     for (const [resource, pending] of Object.entries(storageUpgrades) as [
@@ -2696,23 +2726,29 @@ export function GameScreen({
       { targetLevel: number; startedAt: number } | undefined,
     ][]) {
       if (!pending) continue;
+      const durationMs = storageUpgradeDurationMs(tweaks, pending.targetLevel);
       rows.push({
         key: `storage-${resource}`,
+        kind: "upgrade",
         icon: resourceIcon(resource, NOTIFICATION_ICON_SIZE),
         label: `Upgrading ${resource} storage to L${pending.targetLevel}`,
         coord: territory.base,
-        remainingMs: remainingMs(pending.startedAt, storageUpgradeDurationMs(tweaks, pending.targetLevel), now),
-      });
+        durationMs,
+        remainingMs: remainingMs(pending.startedAt, durationMs, now),
+        });
     }
 
     if (research.pending) {
+      const durationMs = researchDurationMs(tweaks, research.pending.id);
       rows.push({
         key: `research-${research.pending.id}`,
+        kind: "upgrade",
         icon: <FlaskConical size={NOTIFICATION_ICON_SIZE} />,
         label: `Researching ${RESEARCH_LABEL[research.pending.id]}`,
-        remainingMs: remainingMs(research.pending.startedAt, researchDurationMs(tweaks, research.pending.id), now),
+        durationMs,
+        remainingMs: remainingMs(research.pending.startedAt, durationMs, now),
         onLabelClick: () => toggleOpenPanel("research"),
-      });
+        });
     }
 
     return rows;
@@ -2724,9 +2760,10 @@ export function GameScreen({
    * home. Base HP/noise/storage also belong here: the map HP bar is glance-only,
    * desktop hover is suppressed while the tile is selected, and storage fill vs
    * caps appear nowhere else on the HUD. Tombstones and siege countdowns stay
-   * map/tray-first. Countdown timers (build/upgrade/repair/relocation) live in
-   * the notification tray — see activeCountdownRows. Returns null when the
-   * selected tile has nothing to show, so the Info tab only appears when needed.
+   * map/tray-first. Selected-tile countdown timers also appear under the sheet's
+   * In progress tab (and globally in the notification tray) — see
+   * activeCountdownRows. Returns null when the selected tile has nothing to
+   * show, so the Info tab only appears when needed.
    */
   function infoSheetContent(): ReactNode | null {
     if (!selected) return null;
@@ -3036,7 +3073,7 @@ export function GameScreen({
    * in here as its own layer keeps structuralActionsFor's tile-type
    * branching untouched.
    */
-  function sheetActionsFor(): SheetAction[] {
+  function sheetActionsFor(countdownRows: NotificationCountdownRow[]): SheetAction[] {
     if (!selected) return [];
     const actions = structuralActionsFor();
 
@@ -3086,6 +3123,23 @@ export function GameScreen({
           });
         }
       }
+    }
+
+    const inProgressRows = countdownRows.filter(
+      (row) => row.coord != null && axialEquals(row.coord, selected),
+    );
+    if (inProgressRows.length > 0) {
+      actions.unshift({
+        key: "in-progress",
+        icon: <Hammer size={18} />,
+        title: "In progress",
+        subActions: inProgressRows.map((row) => ({
+          key: `busy-${row.key}`,
+          icon: row.icon,
+          title: row.label,
+          detail: `${formatDuration(row.remainingMs)} remaining`,
+        })),
+      });
     }
 
     // Unlike Collect/Garrison/Demolish below, Info isn't owned-tile-only — a
@@ -3142,7 +3196,9 @@ export function GameScreen({
 
     return actions;
   }
-  const sheetActions = sheetActionsFor();
+  const countdownRows = activeCountdownRows();
+  const sheetActions = sheetActionsFor(countdownRows);
+  const structureProgressMap = structureProgressByKey(countdownRows);
   // Suppressed on the currently-selected tile — the action sheet (and Info
   // tab, where applicable) already covers the same ground, and the two
   // floating panels would otherwise visually collide.
@@ -3163,6 +3219,7 @@ export function GameScreen({
           baseMaxHp={baseReinforcementHp(tweaks, base.reinforcementLevel)}
           upgradeAvailableKeys={upgradeAvailableKeys}
           buildModeEligibleKeys={buildModeEligibleKeys}
+          structureProgressByKey={structureProgressMap}
           owned={territory.owned}
           extractionTiles={extractionTiles}
           pathTiles={pathTiles}
@@ -3290,8 +3347,6 @@ export function GameScreen({
       {openPanel === "scouting" && (
         <ScoutingPanel
           tweaks={tweaks}
-          units={units}
-          barracksList={barracksList}
           scoutSkiffs={scoutSkiffs}
           wanderingScouts={wanderingScouts}
           lab={lab}
@@ -3352,7 +3407,7 @@ export function GameScreen({
               coord: d.coord,
               holdRemainingMs: remainingMs(d.siege!.startedAt, tweaks.dens.siege.hold_duration_minutes * 60_000, now),
             }))}
-          countdowns={activeCountdownRows()}
+          countdowns={countdownRows}
           now={now}
           arrivalExpandedMs={tweaks.expeditions.arrival_notification_expanded_ms}
           onGoToTile={goToTile}
