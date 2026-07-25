@@ -30,11 +30,19 @@ describe("towerBuildCost", () => {
 });
 
 describe("towerRange", () => {
-  it("adds range_per_level per level above L1", () => {
+  it("adds range_per_level per level above L1 on grassland (neutral offset)", () => {
     const tweaks = loadRealTweaks();
-    expect(towerRange(tweaks, 1)).toBe(2);
-    expect(towerRange(tweaks, 2)).toBe(3);
-    expect(towerRange(tweaks, 4)).toBe(5);
+    expect(towerRange(tweaks, 1, "grassland")).toBe(2);
+    expect(towerRange(tweaks, 2, "grassland")).toBe(3);
+    expect(towerRange(tweaks, 4, "grassland")).toBe(5);
+  });
+
+  it("applies range_terrain_offset by build-tile terrain (#79)", () => {
+    const tweaks = loadRealTweaks();
+    expect(towerRange(tweaks, 1, "shore")).toBe(2);
+    expect(towerRange(tweaks, 1, "mountain")).toBe(4);
+    expect(towerRange(tweaks, 1, "forest")).toBe(1);
+    expect(towerRange(tweaks, 2, "forest")).toBe(2);
   });
 });
 

@@ -1468,7 +1468,7 @@ export function GameScreen({
   }
 
   function canRepairHordeDamagedAt(coord: Axial): boolean {
-    return canRepairHordeDamagedTile(tweaks, towers, territory, coord, gridSize);
+    return canRepairHordeDamagedTile(tweaks, towers, territory, coord, gridSize, world.seed);
   }
 
   /**
@@ -3082,7 +3082,8 @@ export function GameScreen({
     if (selectedTower) {
       rows.push(
         <div key="tower-stats">
-          Range {towerRange(tweaks, selectedTower.level)}, damage {towerDamage(tweaks, selectedTower.level).toFixed(1)}
+          Range {towerRange(tweaks, selectedTower.level, terrainAt(world.seed, selectedTower.coord))}, damage{" "}
+          {towerDamage(tweaks, selectedTower.level).toFixed(1)}
         </div>,
       );
     }
@@ -3276,7 +3277,7 @@ export function GameScreen({
         <HoverPanel icon={structureIcon(structureLevelCandidates("tower", tower.level), 28)} title={`Tower — L${tower.level}`} status={status}>
           {isStructureActive(tower) && (
             <>
-              <span>Range: {towerRange(tweaks, tower.level)} tiles</span>
+              <span>Range: {towerRange(tweaks, tower.level, terrainAt(world.seed, tower.coord))} tiles</span>
               <span>Damage: {towerDamage(tweaks, tower.level).toFixed(1)} DPS</span>
             </>
           )}

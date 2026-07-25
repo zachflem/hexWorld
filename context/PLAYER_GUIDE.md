@@ -102,7 +102,7 @@ The base is a hub, not a fighting unit — it holds your storage, tech upgrades,
 
 ## Defenses: Towers & Walls
 
-- **Towers** deal ranged damage to any horde within reach, every tick, for as long as it stays in range. Both damage and range grow with tower level (levels 1–4). Militia stationed on a tower's own tile add their attack power straight onto its damage. A horde lingering in a tower's range is also visibly slowed.
+- **Towers** deal ranged damage to any horde within reach, every tick, for as long as it stays in range. Both damage and range grow with tower level (levels 1–4). Building on a **mountain** extends range (+2 tiles); **forest** shortens it (−1); grassland and shore are neutral. Militia stationed on a tower's own tile add their attack power straight onto its damage. A horde lingering in a tower's range is also visibly slowed.
 - **Walls** (wood → rock → steel, an upgrade path) don't fight back — they soak up horde damage via durability instead. They can only be repaired during peacetime, at a cost proportional to the damage they've taken.
 - **Demolishing** any structure refunds a fixed percentage of everything you ever spent on it (build + every upgrade).
 - A structure a horde captures goes **damaged** (non-functional) until you retake the tile and pay to repair it. The tile stays known — hordes don't re-fog ground you've already held.

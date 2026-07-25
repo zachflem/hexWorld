@@ -495,11 +495,12 @@ export const HexCanvas = forwardRef<
     const selectedTower = selected && towersByKey.get(axialKey(selected));
     if (!selectedTower) return null;
     const set = new Set<string>();
-    for (const coord of axialSpiral(selectedTower.coord, towerRange(tweaks, selectedTower.level))) {
+    const range = towerRange(tweaks, selectedTower.level, terrainAt(seed, selectedTower.coord));
+    for (const coord of axialSpiral(selectedTower.coord, range)) {
       set.add(axialKey(coord));
     }
     return set;
-  }, [selected, towersByKey, tweaks]);
+  }, [selected, towersByKey, tweaks, seed]);
   const selectedPowerAoeKeys = useMemo(() => {
     const selectedStation = selected && powerStationsByKey.get(axialKey(selected));
     if (!selectedStation) return null;
@@ -535,12 +536,12 @@ export const HexCanvas = forwardRef<
   const activeTowerKeys = useMemo(() => {
     const set = new Set<string>();
     for (const horde of hordes) {
-      for (const tower of towersInRange(tweaks, towers, horde.path[horde.pathIndex])) {
+      for (const tower of towersInRange(tweaks, towers, horde.path[horde.pathIndex], seed)) {
         set.add(axialKey(tower.coord));
       }
     }
     return set;
-  }, [hordes, towers, tweaks]);
+  }, [hordes, towers, tweaks, seed]);
   // Per-horde incoming dps (towers + garrisoned cross-bow snipers in range)
   // and whether it's currently slowed — same combat math advanceHordes uses
   // (engine/hordes.ts), just read-only here for display.
@@ -548,13 +549,13 @@ export const HexCanvas = forwardRef<
     const map = new Map<string, { dps: number; slowed: boolean }>();
     for (const horde of hordes) {
       const coord = horde.path[horde.pathIndex];
-      const inRangeTowers = towersInRange(tweaks, towers, coord);
+      const inRangeTowers = towersInRange(tweaks, towers, coord, seed);
       const dps =
         towerDamagePerSecond(tweaks, inRangeTowers, horde.size, garrisons) + sniperDamagePerSecond(tweaks, garrisons, walls, coord);
       map.set(axialKey(coord), { dps, slowed: inRangeTowers.length > 0 });
     }
     return map;
-  }, [hordes, towers, garrisons, walls, tweaks]);
+  }, [hordes, towers, garrisons, walls, tweaks, seed]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);

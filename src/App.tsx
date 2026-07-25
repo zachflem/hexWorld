@@ -1115,6 +1115,7 @@ export default function App() {
         current.game.garrisons,
         hordeHubs,
         elapsedSeconds,
+        current.game.world.seed,
         powerNetwork,
       );
       const baseOverrun = overrunHubKeys.includes(axialKey(territoryAfterRelocation.base));
@@ -1179,7 +1180,7 @@ export default function App() {
         for (const horde of hordes) {
           const tile = horde.path[horde.pathIndex];
           if (!tile) continue;
-          if (towersInRange(current.tweaks, towersAfterCapture, tile).length > 0) {
+          if (towersInRange(current.tweaks, towersAfterCapture, tile, current.game.world.seed).length > 0) {
             inRangeIds.push(horde.id);
           }
         }
@@ -1239,6 +1240,7 @@ export default function App() {
         territory,
         resolveWorldGridSize(current.game.world, current.tweaks),
         hordeOccupiedKeys,
+        current.game.world.seed,
       );
 
       // Expeditions/den-assaults/lab-assaults all resolve their corridor
@@ -1635,6 +1637,7 @@ export default function App() {
             towersAfterCapture,
             wallsAfterCapture,
             garrisonsAfterSieges,
+            worldSeed,
           );
           const { den: denAfterHold, outcome } = resolveHoldPeriod(current.tweaks, den, holdDefense, virtualNow);
 
@@ -3189,7 +3192,7 @@ export default function App() {
 
     const ownedKeys = new Set(game.territory.owned.map(axialKey));
     const gridSize = resolveWorldGridSize(game.world, tweaks);
-    if (!canRepairHordeDamagedTile(tweaks, game.towers, game.territory, coord, gridSize)) {
+    if (!canRepairHordeDamagedTile(tweaks, game.towers, game.territory, coord, gridSize, game.world.seed)) {
       return { ok: false, reason: "Tile not owned" };
     }
 

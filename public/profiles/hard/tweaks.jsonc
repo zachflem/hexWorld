@@ -227,6 +227,14 @@
 
     "base_range_tiles": 2,           // L1 range
     "range_per_level": 1,            // +1 tile per level
+    "range_terrain_offset": {
+      "grassland": 0,
+      "shore": 0,
+      "forest": -1,
+      "mountain": 2,
+      "water": 0
+    },
+    "_range_terrain_offset_note": "Added 2026-07-25 (#79) — flat tiles added to towerRange based on the terrain of the tower's own tile (live terrainAt, same as build location since towers don't move). Mountain vantage +2, forest canopy −1, grassland/shore neutral. Water is not buildable for towers; kept at 0 for schema completeness. Applied in engine/towers.ts:towerRange and clamped to ≥1 so a forest L1 can't go to 0. Same radius feeds combat DPS, slow, range overlay, and viewshed auto-claim.",
 
     "base_damage": 5,                // L1 damage value
     "damage_scaling": "cumulative: dmg(L) = dmg(L-1) * (1.0 + 0.1*L)",

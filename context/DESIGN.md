@@ -126,7 +126,7 @@ The base is a **hub, not a combat unit** — storage, tech tree, and the seat of
 
 Combat against hordes is **fully deterministic** — no luck/RNG rolls (unlike the abandoned PvP design this project pivoted away from).
 
-- **Towers** deal damage at range, every tick a horde remains within reach. Damage output scales with tower level; range extends by one tile per level.
+- **Towers** deal damage at range, every tick a horde remains within reach. Damage output scales with tower level; range extends by one tile per level, plus a flat offset from the tower's build-tile terrain (mountain longer, forest shorter, grassland/shore unchanged — see `towers.range_terrain_offset`).
 - **Walls** (wood → rock → steel, an upgrade path rather than separate structures) absorb horde damage via durability rather than fighting back. A tile can hold at most one structure of any kind — a tower, a wall, an extraction tile, a path, a barracks, a dock, or a **power station**, never a combination — but a tower's range can cover a wall (or anything else) on a neighboring tile.
 - **No tile can host unlimited defense** — the build slot cap forces players to choose which approaches to fortify and which to leave exposed.
 - **Walls can only be repaired during peacetime**, at a cost proportional to damage taken (and inclusive of every tier below the wall's current one), and repairing generates its own noise.

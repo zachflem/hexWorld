@@ -215,6 +215,7 @@ Added during playtesting — not in the original design pass, see `DESIGN.md` §
 Deal damage to hordes at range, per tick, for as long as the horde is within range.
 
 - **Base range:** 2 tiles at L1. Each level adds +1 tile of range.
+- **Terrain range offset (#79):** flat tiles added from the tower's own tile terrain (`towers.range_terrain_offset`) — grassland/shore **+0**, mountain **+2**, forest **−1**. Same radius for combat DPS, slow, range overlay, and viewshed auto-claim. Clamped to at least 1 tile.
 - **Base damage:** 5 at L1.
 - **Damage scaling:** cumulative — `dmg(L) = dmg(L-1) × (1.0 + 0.1×L)`. Same shape as Formula A/B but applied to a combat stat rather than a cost.
 - **Damage vs horde formula:** `zombies_killed_per_tick = tower_damage × (horde_size / 100)` — meaning towers are *proportionally* more effective against bigger hordes in raw kill count, but a bigger horde still overwhelms faster in relative terms.
