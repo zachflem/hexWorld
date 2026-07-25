@@ -32,7 +32,7 @@ public/profiles/
 
 **Asset tracks** (pack layout stays next to profiles; status lives on GitHub Issues):
 
-- **Per-level structure sprites (legacy #P13 → [issue #67](https://github.com/zachflem/hexWorld/issues/67) ✅ / Milestone 24)** — lookup tries levelled stems (`tower-1`…`4`, `barracks-1`…`4`, `base-{n}`, `{resource}-{small|mid|large}`, `dock-boat`) then unlevelled / generic fallbacks. Walls/paths keep tier filenames. Missing variants fall through so partial packs stay valid ([Milestone24.md](Milestone24.md)).
+- **Per-level structure sprites (legacy #P13 → [issue #67](https://github.com/zachflem/hexWorld/issues/67) ✅ / Milestone 24)** — lookup tries levelled stems (`tower-1`…`4`, `barracks-1`…`4`, `base-{n}`, `{resource}-{small|mid|large}`, `dock-boat`) then unlevelled / generic fallbacks. Walls keep tier filenames. Missing variants fall through so partial packs stay valid ([Milestone24.md](Milestone24.md)).
 - **Terrain art (legacy #P12 ✅ → [issue #66](https://github.com/zachflem/hexWorld/issues/66))** — `terrain/` ships the post-itch.io replacement pack (see [attribution.md](attribution.md)). Same filenames; profile overrides still win. Future flat-hex swaps: convert with `scripts/convert-flat-terrain-hex.py` before dropping into `terrain/` (see [AGENTS.md](../AGENTS.md)).
 
 ---
@@ -82,8 +82,6 @@ Example — towers (base 300 wood + 150 stone):
 
 **Exception — walls and docks:** both use a *linear* variant instead, `cost_n = base_cost × (1.0 + 0.1 × (n-1))` (same 10%-per-structure rate, but always against the base cost rather than compounding onto the previous one's already-scaled cost). Formula A's full compounding pushed an 8th wall to ~10x base cost and a 13th dock to ~62,000 wood (CORRECTION, 2026-07-21 playtesting feedback: "60k wood for one dock") — directly undermining `walls.slot_cost` (dense wall lines) and just making docks unaffordable past a handful. See `engine/formulas.ts:linearBuildCost`.
 
-**Exception — goat tracks:** flat cost, no build-count scaling at all — `cost_n = base_cost`, every time. CORRECTION (2026-07-21, playtesting feedback): even the linear variant above still fought `infrastructure_paths.slot_cost`'s whole point (long connected path chains, built in bulk, are meant to be cheap) — see Infrastructure Paths, below.
-
 ### Formula B — "Tier Upgrade Scaling"
 **Used for:** levelling up *one existing structure* (a tower going L1→L2, a wall going wood→rock, a storage skill going up a level, base level, base reinforcement).
 
@@ -100,7 +98,7 @@ Example — tower upgrade (base 150 wood + 75 stone):
 **Why:** upgrading is cheaper than building new (you're improving, not duplicating), but still gets progressively pricier — and richer in resource variety — the deeper you go.
 
 ### The Technology Progression (stacks with Formula B)
-Every upgrade path — towers, walls, extraction tiles, infrastructure paths — follows the same resource *unlock* order as it tiers up:
+Every upgrade path — towers, walls, extraction tiles — follows the same resource *unlock* order as it tiers up:
 
 ```
 Tier 1 → Tier 2:  adds nothing new (same resource as base)
@@ -108,7 +106,7 @@ Tier 2 → Tier 3:  adds the next resource up the chain
 Tier 3 → Tier 4:  adds the one after that
 ```
 
-The chain is generally: **wood → stone → steel**, except infrastructure paths, which use **food → stone → steel** (since paths are "fed," not built). Power is no longer part of this stockpile chain — see **Power stations** below.
+The chain is generally: **wood → stone → steel**. Power is no longer part of this stockpile chain — see **Power stations** below.
 
 This means a late-tier upgrade always costs a bit of everything you've unlocked so far — it's not just "more of the same," it's "your whole economy chipping in."
 
@@ -159,7 +157,7 @@ Top-level `power` block in `tweaks.jsonc` (not an extraction resource):
 | `cutoff_factor` | 0.5 |
 | `build_cost_base` | 400 wood + 300 stone + 150 steel |
 | `upgrade_cost_base` | 200 wood + 200 stone + 100 steel |
-| `draw_base` | extraction 2, path 1, tower 3, wall 1, barracks 4, dock 2 (× structure level) |
+| `draw_base` | extraction 2, tower 3, wall 1, barracks 4, dock 2 (× structure level) |
 
 Union AoE + shared capacity pool; L1 structures exempt. See [Milestone25.md](Milestone25.md).
 **Tier upgrade cost (small→mid→large):** Formula B, plus the tech progression (mid tier adds stone; large tier adds stone + steel).
@@ -185,10 +183,10 @@ Added during playtesting — not in the original design pass, see `DESIGN.md` §
 
 **Dock:**
 - **Placement:** a water tile bordering land (`engine/terrain.ts:isTransitionTile` true on a water coord), and the water tile itself must be owned **or** scouted — not full ownership like every other structure, since ordinary land-adjacency territory growth never reaches open water on its own.
-- **Build cost:** Linear build-count scaling, not Formula A (200 wood base) — `cost_n = 200 × (1 + 0.1×(n-1))`. CORRECTION (2026-07-21, playtesting feedback: "60k wood for one dock" — Formula A's compounding pushed a 13th dock to ~62,000 wood) — switched to the same linear scaling walls/goat tracks already use, same reasoning as the walls exception above.
+- **Build cost:** Linear build-count scaling, not Formula A (200 wood base) — `cost_n = 200 × (1 + 0.1×(n-1))`. CORRECTION (2026-07-21, playtesting feedback: "60k wood for one dock" — Formula A's compounding pushed a 13th dock to ~62,000 wood) — switched to the same linear scaling walls already use, same reasoning as the walls exception above.
 - **Build time:** 2-minute construction timer (`dockBuildDurationMs`, `engine/docks.ts`) — CORRECTION (2026-07-21, playtesting feedback): docks previously had no construction timer at all, unlike every other structure; a dock now yields nothing until this timer elapses, same "under construction" treatment as a tower/wall/barracks. Lowered from 3 (2026-07-23 pacing pass, ROADMAP.md Milestone 21 UX #12).
 - **Yield:** `yield_multiplier_vs_food_tile` (0.7) × the food extraction tile's own small-tier rate — so a dock without a fishing boat produces 70% of a small food tile's yield. Deliberately **not** also halved by the transition-tile rule (Extraction Tiles/Transition Tiles, above) — a dock sits on transition water by definition, so 0.7× is already its full intended rate.
-- **No path connection:** deposits straight into base food storage every tick (capped by the storage skill, same as anywhere else) — paths can't cross water, so there's no "connected vs. unconnected" state the way a land extraction tile has. No tiers either.
+- **Collection:** L1 manual collect pin; L2+ implied courier to base (same travel timing as land extraction). Capped by the storage skill, same as anywhere else.
 - **No `damaged` state:** immune to horde capture (hordes can't reach water tiles), so it never needs repair.
 - **Noise:** build 20 (`build_dock`, same weight as an extraction tile or wall).
 
@@ -228,7 +226,7 @@ Deal damage to hordes at range, per tick, for as long as the horde is within ran
 
 ## Walls
 
-Absorb horde damage via durability rather than dealing damage themselves. Cannot occupy the same tile as a tower (but a tower's range can cover a wall on an adjacent tile) — and, like every other structure, exclusive with extraction tiles and paths on that tile too.
+Absorb horde damage via durability rather than dealing damage themselves. Cannot occupy the same tile as a tower (but a tower's range can cover a wall on an adjacent tile) — and, like every other structure, exclusive with extraction tiles on that tile too.
 
 **Tiers:** wood → rock → steel (upgrade path, not separate builds).
 
@@ -269,7 +267,7 @@ damage_per_tick = wall_base_damage × (horde_size / 100)
 
 ## Barracks & Units
 
-A tile-based structure (exclusive with extraction tiles, paths, towers, and walls — same one-structure-per-hex rule as everything else), levels 1–4 like towers. Trains standing combat units and builds the Wandering Scout.
+A tile-based structure (exclusive with extraction tiles, towers, and walls — same one-structure-per-hex rule as everything else), levels 1–4 like towers. Trains standing combat units and builds the Wandering Scout.
 
 **Build cost:** Formula A (250 wood + 150 stone base for the first barracks; each additional barracks costs more).
 **Upgrade cost:** Formula B (150 wood + 75 stone base), tech progression L1→L2 (wood+stone), L2→L3 (+steel), L3→L4 (+steel) — same reused-baseline resolution as towers and walls, above. (Power currency removed — Milestone 25 / #70.)
@@ -313,7 +311,7 @@ Beyond the free starting 19 tiles (DESIGN.md §6), every other tile — adjacent
 
 ## Demolish
 
-Works the same way across every structure type — extraction tile, path, tower, wall, barracks, or dock.
+Works the same way across every structure type — extraction tile, tower, wall, barracks, dock, or power station.
 
 - **Refund:** a fixed 60% of everything ever spent on the structure (every build + every upgrade + every wall repair), deterministic, no luck. ROADMAP.md already named this figure; it just hadn't been added to `tweaks.jsonc` until now.
 - Refunded resources are capped at whatever room is left in storage, same as any other resource gain.
@@ -321,33 +319,15 @@ Works the same way across every structure type — extraction tile, path, tower,
 
 ---
 
-## Infrastructure Paths
+## Couriers & logistics (Milestone 26)
 
-Automate resource transport from a claimed extraction tile back to base. **Entirely optional** — manual collection (free, player-initiated, no path tile needed) always works, just without automation.
+**Infrastructure path tiles removed** (goat track / stone road / highway). Automation is per-structure:
 
-**Tiers:** manual → goat track → stone road → highway.
+- **L1:** manual collect pin only.
+- **L2+:** implied courier loops the structure ↔ main base. Travel duration = expedition route cost (`findExpeditionPath`) × `expeditions.travel_seconds_per_cost`.
+- **L3:** production upgrade (docks: former fishing-boat bonus folds into this level).
 
-- **Goat track:** a worn dirt path. Costs **food**, not building materials — you're feeding the people walking it, not paying for construction. Flat cost: 100 food, every time — **no build-count scaling at all**, not even the linear variant. CORRECTION (2026-07-21, playtesting feedback): paths are meant to be built in bulk to form long connected chains (`infrastructure_paths.slot_cost` already discounts them to 0.1 of a build slot for exactly this reason) — even 10%-per-tile linear growth undermined that, making a 50-tile network cost far more than 50× the base price.
-- **Stone road:** upgrade from goat track. Costs food + stone (Formula B).
-- **Highway:** upgrade from stone road. Costs food + stone + steel (Formula B).
-
-**Terrain rules:**
-- Buildable on grassland, forest, mountain, shore.
-- **Not buildable on water** (future feature: water-based transport, same mechanic).
-- Paths through mountain tiles suffer a **-25% throughput penalty**, compounding per mountain path tile along the route.
-
-**Transport rate (first pass, untested):** each extraction tile has its own local stockpile (capped at the same 1000 as base storage — see Storage below), which drains to base storage at a rate relative to the tile's own current yield:
-- Goat track: 0.5× the tile's yield rate (slower than production for a fully-tiered tile — some manual collection still useful).
-- Stone road: 2× the tile's yield rate.
-- Highway: 1000× — effectively instant, bottlenecked only by the tile's own stockpile cap, per DESIGN.md §8.
-
-**A hex can only ever be a path tile OR an extraction tile, never both** — same one-purpose-per-tile rule as towers/walls. Building one where the other already stands is rejected.
-
-Because of that exclusivity, connectivity is **adjacency-based**, not "the resource tile has a path on it": a tile auto-drains if it's connected via a chain of path tiles to a hex adjacent to base, where "connected" means either:
-- the tile itself has a neighboring hex that's part of that base-reaching path chain, **or**
-- it belongs to a contiguous cluster of same-resource-type extraction tiles (adjacent to each other) where at least one member satisfies the above — connectivity propagates transitively through the whole cluster, however large, so long as every link in the chain is the same resource type.
-
-No connection (directly or via cluster) means the stockpile just sits there (still capped at 1000) until manually collected.
+Steel moves via Scrap Yard + Scrapper + yard courier — see [Milestone26.md](Milestone26.md) / [ScrapperEconomy.md](ScrapperEconomy.md). New courier / yard / stash numeric blocks are **first pass, untested** when added to `tweaks.jsonc`.
 
 ---
 
@@ -422,19 +402,17 @@ The core tension mechanic. Every action makes noise; noise attracts hordes.
 
 **Ambient minimum:** `noise_floor_minimum: 30` — a true lower clamp applied everywhere noise is computed (the structure-driven floor itself, the exponential convergence, and one-time action spikes), plus the value a fresh game starts at. Below this, activity is "practically silent" and goes unnoticed by hordes — a base with zero or near-zero structures never reads below it. First pass, untested.
 
-**Display:** shown as a raw number labeled "db" (e.g. `noise: 245db`), not a percentage of the level-scaling cap — the cap growing with base level made a percentage-of-cap reading confusing (98% could mean very different absolute danger at different levels). Clicking a built extraction or path tile shows that tile's individual contribution to the ambient floor, so it's clear what's driving a high reading.
+**Display:** shown as a raw number labeled "db" (e.g. `noise: 245db`), not a percentage of the level-scaling cap — the cap growing with base level made a percentage-of-cap reading confusing (98% could mean very different absolute danger at different levels). Clicking a built extraction tile shows that tile's individual contribution to the ambient floor, so it's clear what's driving a high reading.
 
 **One-time action noise (spikes above the floor):**
 | Action | Noise |
 |---|---|
-| Build path tile | 10 |
 | Repair wall | 15 |
 | Build extraction tile | 20 |
 | Build tower | 25 |
 | Build wall | 20 |
 | Build barracks | 20 |
 | Upgrade extraction tile (also reused for tower/wall/barracks/base upgrades) | 10 |
-| Upgrade infrastructure tile | 10 |
 | Manual resource collection | 5 |
 | Train militia | 3 |
 | Attack tile (Milestone 10) | 25 |
@@ -450,14 +428,7 @@ The core tension mechanic. Every action makes noise; noise attracts hordes.
 
 **Tier scaling:** `floor_contribution(tile) = base × 3^tier_index` (small=0, mid=1, large=2) — steeper than the 1.5× yield curve on purpose. Small tier reads as "foraging for berries," large tier as "a loud, constant factory farm." First pass, untested.
 
-**Ambient floor contribution, paths (per tile) — first pass, untested:**
-| Path tier | Floor points |
-|---|---|
-| Goat track | 3 |
-| Stone road | 8 |
-| Highway | 20 |
-
-A person walking a goat track isn't silent, but nowhere near a highway's constant traffic. Total floor = sum of every active structure's contribution, clamped at the cap.
+Total floor = sum of every active structure's contribution, clamped at the cap.
 
 ---
 
@@ -483,7 +454,7 @@ A person walking a goat track isn't silent, but nowhere near a highway's constan
 
 **Capturing a tile:** if a horde wins a tile fight (other than the base, which can never be stripped from `owned`), the tile flips to unowned and any structure on it goes `damaged` — DESIGN.md §12:
 - Any resources stored there are lost immediately.
-- The structure survives but stops functioning entirely: a damaged extraction tile yields nothing (existing stockpile frozen, not drained either); a damaged path tile breaks the auto-flow chain through it, same as if no path were there; a damaged tower/wall contributes no combat value at all (neither tile defense nor per-tick range attrition).
+- The structure survives but stops functioning entirely: a damaged extraction tile yields nothing (existing stockpile frozen; courier trips stop); a damaged tower/wall contributes no combat value at all (neither tile defense nor per-tick range attrition).
 - Fog knowledge is preserved: the captured tile is appended to `scoutedTiles` (`preserveCapturedTilesAsScouted`) so ownership loss does not hide the tile again — reclaim/repair without waiting for a Wandering Scout.
 - Reclaiming the tile (by attack, same as claiming any unowned tile) lets you repair the structure at 50% of its original build cost, instantly — see Territory Expansion / Tile Assault, below, for the reclaim mechanics and Repair, elsewhere in this doc, for the cost formula.
 - A tower's own viewshed claim (Territory Expansion / Tile Assault, above) will auto-reclaim the bare *ground* the moment the horde is gone, if the tile falls within that tower's range — but the structure itself stays damaged regardless, until separately repaired.
@@ -513,7 +484,7 @@ A converted den becomes a second, independent economic/defensive hub — a real 
 
 - **Starting territory:** `starting_owned_radius: 2` claimed on conversion — same radius as the main base's own starting territory (`engine/fog.ts`'s `OWNED_RADIUS`), so a fresh outpost genuinely reads as a second base, not a token foothold.
 - **Reinforcement HP:** `outpostReinforcementHp(level) = base_hp (65) + hp_gain_per_level (15) × level` — deliberately weaker/cheaper than the main base's own track (100 base_hp, +25/level). **Starting level scales with the den it was cleared from:** `createOutpostFromDen` grants `reinforcementLevel = max(0, denLevel - 1)` — clearing a level-2 den hands over roughly 80 HP; a level-10 den, roughly 200 HP — a direct reward for the siege's difficulty, and deliberately **not** capped by the base-level ceiling that gates every *further* upgrade (`maxOutpostReinforcementLevel(baseLevel) = baseLevel`, same shape as the main base's cap). Upgrade/repair cost (Formula B, `cost_base: 150 wood + 75 stone`) is paid from the **shared stockpile**, same as the main base.
-- **Resource economy:** extraction tiles connect to whichever hub (base or outpost) they're path-connected to; base always wins the claim first when a tile could reach either — see `engine/tick.ts` `accrueResources`. All hubs drain into the **single shared stockpile** (global storage skills). No separate outpost pool; proposed trade caravan (#P4) is retired.
+- **Resource economy:** couriers deliver into the **single shared stockpile** (global storage skills); MVP destination is the main base. No separate outpost pool; proposed trade caravan (#P4) is retired.
 - **Loss condition:** an outpost overrun by a horde does **not** end the game — `revertOutpostToDen` reverts it to a hostile den at `max(1, originalDenLevel - 1)` (a real setback, but not harder to re-clear than the original siege) and it has to be sieged again from scratch. See Horde System, above, for how `HordeHub` generalizes the base's loss-condition check to cover every live outpost too.
 
 ---

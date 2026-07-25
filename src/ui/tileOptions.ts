@@ -1,5 +1,4 @@
 import type { ExtractionTier } from "../data/extractionTiles";
-import type { PathTier } from "../data/pathTiles";
 import type { WallTier } from "../data/walls";
 import type { ResourceType } from "../data/resources";
 
@@ -28,18 +27,6 @@ export interface StorageUpgradeOption {
   inProgress: { targetLevel: number; remainingMs: number } | null;
 }
 
-export interface PathBuildOption {
-  cost: Partial<Record<ResourceType, number>>;
-  affordable: boolean;
-  durationMinutes: number;
-}
-
-export interface PathUpgradeOption {
-  targetTier: PathTier;
-  cost: Partial<Record<ResourceType, number>>;
-  affordable: boolean;
-  durationMinutes: number;
-}
 
 export interface SimpleCostOption {
   cost: Partial<Record<ResourceType, number>>;

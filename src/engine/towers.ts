@@ -55,7 +55,7 @@ const TOWER_UPGRADE_PROGRESSION_KEY: Record<number, keyof Tweaks["towers"]["upgr
  * Cost to upgrade a tower to `targetLevel`. upgrade_cost_base only defines
  * wood+stone, but upgrade_tech_progression lists steel (L2->L3 / L3->L4)
  * with no base amount of its own — resolved the same way as extraction
- * tiers/paths (engine/tiers.ts, engine/paths.ts): reuse that resource's own
+ * tiers (engine/tiers.ts): reuse that resource's own
  * extraction-tile upgrade base as the baseline.
  */
 export function towerUpgradeCost(tweaks: Tweaks, targetLevel: number): Partial<Record<ResourceType, number>> {

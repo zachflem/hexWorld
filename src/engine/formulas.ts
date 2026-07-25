@@ -72,15 +72,13 @@ export function buildSlotCap(tweaks: Tweaks, baseLevel: number): number {
 /**
  * Total structures (of any kind) currently standing, counted against
  * buildSlotCap — DESIGN.md §9. Docks count too, despite being water-based —
- * same shared budget as every other structure. Walls and paths count at a
- * steep fractional discount (tweaks.jsonc walls.slot_cost/infrastructure_paths.slot_cost,
- * both 0.1 as of the 2026-07-20 balance pass) — everything else counts as a
- * full slot each, unchanged.
+ * same shared budget as every other structure. Walls count at a steep
+ * fractional discount (tweaks.jsonc walls.slot_cost) — everything else
+ * counts as a full slot each, unchanged.
  */
 export function totalStructureCount(
   tweaks: Tweaks,
   extractionTiles: unknown[],
-  pathTiles: unknown[],
   towers: unknown[],
   walls: unknown[],
   barracksList: unknown[],
@@ -89,7 +87,6 @@ export function totalStructureCount(
 ): number {
   return (
     extractionTiles.length +
-    pathTiles.length * tweaks.infrastructure_paths.slot_cost +
     towers.length +
     walls.length * tweaks.walls.slot_cost +
     barracksList.length +

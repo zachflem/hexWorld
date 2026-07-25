@@ -4,7 +4,6 @@ import type { ExtractionTile } from "../data/extractionTiles";
 import type { Garrison, GarrisonsRecord } from "../data/garrisons";
 import type { HordeRecord, HordesRecord } from "../data/hordes";
 import type { OutpostsRecord } from "../data/outposts";
-import type { PathTile } from "../data/pathTiles";
 import type { TerritoryRecord } from "../data/territory";
 import type { Tower } from "../data/towers";
 import type { Tweaks } from "../data/tweaksSchema";
@@ -158,8 +157,8 @@ export function checkHordeSpawns(
 /**
  * The structure-only component of a tile's defense (garrison excluded — see
  * hordeTileDefense below, which adds that in once). Towers and walls keep
- * their own dedicated combat stats (damage/durability); extraction tiles,
- * path tiles, and barracks have no combat stat of their own, so they fall
+ * their own dedicated combat stats (damage/durability); extraction tiles
+ * and barracks have no combat stat of their own, so they fall
  * back to the generic investment-based structureHp (engine/formulas.ts) —
  * DESIGN.md never said non-military structures should offer zero
  * resistance, and previously they did (hordeTileDefense only ever checked
@@ -171,7 +170,6 @@ export function checkHordeSpawns(
 function structureCombatDefense(
   tweaks: Tweaks,
   extractionTiles: ExtractionTile[],
-  pathTiles: PathTile[],
   towers: Tower[],
   walls: Wall[],
   barracksList: Barracks[],
@@ -197,9 +195,6 @@ function structureCombatDefense(
   const extractionTile = extractionTiles.find((t) => axialKey(t.coord) === key);
   if (extractionTile) return isStructureActive(extractionTile) ? structureHp(tweaks, extractionTile.totalInvested) : 0;
 
-  const pathTile = pathTiles.find((t) => axialKey(t.coord) === key);
-  if (pathTile) return isStructureActive(pathTile) ? structureHp(tweaks, pathTile.totalInvested) : 0;
-
   const barracks = barracksList.find((b) => axialKey(b.coord) === key);
   if (barracks) return isStructureActive(barracks) ? structureHp(tweaks, barracks.totalInvested) : 0;
 
@@ -222,7 +217,6 @@ function structureCombatDefense(
 export function hordeTileDefense(
   tweaks: Tweaks,
   extractionTiles: ExtractionTile[],
-  pathTiles: PathTile[],
   towers: Tower[],
   walls: Wall[],
   barracksList: Barracks[],
@@ -231,7 +225,7 @@ export function hordeTileDefense(
 ): number {
   const key = axialKey(coord);
   return (
-    structureCombatDefense(tweaks, extractionTiles, pathTiles, towers, walls, barracksList, key) +
+    structureCombatDefense(tweaks, extractionTiles, towers, walls, barracksList, key) +
     garrisonDefense(tweaks, garrisons, coord)
   );
 }
@@ -453,7 +447,6 @@ export function advanceHordes(
   hordes: HordesRecord,
   territory: TerritoryRecord,
   extractionTiles: ExtractionTile[],
-  pathTiles: PathTile[],
   towers: Tower[],
   walls: Wall[],
   barracksList: Barracks[],
@@ -529,7 +522,7 @@ export function advanceHordes(
         break;
       }
 
-      const defense = hordeTileDefense(tweaks, extractionTiles, pathTiles, towers, walls, barracksList, garrisons, nextCoord);
+      const defense = hordeTileDefense(tweaks, extractionTiles, towers, walls, barracksList, garrisons, nextCoord);
       if (!resolveHordeTileFight(size, defense)) {
         progress = 0;
         break;
@@ -599,7 +592,7 @@ function applyHordeCaptureDamage<T extends CapturedStructureFields>(structure: T
   };
 }
 
-export type HordeStructureKind = "extraction tile" | "path" | "tower" | "wall" | "barracks";
+export type HordeStructureKind = "extraction tile" | "tower" | "wall" | "barracks";
 
 export type HordeStructureCaptureEvent = {
   coord: Axial;
@@ -631,7 +624,6 @@ export function cancelledWorkLabelsForCapture(structure: CapturedStructureFields
 export function hordeStructureCaptureEvents(
   capturedTiles: Axial[],
   extractionTiles: CapturedStructureFields[],
-  pathTiles: CapturedStructureFields[],
   towers: CapturedStructureFields[],
   walls: CapturedStructureFields[],
   barracksList: CapturedStructureFields[],
@@ -644,11 +636,6 @@ export function hordeStructureCaptureEvents(
     const extraction = extractionTiles.find((s) => axialKey(s.coord) === key);
     if (extraction && !extraction.damaged) {
       events.push({ coord, kind: "extraction tile", cancelledWork: cancelledWorkLabelsForCapture(extraction) });
-      continue;
-    }
-    const path = pathTiles.find((s) => axialKey(s.coord) === key);
-    if (path && !path.damaged) {
-      events.push({ coord, kind: "path", cancelledWork: cancelledWorkLabelsForCapture(path) });
       continue;
     }
     const tower = towers.find((s) => axialKey(s.coord) === key);

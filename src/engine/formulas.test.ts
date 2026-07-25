@@ -72,23 +72,21 @@ describe("addToInvestment", () => {
 });
 
 describe("totalStructureCount", () => {
-  it("sums extraction/tower/barracks/dock at full weight, with no walls or paths", () => {
+  it("sums extraction/tower/barracks/dock at full weight, with no walls", () => {
     const tweaks = loadRealTweaks();
-    expect(totalStructureCount(tweaks, [1, 2], [], [1, 2, 3], [], [1], [1, 2])).toBe(8);
+    expect(totalStructureCount(tweaks, [1, 2], [1, 2, 3], [], [1], [1, 2])).toBe(8);
   });
 
   it("is 0 with no structures at all", () => {
     const tweaks = loadRealTweaks();
-    expect(totalStructureCount(tweaks, [], [], [], [], [], [])).toBe(0);
+    expect(totalStructureCount(tweaks, [], [], [], [], [])).toBe(0);
   });
 
-  it("counts walls and paths at their fractional slot_cost, not 1-for-1", () => {
+  it("counts walls at their fractional slot_cost, not 1-for-1", () => {
     const tweaks = loadRealTweaks();
     const tenWalls = Array.from({ length: 10 }, (_, i) => i);
-    const tenPaths = Array.from({ length: 10 }, (_, i) => i);
     // 10 walls at slot_cost each should read as exactly 1 full slot's worth (0.1 * 10 = 1).
-    expect(totalStructureCount(tweaks, [], [], [], tenWalls, [], [])).toBeCloseTo(10 * tweaks.walls.slot_cost);
-    expect(totalStructureCount(tweaks, [], tenPaths, [], [], [], [])).toBeCloseTo(10 * tweaks.infrastructure_paths.slot_cost);
+    expect(totalStructureCount(tweaks, [], [], tenWalls, [], [])).toBeCloseTo(10 * tweaks.walls.slot_cost);
   });
 });
 

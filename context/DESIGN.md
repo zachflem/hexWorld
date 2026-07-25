@@ -20,7 +20,7 @@ A small group arrives in unfamiliar territory. They settle, and immediately clai
 
 1. **Settle:** Choose where to place your first extraction tiles and any early defenses within your starting territory.
 2. **Extract:** Resource tiles generate food, wood, stone, and steel passively, in real time. Power is supplied by **power stations** (capacity over an area of effect), not stockpiled from extraction.
-3. **Automate:** Build infrastructure paths so resources flow to base without manual collection.
+3. **Automate:** Upgrade extraction (and docks) to unlock implied **couriers** that haul local stockpiles to base; steel uses **Scrappers** via scrap stashes and a Scrap Yard (Milestone 26).
 4. **Fortify:** Place towers and walls — strategically, since build slots are capped and you can never fully wall off.
 5. **Expand:** Scout and attack tiles beyond your starting territory with militia, following clues toward zombie dens and the hidden lab.
 6. **Confront:** Follow clues to the hidden lab and secure it to win; assault dens along the way for outposts, army strength, and guaranteed clues — or lose your base to a horde.
@@ -65,7 +65,7 @@ Each resource has its own **storage cap**, upgraded independently via a tech-tre
 **Power** is not a fifth stockpile resource. **Power stations** (levels 1–4) supply **capacity** over an **area of effect**; both grow with station level. Active stations’ coverage forms a **union**; capacity and draw are a **shared pool** (`powerFactor = capacity / draw`).
 
 - Level/tier **1** structures never need power and do not draw.
-- Level/tier **≥ 2** structures on powered tiles draw load (scaled by level). Outside coverage — or when `powerFactor` falls below the cut-off — they go **offline** (no yield/DPS/path flow/training progress/wall dampening). Between cut-off and full supply they **brown out** (performance scaled by `powerFactor`).
+- Level/tier **≥ 2** structures on powered tiles draw load (scaled by level). Outside coverage — or when `powerFactor` falls below the cut-off — they go **offline** (no yield/DPS/courier progress/training progress/wall dampening). Between cut-off and full supply they **brown out** (performance scaled by `powerFactor`).
 - Hub work (storage upgrades, research, base level-up) does not require a powered base tile. See [Milestone25.md](Milestone25.md) / [issue #70](https://github.com/zachflem/hexWorld/issues/70).
 
 ---
@@ -98,16 +98,15 @@ Extraction tiles generate both passive noise (ongoing, scaled to resource rarity
 
 ## 8. Infrastructure & Automation
 
-**Manual collection is always free and always available** — no path required, the player simply initiates a scout run to a claimed resource tile and it returns with resources. This never goes away; it's the fallback, not a starter-tier mechanic to outgrow.
+**Manual collection is always free and always available** — click a claimed resource structure's collect pin to pull its local stockpile into the shared pool instantly. This never goes away; it's the L1 fallback, not a starter-tier mechanic to outgrow.
 
-**Path tiles automate this**, upgraded through three tiers:
-- **Goat track** — a worn dirt path, "paid for" in food (sustaining whoever walks it) rather than materials.
-- **Stone road** — faster throughput, upgrade cost adds stone.
-- **Highway** — near-instant transport (still bottlenecked by the resource tile's own stockpile cap), upgrade cost adds steel.
+**Couriers automate collection** once a food / wood / stone extraction tile or **dock** reaches **level 2+**. The courier is an *implied* unit (no train/assign UI, no dedicated map sprite for MVP): it loops structure → **main base** → structure. Round-trip travel time reuses expedition route math — Dijkstra path cost over owned∪scouted ground × `expeditions.travel_seconds_per_cost` — so farther or mountain-heavier sites take longer. That distance cost **is** the automation penalty. Level 3 (and later L4/L5) raise production / collection speed rather than inventing a parallel road network.
 
-Paths can be built on any terrain except water, with a throughput penalty for routes crossing mountains. Remote outposts and bidirectional flow (base *supplying* far-flung structures) are explicitly out of scope for this build — resources only ever flow inward, tile → base.
+**There are no infrastructure path tiles** (goat track / stone road / highway are removed). A hex still holds at most one structure — extraction, tower, wall, barracks, dock, power station, or (Milestone 26) Scrap Yard — never a combination.
 
-**A tile can hold a path or an extraction tile, never both** (the same one-purpose-per-tile rule as towers/walls, §10) — a path runs *adjacent to* the resource tiles it serves, not on top of them. A resource tile auto-flows if a path chain reaches a tile next to it, or if it sits in a contiguous run of same-resource tiles where at least one neighbor has that adjacency — resources hand off tile-to-tile through the cluster to whichever one touches the road.
+**Steel** does not use land extraction tiles. World-gen **scrap stashes** are hauled by a visible **Scrapper** into a **Scrap Yard**; an implied yard courier then moves steel into the shared pool (same travel timing as resource couriers). Details: [Milestone26.md](Milestone26.md), [ScrapperEconomy.md](ScrapperEconomy.md).
+
+Remote outposts as alternate courier destinations and bidirectional flow (base *supplying* far-flung structures) stay out of scope for MVP — resources only ever flow inward, structure → base.
 
 ---
 
@@ -127,7 +126,7 @@ The base is a **hub, not a combat unit** — storage, tech tree, and the seat of
 Combat against hordes is **fully deterministic** — no luck/RNG rolls (unlike the abandoned PvP design this project pivoted away from).
 
 - **Towers** deal damage at range, every tick a horde remains within reach. Damage output scales with tower level; range extends by one tile per level, plus a flat offset from the tower's build-tile terrain (mountain longer, forest shorter, grassland/shore unchanged — see `towers.range_terrain_offset`).
-- **Walls** (wood → rock → steel, an upgrade path rather than separate structures) absorb horde damage via durability rather than fighting back. A tile can hold at most one structure of any kind — a tower, a wall, an extraction tile, a path, a barracks, a dock, or a **power station**, never a combination — but a tower's range can cover a wall (or anything else) on a neighboring tile.
+- **Walls** (wood → rock → steel, an upgrade path rather than separate structures) absorb horde damage via durability rather than fighting back. A tile can hold at most one structure of any kind — a tower, a wall, an extraction tile, a barracks, a dock, or a **power station**, never a combination — but a tower's range can cover a wall (or anything else) on a neighboring tile.
 - **No tile can host unlimited defense** — the build slot cap forces players to choose which approaches to fortify and which to leave exposed.
 - **Walls can only be repaired during peacetime**, at a cost proportional to damage taken (and inclusive of every tier below the wall's current one), and repairing generates its own noise.
 - **Demolishing** any structure returns a fixed percentage of everything ever spent on it (build + all upgrades) — deterministic, no luck involved.
@@ -147,7 +146,7 @@ Watchtowers are built on owned map tiles and level up through twelve tiers, alte
 
 ## 12. Noise & Horde Mechanics
 
-Noise is the central tension mechanic. Your standing structures set an **ambient noise floor** — a steady-state level your current base settles at, scaling with how many structures you have and their tier (a small food plot is quiet foraging; a large one is a loud, constant factory farm — the same curve applies to paths, from a goat track's footsteps up to a highway's constant traffic). Building or upgrading something spikes noise sharply above that floor, then it rolls back down to the (now slightly higher, since you just added a structure) floor over roughly a couple of minutes.
+Noise is the central tension mechanic. Your standing structures set an **ambient noise floor** — a steady-state level your current base settles at, scaling with how many structures you have and their tier (a small food plot is quiet foraging; a large one is a loud, constant factory farm). Building or upgrading something spikes noise sharply above that floor, then it rolls back down to the (now slightly higher, since you just added a structure) floor over roughly a couple of minutes.
 
 Noise never fully goes silent once you have any standing structures — it settles at your floor, not at zero. "Going silent" means sitting at that floor rather than actively spiking it further, not eliminating your footprint entirely.
 
@@ -170,7 +169,7 @@ Dens are fixed map tiles (not roaming threats), seeded once at world-gen at a ra
 A successfully held den **converts into a player-usable Outpost** (`engine/outposts.ts`) — a second, independent economic and defensive hub:
 - **Starting strength scales with the den's level**, not a flat baseline: `reinforcementLevel = max(0, denLevel - 1)`, so a tougher den handed a stronger foothold — clearing a high-level den can start a player above their own base's current reinforcement ceiling, a deliberate reward for the conquest (only *further* upgrades are capped by base level, via `maxOutpostReinforcementLevel`).
 - **Reinforcement HP track**, upgradable/repairable the same shape as the main base's (`outpostReinforcementHp` / upgrade / repair), paid from the **shared stockpile** (same pool as the main base).
-- **Shared resource economy** — extraction tiles path-connected to an outpost auto-flow into the **same global stockpile** as tiles connected to the main base; base wins when a tile could reach both (`engine/tick.ts`). An outpost is an alternate hub entry point, not a second economy.
+- **Shared resource economy** — couriers deliver into the **same global stockpile** whether the structure sits near the main base or an outpost foothold; MVP courier destination is the main base ([ScrapperEconomy.md](ScrapperEconomy.md) Q67). An outpost is an alternate defensive/economic hub, not a second resource pool.
 - **A horde overrunning an outpost does not end the game** — unlike the main base, it instead reverts the outpost back to a hostile den (`revertOutpostToDen`, one level below its original — a real setback, but not harder to re-clear than the original siege), which has to be sieged again from scratch. Every live outpost is a defended "hub" exactly like the main base for horde combat purposes (`engine/hordes.ts`'s `HordeHub`), but hordes still only ever *path* toward the main base — an outpost only takes damage if it happens to sit on that route, not because hordes actively hunt it.
 
 **The hidden lab** sits on a single fixed tile somewhere on the map, guarded by a permanently stationed (non-horde) defender tougher than anything else encountered. Its location isn't found through plain scouting — watchtowers and scouting occasionally surface **rumors/clues** narrowing down its general whereabouts.
@@ -230,6 +229,6 @@ Both wandering units use the same movement rule: step to a random adjacent tile 
 - **Save files, not accounts** — IndexedDB holds the active session for crash/continue convenience, but the real save/load mechanism is an old-school, explicit save-to-file / load-from-file flow (Settings; also load from the continue prompt and onboarding cover). Files are plain JSON (`format: "hexworld-save"`, versioned envelope in `src/data/gamePersistence.ts`), human-editable, and untrusted by design — single-player game, so if someone wants to hand-edit their save, that's entirely their call.
 - **Procedural seed** determines the entire map at generation time — same seed reproduces the same world.
 - **Tweaks-file driven balance** — nearly every numeric value lives in per-profile `tweaks.jsonc` files under `public/profiles/{slug}/`, loaded from the URL slug or onboarding selection, validated at boot with Zod (`src/data/tweaksSchema.ts`).
-- **Difficulty profiles** — `public/profiles/index.json` registers shipped profiles (`default`, `hard`, …). Each folder contains `tweaks.jsonc` plus optional `assets/` (partial sprite overrides). Default art lives in `public/profiles/default/assets/` (`terrain/`, `structures/`, `resources/`, `units/`, `markers/`). Asset resolution: active profile → default profile → flat-colour fallback (`src/render/assetPaths.ts`). Structure icons also try level/tier variants before the unlevelled name ([issue #67](https://github.com/zachflem/hexWorld/issues/67) / [Milestone24.md](Milestone24.md)). `profileSlug` is persisted in IndexedDB with the save. Default terrain tiles were replaced under legacy #P12 (flat-hex sources → 256×384 via `scripts/convert-flat-terrain-hex.py`). **Still planned:** Scrappers + Couriers replacing path automation ([Milestone26.md](Milestone26.md) / [issue #36](https://github.com/zachflem/hexWorld/issues/36); design Q&A in [ScrapperEconomy.md](ScrapperEconomy.md)).
+- **Difficulty profiles** — `public/profiles/index.json` registers shipped profiles (`default`, `hard`, …). Each folder contains `tweaks.jsonc` plus optional `assets/` (partial sprite overrides). Default art lives in `public/profiles/default/assets/` (`terrain/`, `structures/`, `resources/`, `units/`, `markers/`). Asset resolution: active profile → default profile → flat-colour fallback (`src/render/assetPaths.ts`). Structure icons also try level/tier variants before the unlevelled name ([issue #67](https://github.com/zachflem/hexWorld/issues/67) / [Milestone24.md](Milestone24.md)). `profileSlug` is persisted in IndexedDB with the save. Default terrain tiles were replaced under legacy #P12 (flat-hex sources → 256×384 via `scripts/convert-flat-terrain-hex.py`). **In progress (Milestone 26):** Couriers ship for L2+ resource delivery; path tiles removed. Scrappers + Scrap Yard + steel-extraction removal still open ([Milestone26.md](Milestone26.md) / [issue #36](https://github.com/zachflem/hexWorld/issues/36); design Q&A in [ScrapperEconomy.md](ScrapperEconomy.md)).
 - **Domain split (planned deploy)** — marketing/wiki at `hexworld.seezed.net`; game PWA at `play.{domain}` with `/{slug}` deep links. Git workflow: personal branches `goblin` / `krunchee` → `dev` → `main` (`context/WORKFLOW.md`).
 

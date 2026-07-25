@@ -21,7 +21,6 @@ import { maxWallDurability } from "../engine/walls";
 import { outpostReinforcementHp } from "../engine/outposts";
 import { powerStationAoeRadius } from "../engine/power";
 import type { ExtractionTile } from "../data/extractionTiles";
-import type { PathTier, PathTile } from "../data/pathTiles";
 import type { PowerStation } from "../data/powerStations";
 import type { ResourceType } from "../data/resources";
 import type { Tower } from "../data/towers";
@@ -43,7 +42,6 @@ import {
   drawHexTileOverlay,
   drawHexTileTexture,
   drawImageAtWidth,
-  getPathTileTexture,
   getResourceTexture,
   getStructureIconTexture,
   getStructureIconTextureCandidates,
@@ -195,19 +193,6 @@ const RESOURCE_MARKER_COLORS: Record<ResourceType, string> = {
 const POWER_STATION_COLOR = "#f2f2f2";
 const POWER_AOE_TINT_SELECTED = "rgba(255, 220, 80, 0.18)";
 
-const PATH_TIER_COLORS: Record<PathTier, string> = {
-  goat_track: "#a67c52",
-  stone_road: "#d9d9d9",
-  highway: "#ffdd55",
-};
-
-/** getPathTileTexture names for each path tier's sprite (tiles/structures/path-{track,stone,highway}.png) — falls back to PATH_TIER_COLORS's flat fill until/unless a given sprite is missing. Exported so UI can reuse the same sprite for path build/upgrade actions. */
-export const PATH_TIER_ICON_NAMES: Record<PathTier, string> = {
-  goat_track: "path-track",
-  stone_road: "path-stone",
-  highway: "path-highway",
-};
-
 /** getStructureIconTexture names for each wall tier's sprite (tiles/structures/wall-{small,medium,large}.png) — falls back to WALL_TIER_COLORS's flat dot until/unless a given sprite is missing. Exported so UI can reuse the same sprite for wall build/upgrade actions. */
 export const WALL_TIER_ICON_NAMES: Record<WallTier, string> = {
   wood: "wall-small",
@@ -285,7 +270,6 @@ export const HexCanvas = forwardRef<
     base: Axial;
     owned: Axial[];
     extractionTiles: ExtractionTile[];
-    pathTiles: PathTile[];
     towers: Tower[];
     walls: Wall[];
     barracksList: Barracks[];
@@ -375,7 +359,6 @@ export const HexCanvas = forwardRef<
     base,
     owned,
     extractionTiles,
-    pathTiles,
     towers,
     walls,
     barracksList,
@@ -415,11 +398,6 @@ export const HexCanvas = forwardRef<
     for (const tile of extractionTiles) map.set(axialKey(tile.coord), tile);
     return map;
   }, [extractionTiles]);
-  const pathTilesByKey = useMemo(() => {
-    const map = new Map<string, PathTile>();
-    for (const tile of pathTiles) map.set(axialKey(tile.coord), tile);
-    return map;
-  }, [pathTiles]);
   const towersByKey = useMemo(() => {
     const map = new Map<string, Tower>();
     for (const tower of towers) map.set(axialKey(tower.coord), tower);
@@ -911,24 +889,11 @@ export const HexCanvas = forwardRef<
             drawHexTileOverlay(ctx, terrainImg, screenCenter.x, screenCenter.y - size, size * sqrt3, size * 2);
           }
 
-          // A path tile covers the whole tile (it's not a decoration on top
-          // of the terrain), so it fully replaces the terrain fill here
-          // rather than just outlining it.
-          const pathTile = pathTilesByKey.get(axialKey(coord));
-          if (pathTile) {
-            ctx.fillStyle = PATH_TIER_COLORS[pathTile.tier];
-            ctx.fill();
-            const pathImg = getPathTileTexture(PATH_TIER_ICON_NAMES[pathTile.tier]);
-            if (pathImg) {
-              drawHexTileTexture(ctx, pathImg, screenCenter.x, screenCenter.y, size * sqrt3, size * 2);
-              drawHexTileOverlay(ctx, pathImg, screenCenter.x, screenCenter.y - size, size * sqrt3, size * 2);
-            }
-          }
         }
       }
 
       // Pass 2: fog/tints → selection ring → structures → markers.
-      // Drawn after the whole terrain/path layer so fog tint and the
+      // Drawn after the whole terrain layer so fog tint and the
       // hidden-tile fill always paint over any texture bleed from pass 1;
       // selection is intentionally under structure sprites.
       for (let r = Math.max(0, rMin); r <= Math.min(gridSize - 1, rMax); r++) {
@@ -1053,7 +1018,6 @@ export const HexCanvas = forwardRef<
             const den = densByKey.get(axialKey(coord));
             const outpost = outpostsByKey.get(axialKey(coord));
             const dock = docksByKey.get(axialKey(coord));
-            const pathTile = pathTilesByKey.get(axialKey(coord));
 
             if (outpost) {
               const outpostIcon = getStructureIconTexture("outpost");
@@ -1252,14 +1216,6 @@ export const HexCanvas = forwardRef<
                   upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
                 );
               }
-            } else if (pathTile && pathTile.buildStartedAt) {
-              // Path tiles otherwise have no persistent icon (just the tier
-              // color fill in pass 1) — this only ever fires while under
-              // construction, falling through to no marker at all once built.
-              const constructionIcon = getStructureIconTexture("construction");
-              if (constructionIcon) {
-                drawPlacedStructureIcon(ctx, constructionIcon, screenCenter.x, screenCenter.y, size, "construction");
-              }
             } else if (dock) {
               const level = dock.level ?? (dock.fishingBoat ? 3 : 1);
               const dockStem = level >= 3 || dock.fishingBoat ? "dock-boat" : `dock-${level}`;
@@ -1294,7 +1250,7 @@ export const HexCanvas = forwardRef<
             // isn't working right now" reads at a glance, not just from the
             // tile popup's text. Docks are immune to horde capture, so
             // they're deliberately excluded here.
-            if (tower?.damaged || wall?.damaged || barracks?.damaged || tile?.damaged || pathTile?.damaged) {
+            if (tower?.damaged || wall?.damaged || barracks?.damaged || tile?.damaged || powerStation?.damaged) {
               ctx.font = `${Math.max(10, size * 0.55)}px sans-serif`;
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
@@ -1552,7 +1508,6 @@ export const HexCanvas = forwardRef<
     zoom,
     pan,
     tilesByKey,
-    pathTilesByKey,
     towersByKey,
     wallsByKey,
     barracksByKey,

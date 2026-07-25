@@ -19,7 +19,6 @@ function minimalSnapshot(overrides: Partial<PersistableGameSnapshot> = {}): Pers
     resources: { food: 10, wood: 20, stone: 30, steel: 0 },
     clock: { lastTickAt: 1_000, virtualNow: 1_000 },
     extractionTiles: [],
-    pathTiles: [],
     towers: [],
     walls: [],
     barracksList: [],

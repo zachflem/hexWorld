@@ -52,7 +52,7 @@ describe("power stations", () => {
     expect(powerFactor(20, 40)).toBe(0.5);
     expect(powerFactor(5, 40)).toBeCloseTo(0.125);
 
-    const network = computePowerNetwork(tweaks, [station({ q: 0, r: 0 }, 1)], [], [], [], [], [], []);
+    const network = computePowerNetwork(tweaks, [station({ q: 0, r: 0 }, 1)], [], [], [], [], []);
     expect(network.totalCapacity).toBe(tweaks.power.capacity_base);
     expect(network.poweredTiles.has("0,0")).toBe(true);
     expect(structurePowerState(network, 1, { q: 0, r: 0 })).toBe("exempt");
@@ -62,7 +62,7 @@ describe("power stations", () => {
 
   it("inactive stations contribute neither capacity nor AoE", () => {
     const damaged = { ...station({ q: 0, r: 0 }, 4), damaged: true };
-    const network = computePowerNetwork(tweaks, [damaged], [], [], [], [], [], []);
+    const network = computePowerNetwork(tweaks, [damaged], [], [], [], [], []);
     expect(network.totalCapacity).toBe(0);
     expect(network.poweredTiles.size).toBe(0);
   });

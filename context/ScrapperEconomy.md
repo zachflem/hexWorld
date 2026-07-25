@@ -384,11 +384,15 @@ Linear progression L1→L5; exact speed/capacity numbers and upgrade costs in tw
 
 **Decision:** **Scrap Yard** — player-facing name for the structure that replaces steel extraction tiles.
 
+### Q70 — Stash map art
+
+**Decision:** Known scrap-stash hexes draw a **resource-marker overlay** like food/wood/stone/steel pins — art lives in the same folder as those sprites (`public/profiles/{slug}/assets/resources/`). Use the pack’s **`scrap-#.png`** variants (`scrap-1.png`, `scrap-2.png`, …); pick **one variant per stash at world-gen**, seeded so the same seed + map size always gets the same art index (not a live random flicker). Missing higher numbers simply aren’t in the roll set — discover files or a fixed list at load time. Depleted stashes follow Q11/Q26 (ring off / hex freed); sprite treatment for empty may hide or stay until the hex is freed — match resource-pin fade conventions when implementing.
+
 ---
 
 ## Open questions / remaining work
 
-**Design Q&A complete (Q1–Q69).** Remaining:
+**Design Q&A complete (Q1–Q70).** Remaining:
 
 - **Tweaks tuning** — stash counts/weights, pool formulas, yard L4/L5 costs, banded hint copy, Scrapper speed/capacity, resource L2/L3 (and future L4/L5) costs and multipliers, courier load size / trip cadence.
 - **Impl** — see [Milestone26.md](Milestone26.md) checklist (not design-blocked).

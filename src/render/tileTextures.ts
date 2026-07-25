@@ -80,15 +80,6 @@ export function getStructureIconTextureCandidates(names: string[]): HTMLImageEle
   return loadWithFallbacks(`structures/${cacheKey}`, structureAssetUrlCandidates(names, assetUrlCandidates));
 }
 
-/**
- * Full-hex tile art for a path tier — same footprint/overlay convention as
- * `getTerrainTexture` (a path tile fully replaces the terrain fill rather
- * than sitting as a small overlay on top of it). `name` matches the PNG's
- * filename under profiles/{slug}/assets/structures/ (e.g. "path-stone" -> path-stone.png).
- */
-export function getPathTileTexture(name: string): HTMLImageElement | null {
-  return loadCategory("structures", `${name}-full`, `${name}.png`);
-}
 
 /**
  * Mobile-entity marker icon (expedition, horde, scout skiff, wandering

@@ -16,12 +16,6 @@ const extractionResourceSchema = z.object({
   noise_upgrade: z.number(),
 });
 
-const infrastructureUpgradeTierSchema = z.object({
-  upgrade_cost_base: resourceCostMap,
-  upgrade_cost_scaling: z.string(),
-  upgrade_resources: z.array(z.string()),
-});
-
 /** One multiplier per TerrainType (engine/terrain.ts) — used by extraction_tiles.terrain_yield_multiplier below. */
 const terrainYieldMultiplierSchema = z.object({
   water: z.number(),
@@ -103,7 +97,6 @@ export const tweaksSchema = z.object({
     upgrade_time_minutes_base: z.number(),
     draw_base: z.object({
       extraction: z.number(),
-      path: z.number(),
       tower: z.number(),
       wall: z.number(),
       barracks: z.number(),
@@ -262,36 +255,6 @@ export const tweaksSchema = z.object({
     _note: z.string(),
   }),
 
-  infrastructure_paths: z.object({
-    tiers: z.array(z.string()),
-    _note: z.string(),
-    upgrade_time_minutes_base: z.number(),
-    _upgrade_time_note: z.string(),
-    slot_cost: z.number(),
-    _slot_cost_note: z.string(),
-    goat_track: z.object({
-      build_cost_base: resourceCostMap,
-      build_cost_scaling: z.string(),
-      build_time_minutes: z.number(),
-      _build_time_note: z.string(),
-      noise_build: z.number(),
-    }),
-    stone_road: infrastructureUpgradeTierSchema,
-    highway: infrastructureUpgradeTierSchema,
-    terrain_rules: z.object({
-      buildable_on: z.array(z.string()),
-      blocked_on: z.array(z.string()),
-      mountain_throughput_penalty_pct: z.number(),
-    }),
-    transport: z.object({
-      _status: z.string(),
-      goat_track_rate_multiplier: z.number(),
-      stone_road_rate_multiplier: z.number(),
-      highway_rate_multiplier: z.number(),
-      _highway_note: z.string(),
-    }),
-  }),
-
   storage: z.object({
     capacity_base_per_resource: z.number(),
     capacity_scaling: z.string(),
@@ -394,13 +357,6 @@ export const tweaksSchema = z.object({
       .catchall(z.string()),
     extraction_tier_noise_multiplier: z.number(),
     _extraction_tier_noise_note: z.string(),
-    path_noise_floor: z
-      .object({
-        goat_track: z.number(),
-        stone_road: z.number(),
-        highway: z.number(),
-      })
-      .catchall(z.string()),
     passive_watch_noise_floor: z
       .object({
         tower_per_level: z.number(),

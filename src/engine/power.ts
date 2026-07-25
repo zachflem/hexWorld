@@ -1,7 +1,6 @@
 import type { Barracks } from "../data/barracks";
 import type { DockRecord } from "../data/docks";
 import type { ExtractionTile } from "../data/extractionTiles";
-import type { PathTile } from "../data/pathTiles";
 import { MAX_POWER_STATION_LEVEL, type PowerStation } from "../data/powerStations";
 import type { ResourceType } from "../data/resources";
 import type { Tower } from "../data/towers";
@@ -9,11 +8,10 @@ import type { Tweaks } from "../data/tweaksSchema";
 import type { Wall } from "../data/walls";
 import { formulaACost, formulaBCost, isStructureActive } from "./formulas";
 import { axialKey, axialSpiral, type Axial } from "./hexCoords";
-import { PATH_TIER_LEVEL } from "./paths";
 import { extractionTierLevel } from "./tiers";
 import { WALL_TIER_LEVEL } from "./walls";
 
-export type PowerConsumerKind = "extraction" | "path" | "tower" | "wall" | "barracks" | "dock";
+export type PowerConsumerKind = "extraction" | "tower" | "wall" | "barracks" | "dock";
 
 export type StructurePowerState = "exempt" | "full" | "degraded" | "offline";
 
@@ -99,7 +97,6 @@ export function totalPowerDraw(
   tweaks: Tweaks,
   powered: Set<string>,
   extractionTiles: ExtractionTile[],
-  pathTiles: PathTile[],
   towers: Tower[],
   walls: Wall[],
   barracksList: Barracks[],
@@ -112,12 +109,6 @@ export function totalPowerDraw(
     const level = extractionTierLevel(tile.tier);
     if (level < 2 || !powered.has(axialKey(tile.coord))) continue;
     draw += consumerDraw(tweaks, "extraction", level);
-  }
-  for (const tile of pathTiles) {
-    if (!isStructureActive(tile)) continue;
-    const level = PATH_TIER_LEVEL[tile.tier];
-    if (level < 2 || !powered.has(axialKey(tile.coord))) continue;
-    draw += consumerDraw(tweaks, "path", level);
   }
   for (const tower of towers) {
     if (!isStructureActive(tower)) continue;
@@ -149,7 +140,6 @@ export function computePowerNetwork(
   tweaks: Tweaks,
   stations: PowerStation[],
   extractionTiles: ExtractionTile[],
-  pathTiles: PathTile[],
   towers: Tower[],
   walls: Wall[],
   barracksList: Barracks[],
@@ -157,7 +147,7 @@ export function computePowerNetwork(
 ): PowerNetworkSnapshot {
   const powered = poweredTiles(stations, tweaks);
   const capacity = totalPowerCapacity(stations, tweaks);
-  const draw = totalPowerDraw(tweaks, powered, extractionTiles, pathTiles, towers, walls, barracksList, docks);
+  const draw = totalPowerDraw(tweaks, powered, extractionTiles, towers, walls, barracksList, docks);
   const cutoff = tweaks.power.cutoff_factor;
   return {
     poweredTiles: powered,

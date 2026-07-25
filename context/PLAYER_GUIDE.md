@@ -76,15 +76,10 @@ Build one on suitable land (never on water) to generate a resource passively. Ea
 Building extraction tiles gets progressively more expensive the more of that type you already have (your 2nd food tile costs more than your 1st, and so on).
 
 **Collecting resources:**
-- **Manual collection** is always free and always available — click the tile and collect its local stockpile by hand.
-- **Infrastructure paths** automate this. Build a path adjacent to a resource tile (or a connected cluster of the same resource) to have it auto-flow to base storage every tick, no clicking required. Paths come in three tiers:
-  - **Goat track** — cheap, slow, paid for in food rather than materials.
-  - **Stone road** — faster throughput.
-  - **Highway** — near-instant transport.
-  
-  Paths can cross any terrain except water, with a throughput penalty over mountains.
+- **Manual collection** is always free and always available — click the tile's collect pin and pull its local stockpile into storage by hand.
+- **Couriers** automate this once the structure is upgraded to **level 2+**. An implied courier hauls between the structure and your main base; travel time scales with route difficulty (farther / mountain-heavier sites take longer). Level 3 raises production. There are **no road / path tiles** to build.
 
-A tile can only hold one thing at a time — an extraction tile, a path, a tower, a wall, a barracks, a dock, or a power station — never a combination.
+A tile can only hold one thing at a time — an extraction tile, a tower, a wall, a barracks, a dock, or a power station — never a combination.
 
 ---
 
@@ -139,10 +134,9 @@ Towers also **passively claim territory** just by existing — every tile within
 
 ## Docks & the water
 
-Water tiles can't host normal extraction tiles, paths, or defenses — but you can build a **Dock** on any water tile bordering land (as long as you own or have scouted that water tile). A dock generates food automatically (about 70% the rate of a standard food extraction tile) and deposits straight to base storage every tick — no path connection needed.
+Water tiles can't host normal extraction tiles or defenses — but you can build a **Dock** on any water tile bordering land (as long as you own or have scouted that water tile). A dock generates food (about 70% the rate of a standard food extraction tile). At **level 1** you collect manually; **level 2** unlocks an implied courier to base (same model as land extraction); **level 3** is the production upgrade (replaces the old standalone fishing-boat build).
 
-Two upgrades, per dock:
-- **Fishing Boat** — a one-time build that boosts that dock's food output by 50%. Shows a little boat icon once built.
+Per dock:
 - **Scout Skiff** — a mobile unit (max 1 per dock) that wanders its connected body of water forever, revealing every tile it drifts past — the water equivalent of the Wandering Scout.
 
 Docks can't be captured by hordes (hordes can't cross water), so they're a low-risk, if modest, income source.

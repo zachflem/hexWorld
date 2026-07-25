@@ -1,8 +1,8 @@
 # Milestone 26 — Scrappers & Couriers (replace paths)
 
 **GitHub:** [issue #36](https://github.com/zachflem/hexWorld/issues/36) · [milestone M26](https://github.com/zachflem/hexWorld/milestone/25)  
-**Status:** Implementation started on `goblin` (#36 ACTIVE) — courier core + path auto-flow retired; path-tile deletion, Scrap Yard/Scrapper, dock L2 upgrade UI still open  
-**Design Q&A:** [ScrapperEconomy.md](ScrapperEconomy.md) (Q1–Q69)
+**Status:** Implementation in progress on `goblin` (#36 ACTIVE) — courier core + path auto-flow retired; **path tiles stripped** (code, assets, tweaks, docs); Scrap Yard / Scrapper + steel extraction removal still open 
+**Design Q&A:** [ScrapperEconomy.md](ScrapperEconomy.md) (Q1–Q70)
 
 Replace **infrastructure path tiles** and **passive steel extraction** with two logistics roles:
 
@@ -54,6 +54,7 @@ flowchart LR
 - Placement via shared feature placer (`featurePlacement.ts` — salt reserved for #36).
 - Discovery: wandering scout **or** tower intel (Q4); grey ring when known (Q9).
 - Reserved hex while steel remains (Q26).
+- **Map art (Q70):** resource-marker overlay from `profiles/*/assets/resources/scrap-#.png` (same folder as `food.png` / `wood.png` / …). Default pack already has `scrap-1.png`…`scrap-3.png`. Assign a **seeded random variant index per stash** at world-gen (stable across reloads); draw via the same path as other resource pins (`getResourceTexture` family / HexCanvas resource pass).
 
 ### Scrap Yard + Scrapper
 
@@ -125,11 +126,11 @@ Milestone 26 player model: **L1 manual / L2 courier / L3 production** (then futu
 
 ## Impl checklist (brief)
 
-- [ ] World-gen scrap stashes + discovery/UI (grey ring, remaining steel, banded hints if minor lift — Q54)
+- [ ] World-gen scrap stashes + discovery/UI (grey ring, remaining steel, banded hints if minor lift — Q54) + seeded `scrap-#` marker art (Q70)
 - [ ] Scrap Yard structure + Scrapper unit record, sprite, yard↔stash loop, Auto L3+
 - [ ] Yard stockpile + collect pin + **yard courier** to base
 - [ ] Resource L1–L3 upgrade track (food/wood/stone/dock); courier travel via `travel_seconds_per_cost`
-- [ ] Remove path tiles end-to-end (table above)
+- [x] Remove path tiles end-to-end (table above)
 - [ ] Remove steel extraction build / gate new games
 - [ ] Expedition mid-route parity with Scrapper redirect/recall (Q39–Q46)
 - [ ] Tweaks pass + early steel cost balance (Q1 follow-up)
@@ -140,6 +141,7 @@ Milestone 26 player model: **L1 manual / L2 courier / L3 production** (then futu
 - Routing / duration: `findExpeditionPath`, `expeditionTravelDurationMs`, `expeditionPathIndexAt`
 - Corridor claim: `stepCorridorWalk` / free-claim mode
 - Map sprites: wandering scout step presentation; expedition marker interpolation in `HexCanvas.tsx`
+- Stash markers: `resources/scrap-#.png` beside other resource pins (`tileTextures.ts` / HexCanvas resource draw)
 - Collect pins: `CollectPinOverlay` / `collectPinColorState`
 - Feature placement salts: dens/lab + `featurePlacement.ts`
 

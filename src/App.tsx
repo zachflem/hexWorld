@@ -29,7 +29,6 @@ import { BASE_DB_KEY, initialBase, type BaseActionInProgress, type BaseRecord, t
 import { RESOURCES_DB_KEY, initialResourceAmounts, type ResourceAmounts } from "./data/resources";
 import { CLOCK_DB_KEY, type ClockRecord } from "./data/clock";
 import { EXTRACTION_TILES_DB_KEY, type ExtractionTile } from "./data/extractionTiles";
-import { PATH_TILES_DB_KEY, type PathTile } from "./data/pathTiles";
 import {
   STORAGE_LEVELS_DB_KEY,
   initialStorageLevels,
@@ -123,7 +122,6 @@ import {
 import { extractionTileBuildDurationMs, nextTier, tierUpgradeCost, tierUpgradeDurationMs } from "./engine/tiers";
 import { storageCapacity, storageUpgradeCost, storageUpgradeDurationMs } from "./engine/storage";
 import { isResearchAvailable, isResearchBusy, researchCost, researchDurationMs, troopSpeedMultiplier, unlockedSpeedRates } from "./engine/research";
-import { nextPathTier, pathBuildCost, pathBuildDurationMs, pathUpgradeCost, pathUpgradeDurationMs } from "./engine/paths";
 import { isBuildableLand, isTransitionTile, terrainAt } from "./engine/terrain";
 import { accrueNoise, addActionNoise } from "./engine/noiseMeter";
 import {
@@ -233,7 +231,6 @@ interface GameState {
   resources: ResourceAmounts;
   clock: ClockRecord;
   extractionTiles: ExtractionTile[];
-  pathTiles: PathTile[];
   towers: Tower[];
   walls: Wall[];
   barracksList: Barracks[];
@@ -359,7 +356,6 @@ function buildGameState(
     resources: ResourceAmounts;
     clock: ClockRecord;
     extractionTiles: ExtractionTile[] | undefined;
-    pathTiles: PathTile[] | undefined;
     towers: Tower[] | undefined;
     walls: Wall[] | undefined;
     barracksList: Barracks[] | undefined;
@@ -397,14 +393,12 @@ function buildGameState(
     storageLevels: data.storageLevels,
     extractionTiles: data.extractionTiles ?? [],
     powerStations: data.powerStations ?? [],
-    pathTiles: data.pathTiles ?? [],
     towers: data.towers ?? [],
     walls: data.walls ?? [],
     barracksList: migrated.barracksList,
     docks: data.docks ?? [],
   });
   const extractionTiles = migratedPower.extractionTiles;
-  const pathTiles = (migratedPower.pathTiles ?? []) as PathTile[];
   const towers = (migratedPower.towers ?? []) as Tower[];
   const walls = (migratedPower.walls ?? []) as Wall[];
   const barracksList = (migratedPower.barracksList ?? []) as Barracks[];
@@ -414,7 +408,6 @@ function buildGameState(
   // any damaged structure implies the tile was held/known — keep it scouted.
   const scoutedTiles = preserveCapturedTilesAsScouted(data.scoutedTiles ?? [], [
     ...extractionTiles,
-    ...pathTiles,
     ...towers,
     ...walls,
     ...barracksList,
@@ -430,7 +423,6 @@ function buildGameState(
     resources: migratedPower.resources,
     clock: { ...data.clock, virtualNow: data.clock.virtualNow ?? data.clock.lastTickAt },
     extractionTiles,
-    pathTiles,
     towers,
     walls,
     barracksList,
@@ -507,7 +499,7 @@ function resolveDamageRepair<T extends { damaged: boolean; damageRepair?: { star
  * Clears `buildStartedAt` once a structure's construction timer completes —
  * shared by all 5 structure kinds (extraction tile, path, tower, wall,
  * barracks), each of which pays its own flat build_time_minutes duration
- * (engine/tiers.ts, engine/paths.ts, engine/towers.ts, engine/walls.ts,
+ * (engine/tiers.ts, engine/towers.ts, engine/walls.ts,
  * engine/barracks.ts) — passed in already-resolved since it's a flat
  * per-kind value, not derived from the structure itself the way
  * resolveDamageRepair's duration is.
@@ -522,12 +514,11 @@ function resolveConstruction<T extends { buildStartedAt?: number | null }>(
   return { ...structure, buildStartedAt: null };
 }
 
-/** Every owned tile can hold at most one structure of any kind (extraction, path, tower, wall, barracks, or dock). */
+/** Every owned tile can hold at most one structure of any kind (extraction, tower, wall, barracks, dock, or power station). */
 function isHexOccupied(game: GameState, coord: Axial): boolean {
   const key = axialKey(coord);
   return (
     game.extractionTiles.some((t) => axialKey(t.coord) === key) ||
-    game.pathTiles.some((t) => axialKey(t.coord) === key) ||
     game.towers.some((t) => axialKey(t.coord) === key) ||
     game.walls.some((t) => axialKey(t.coord) === key) ||
     game.barracksList.some((t) => axialKey(t.coord) === key) ||
@@ -621,7 +612,6 @@ export default function App() {
           resources,
           clock,
           extractionTiles,
-          pathTiles,
           towers,
           walls,
           barracksList,
@@ -657,7 +647,6 @@ export default function App() {
           get<ResourceAmounts>(RESOURCES_DB_KEY),
           get<ClockRecord>(CLOCK_DB_KEY),
           get<ExtractionTile[]>(EXTRACTION_TILES_DB_KEY),
-          get<PathTile[]>(PATH_TILES_DB_KEY),
           get<Tower[]>(TOWERS_DB_KEY),
           get<Wall[]>(WALLS_DB_KEY),
           get<Barracks[]>(BARRACKS_DB_KEY),
@@ -699,7 +688,6 @@ export default function App() {
             resources,
             clock,
             extractionTiles,
-            pathTiles,
             towers,
             walls,
             barracksList,
@@ -781,7 +769,6 @@ export default function App() {
         current.tweaks,
         current.game.powerStations,
         current.game.extractionTiles,
-        current.game.pathTiles,
         current.game.towers,
         current.game.walls,
         current.game.barracksList,
@@ -853,7 +840,6 @@ export default function App() {
         value: accrueNoise(
           current.tweaks,
           current.game.extractionTiles,
-          current.game.pathTiles,
           current.game.towers,
           current.game.walls,
           current.game.noise.value,
@@ -912,14 +898,6 @@ export default function App() {
         )
         .map((t) => resolveDamageRepair(t, current.tweaks, virtualNow))
         .map((t) => resolveConstruction(t, extractionTileBuildDurationMs(current.tweaks), virtualNow));
-      const pathTiles = current.game.pathTiles
-        .map((t) =>
-          t.upgrade && isTimerComplete(t.upgrade.startedAt, pathUpgradeDurationMs(current.tweaks, t.upgrade.targetTier), virtualNow)
-            ? { ...t, tier: t.upgrade.targetTier, upgrade: null }
-            : t,
-        )
-        .map((t) => resolveDamageRepair(t, current.tweaks, virtualNow))
-        .map((t) => resolveConstruction(t, pathBuildDurationMs(current.tweaks), virtualNow));
       const towers = current.game.towers
         .map((t) =>
           t.upgrade && isTimerComplete(t.upgrade.startedAt, towerUpgradeDurationMs(current.tweaks, t.upgrade.targetLevel), virtualNow)
@@ -1148,7 +1126,6 @@ export default function App() {
         hordesAfterSpawn,
         territoryAfterRelocation,
         extractionTiles,
-        pathTiles,
         towers,
         walls,
         barracksList,
@@ -1190,7 +1167,6 @@ export default function App() {
       const hordeCaptureEvents = hordeStructureCaptureEvents(
         capturedTiles,
         extractionTiles,
-        pathTiles,
         towers,
         walls,
         barracksList,
@@ -1204,7 +1180,6 @@ export default function App() {
         });
       }
       const extractionTilesAfterCapture = markCapturedStructuresDamaged(extractionTiles, capturedTiles);
-      const pathTilesAfterCapture = markCapturedStructuresDamaged(pathTiles, capturedTiles);
       const towersAfterCapture = markCapturedStructuresDamaged(towers, capturedTiles);
       const wallsAfterCapture = markCapturedStructuresDamaged(walls, capturedTiles);
       const barracksListAfterCapture = markCapturedStructuresDamaged(barracksList, capturedTiles);
@@ -1827,7 +1802,6 @@ export default function App() {
       void Promise.all([
         set(RESOURCES_DB_KEY, resourcesAfterExpeditions),
         set(EXTRACTION_TILES_DB_KEY, extractionTilesAfterCapture),
-        set(PATH_TILES_DB_KEY, pathTilesAfterCapture),
         set(TOWERS_DB_KEY, towersAfterCapture),
         set(WALLS_DB_KEY, wallsAfterCapture),
         set(BARRACKS_DB_KEY, barracksListAfterCapture),
@@ -1864,7 +1838,6 @@ export default function App() {
                 ...prev.game,
                 resources: resourcesAfterExpeditions,
                 extractionTiles: extractionTilesAfterCapture,
-                pathTiles: pathTilesAfterCapture,
                 towers: towersAfterCapture,
                 walls: wallsAfterCapture,
                 barracksList: barracksListAfterCapture,
@@ -1937,7 +1910,6 @@ export default function App() {
     const resources = initialResourceAmounts(tweaks);
     const clock: ClockRecord = { lastTickAt: Date.now(), virtualNow: Date.now() };
     const extractionTiles: ExtractionTile[] = [];
-    const pathTiles: PathTile[] = [];
     const towers: Tower[] = [];
     const walls: Wall[] = [];
     const barracksList: Barracks[] = [];
@@ -1972,7 +1944,6 @@ export default function App() {
       set(RESOURCES_DB_KEY, resources),
       set(CLOCK_DB_KEY, clock),
       set(EXTRACTION_TILES_DB_KEY, extractionTiles),
-      set(PATH_TILES_DB_KEY, pathTiles),
       set(TOWERS_DB_KEY, towers),
       set(WALLS_DB_KEY, walls),
       set(BARRACKS_DB_KEY, barracksList),
@@ -2015,7 +1986,6 @@ export default function App() {
           resources,
           clock,
           extractionTiles,
-          pathTiles,
           towers,
           walls,
           barracksList,
@@ -2142,7 +2112,6 @@ export default function App() {
       resources: stored.resources as ResourceAmounts,
       clock: stored.clock as ClockRecord,
       extractionTiles: stored.extractionTiles as ExtractionTile[] | undefined,
-      pathTiles: stored.pathTiles as PathTile[] | undefined,
       towers: stored.towers as Tower[] | undefined,
       walls: stored.walls as Wall[] | undefined,
       barracksList: stored.barracksList as Barracks[] | undefined,
@@ -2268,7 +2237,6 @@ export default function App() {
     const structureCount = totalStructureCount(
       tweaks,
       game.extractionTiles,
-      game.pathTiles,
       game.towers,
       game.walls,
       game.barracksList,
@@ -2482,7 +2450,6 @@ export default function App() {
     const structureCount = totalStructureCount(
       tweaks,
       game.extractionTiles,
-      game.pathTiles,
       game.towers,
       game.walls,
       game.barracksList,
@@ -2689,112 +2656,6 @@ export default function App() {
     return { ok: true };
   }
 
-  async function handleBuildPath(coord: Axial): Promise<BuildResult> {
-    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { tweaks, game } = boot;
-
-    const ownedKeys = new Set(game.territory.owned.map(axialKey));
-    if (!ownedKeys.has(axialKey(coord))) return { ok: false, reason: "Tile not owned" };
-    if (axialKey(coord) === axialKey(game.territory.base)) {
-      return { ok: false, reason: "Cannot build on the base tile" };
-    }
-    if (!isBuildableLand(game.world.seed, coord)) {
-      return { ok: false, reason: "Cannot build a path on water" };
-    }
-    if (isHexOccupied(game, coord)) {
-      return { ok: false, reason: "Tile already has a structure" };
-    }
-    const structureCount = totalStructureCount(
-      tweaks,
-      game.extractionTiles,
-      game.pathTiles,
-      game.towers,
-      game.walls,
-      game.barracksList,
-      game.docks,
-      game.powerStations,
-    );
-    if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
-      return { ok: false, reason: "Build slot cap reached" };
-    }
-
-    const cost = pathBuildCost(tweaks);
-    for (const [key, amount] of Object.entries(cost)) {
-      if (game.resources[key as keyof ResourceAmounts] < amount) {
-        return { ok: false, reason: `Not enough ${key}` };
-      }
-    }
-
-    const resources = { ...game.resources };
-    for (const [key, amount] of Object.entries(cost)) {
-      resources[key as keyof ResourceAmounts] -= amount;
-    }
-    const pathTiles = [
-      ...game.pathTiles,
-      {
-        coord,
-        tier: "goat_track" as const,
-        totalInvested: cost,
-        upgrade: null,
-        buildCost: cost,
-        damaged: false,
-        damageRepair: null,
-        buildStartedAt: game.clock.virtualNow,
-      },
-    ];
-    const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "build_path_tile", game.base.level) };
-
-    await Promise.all([set(RESOURCES_DB_KEY, resources), set(PATH_TILES_DB_KEY, pathTiles), set(NOISE_DB_KEY, noise)]);
-    setBoot((prev) =>
-      prev.status === "ready" && prev.game
-        ? { ...prev, game: { ...prev.game, resources, pathTiles, noise } }
-        : prev,
-    );
-    return { ok: true };
-  }
-
-  async function handleUpgradePath(coord: Axial): Promise<BuildResult> {
-    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
-    const { tweaks, game } = boot;
-
-    const tile = game.pathTiles.find((t) => axialKey(t.coord) === axialKey(coord));
-    if (!tile) return { ok: false, reason: "No path here" };
-
-    if (isLandStructureAtTaskCap(tile, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
-
-    const target = nextPathTier(tile.tier);
-    if (!target) return { ok: false, reason: "Already at max tier" };
-
-    const cost = pathUpgradeCost(tweaks, target);
-    for (const [key, amount] of Object.entries(cost)) {
-      if (game.resources[key as keyof ResourceAmounts] < (amount ?? 0)) {
-        return { ok: false, reason: `Not enough ${key}` };
-      }
-    }
-
-    const resources = { ...game.resources };
-    for (const [key, amount] of Object.entries(cost)) {
-      resources[key as keyof ResourceAmounts] -= amount ?? 0;
-    }
-    const pathTiles = game.pathTiles.map((t) =>
-      axialKey(t.coord) === axialKey(coord)
-        ? {
-            ...t,
-            totalInvested: addToInvestment(t.totalInvested, cost),
-            upgrade: { targetTier: target, startedAt: game.clock.virtualNow },
-          }
-        : t,
-    );
-    const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "upgrade_infrastructure_tile", game.base.level) };
-
-    await Promise.all([set(RESOURCES_DB_KEY, resources), set(PATH_TILES_DB_KEY, pathTiles), set(NOISE_DB_KEY, noise)]);
-    setBoot((prev) =>
-      prev.status === "ready" && prev.game
-        ? { ...prev, game: { ...prev.game, resources, pathTiles, noise } }
-        : prev,
-    );
-    return { ok: true };
-  }
 
   async function handleBuildTower(coord: Axial): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
@@ -2814,7 +2675,6 @@ export default function App() {
     const structureCount = totalStructureCount(
       tweaks,
       game.extractionTiles,
-      game.pathTiles,
       game.towers,
       game.walls,
       game.barracksList,
@@ -2917,7 +2777,6 @@ export default function App() {
     const structureCount = totalStructureCount(
       tweaks,
       game.extractionTiles,
-      game.pathTiles,
       game.towers,
       game.walls,
       game.barracksList,
@@ -3020,7 +2879,6 @@ export default function App() {
     const structureCount = totalStructureCount(
       tweaks,
       game.extractionTiles,
-      game.pathTiles,
       game.towers,
       game.walls,
       game.barracksList,
@@ -3154,19 +3012,17 @@ export default function App() {
     const key = axialKey(coord);
 
     const extractionTile = game.extractionTiles.find((t) => axialKey(t.coord) === key);
-    const pathTile = game.pathTiles.find((t) => axialKey(t.coord) === key);
     const tower = game.towers.find((t) => axialKey(t.coord) === key);
     const wall = game.walls.find((t) => axialKey(t.coord) === key);
     const barracks = game.barracksList.find((t) => axialKey(t.coord) === key);
     const dock = game.docks.find((t) => axialKey(t.coord) === key);
     const powerStation = game.powerStations.find((t) => axialKey(t.coord) === key);
-    const structure = extractionTile ?? pathTile ?? tower ?? wall ?? barracks ?? dock ?? powerStation;
+    const structure = extractionTile ?? tower ?? wall ?? barracks ?? dock ?? powerStation;
     if (!structure) return { ok: false, reason: "Nothing to demolish here" };
 
     if (extractionTile && hasAnyStructureTask(extractionTile)) {
       return { ok: false, reason: STRUCTURE_BUSY_REASON };
     }
-    if (pathTile && hasAnyStructureTask(pathTile)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
     if (tower && hasAnyStructureTask(tower)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
     if (wall && hasAnyStructureTask(wall)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
     if (barracks && hasAnyStructureTask(barracks)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
@@ -3184,7 +3040,6 @@ export default function App() {
     const extractionTiles = extractionTile
       ? game.extractionTiles.filter((t) => axialKey(t.coord) !== key)
       : game.extractionTiles;
-    const pathTiles = pathTile ? game.pathTiles.filter((t) => axialKey(t.coord) !== key) : game.pathTiles;
     const towers = tower ? game.towers.filter((t) => axialKey(t.coord) !== key) : game.towers;
     const walls = wall ? game.walls.filter((t) => axialKey(t.coord) !== key) : game.walls;
     const barracksList = barracks
@@ -3203,7 +3058,6 @@ export default function App() {
     await Promise.all([
       set(RESOURCES_DB_KEY, resources),
       set(EXTRACTION_TILES_DB_KEY, extractionTiles),
-      set(PATH_TILES_DB_KEY, pathTiles),
       set(TOWERS_DB_KEY, towers),
       set(WALLS_DB_KEY, walls),
       set(BARRACKS_DB_KEY, barracksList),
@@ -3219,7 +3073,6 @@ export default function App() {
               ...prev.game,
               resources,
               extractionTiles,
-              pathTiles,
               towers,
               walls,
               barracksList,
@@ -3263,12 +3116,11 @@ export default function App() {
     if (hordeOccupiedKeys.has(key)) return { ok: false, reason: "A horde is still on this tile" };
 
     const extractionTile = game.extractionTiles.find((t) => axialKey(t.coord) === key);
-    const pathTile = game.pathTiles.find((t) => axialKey(t.coord) === key);
     const tower = game.towers.find((t) => axialKey(t.coord) === key);
     const wall = game.walls.find((t) => axialKey(t.coord) === key);
     const barracks = game.barracksList.find((t) => axialKey(t.coord) === key);
     const powerStation = game.powerStations.find((t) => axialKey(t.coord) === key);
-    const structure = extractionTile ?? pathTile ?? tower ?? wall ?? barracks ?? powerStation;
+    const structure = extractionTile ?? tower ?? wall ?? barracks ?? powerStation;
     if (!structure) return { ok: false, reason: "Nothing to repair here" };
     if (!structure.damaged) return { ok: false, reason: "Not damaged" };
     if (isHordeRepairBlocked(structure)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
@@ -3306,7 +3158,6 @@ export default function App() {
       );
 
     const extractionTiles = extractionTile ? repair(game.extractionTiles) : game.extractionTiles;
-    const pathTiles = pathTile ? repair(game.pathTiles) : game.pathTiles;
     const towers = tower ? repair(game.towers) : game.towers;
     const walls = wall ? repair(game.walls) : game.walls;
     const barracksList = barracks ? repair(game.barracksList) : game.barracksList;
@@ -3320,7 +3171,6 @@ export default function App() {
     await Promise.all([
       set(RESOURCES_DB_KEY, resources),
       set(EXTRACTION_TILES_DB_KEY, extractionTiles),
-      set(PATH_TILES_DB_KEY, pathTiles),
       set(TOWERS_DB_KEY, towers),
       set(WALLS_DB_KEY, walls),
       set(BARRACKS_DB_KEY, barracksList),
@@ -3336,7 +3186,6 @@ export default function App() {
               ...prev.game,
               resources,
               extractionTiles,
-              pathTiles,
               towers,
               walls,
               barracksList,
@@ -3368,7 +3217,6 @@ export default function App() {
     const structureCount = totalStructureCount(
       tweaks,
       game.extractionTiles,
-      game.pathTiles,
       game.towers,
       game.walls,
       game.barracksList,
@@ -4655,7 +4503,6 @@ export default function App() {
       base={boot.game.base}
       resources={boot.game.resources}
       extractionTiles={boot.game.extractionTiles}
-      pathTiles={boot.game.pathTiles}
       towers={boot.game.towers}
       walls={boot.game.walls}
       barracksList={boot.game.barracksList}
@@ -4690,8 +4537,6 @@ export default function App() {
       onUpgradeExtractionTile={handleUpgradeExtractionTile}
       onUpgradeStorage={handleUpgradeStorage}
       onCollectTile={handleCollectTile}
-      onBuildPath={handleBuildPath}
-      onUpgradePath={handleUpgradePath}
       onBuildTower={handleBuildTower}
       onUpgradeTower={handleUpgradeTower}
       onBuildPowerStation={handleBuildPowerStation}

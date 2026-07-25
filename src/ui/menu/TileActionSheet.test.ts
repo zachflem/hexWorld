@@ -36,7 +36,7 @@ describe("deriveSheetTabs", () => {
         key: "build-civil",
         icon: null,
         title: "Civil",
-        subActions: [leaf({ key: "build-path", title: "Build goat track" })],
+        subActions: [leaf({ key: "build-power-station", title: "Build power station" })],
       },
     ];
 

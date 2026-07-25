@@ -6,7 +6,6 @@ import { BASE_DB_KEY } from "./base";
 import { RESOURCES_DB_KEY } from "./resources";
 import { CLOCK_DB_KEY } from "./clock";
 import { EXTRACTION_TILES_DB_KEY } from "./extractionTiles";
-import { PATH_TILES_DB_KEY } from "./pathTiles";
 import { TOWERS_DB_KEY } from "./towers";
 import { WALLS_DB_KEY } from "./walls";
 import { BARRACKS_DB_KEY } from "./barracks";
@@ -47,7 +46,6 @@ const GAME_DB_KEYS = [
   RESOURCES_DB_KEY,
   CLOCK_DB_KEY,
   EXTRACTION_TILES_DB_KEY,
-  PATH_TILES_DB_KEY,
   TOWERS_DB_KEY,
   WALLS_DB_KEY,
   BARRACKS_DB_KEY,
@@ -99,7 +97,6 @@ export type PersistableGameSnapshot = {
   resources: unknown;
   clock: unknown;
   extractionTiles: unknown;
-  pathTiles: unknown;
   towers: unknown;
   walls: unknown;
   barracksList: unknown;
@@ -138,7 +135,6 @@ export type StoredGameKeys = {
   resources: unknown;
   clock: unknown;
   extractionTiles: unknown;
-  pathTiles: unknown;
   towers: unknown;
   walls: unknown;
   barracksList: unknown;
@@ -190,7 +186,6 @@ export function snapshotToKeys(game: PersistableGameSnapshot, profileSlug: strin
     [RESOURCES_DB_KEY]: game.resources,
     [CLOCK_DB_KEY]: game.clock,
     [EXTRACTION_TILES_DB_KEY]: game.extractionTiles,
-    [PATH_TILES_DB_KEY]: game.pathTiles,
     [TOWERS_DB_KEY]: game.towers,
     [WALLS_DB_KEY]: game.walls,
     [BARRACKS_DB_KEY]: game.barracksList,
@@ -251,7 +246,6 @@ export function keysToStoredGame(keys: SaveFileV1["keys"], profileSlugFallback?:
     resources: keys[RESOURCES_DB_KEY],
     clock: keys[CLOCK_DB_KEY],
     extractionTiles: keys[EXTRACTION_TILES_DB_KEY],
-    pathTiles: keys[PATH_TILES_DB_KEY],
     towers: keys[TOWERS_DB_KEY],
     walls: keys[WALLS_DB_KEY],
     barracksList: keys[BARRACKS_DB_KEY],

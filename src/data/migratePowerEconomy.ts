@@ -18,7 +18,6 @@ export function migratePowerEconomy(input: {
   storageLevels: unknown;
   extractionTiles: LegacyExtractionTile[] | undefined;
   powerStations: PowerStation[] | undefined;
-  pathTiles?: InvestedLike[];
   towers?: InvestedLike[];
   walls?: InvestedLike[];
   barracksList?: InvestedLike[];
@@ -28,7 +27,6 @@ export function migratePowerEconomy(input: {
   storageLevels: StorageLevels;
   extractionTiles: ExtractionTile[];
   powerStations: PowerStation[];
-  pathTiles?: InvestedLike[];
   towers?: InvestedLike[];
   walls?: InvestedLike[];
   barracksList?: InvestedLike[];
@@ -94,7 +92,6 @@ export function migratePowerEconomy(input: {
     storageLevels,
     extractionTiles,
     powerStations: [...existingStations, ...convertedStations],
-    pathTiles: stripList(input.pathTiles),
     towers: stripList(input.towers),
     walls: stripList(input.walls),
     barracksList: stripList(input.barracksList),

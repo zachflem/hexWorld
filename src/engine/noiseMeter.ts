@@ -1,5 +1,4 @@
 import type { ExtractionTile } from "../data/extractionTiles";
-import type { PathTile } from "../data/pathTiles";
 import type { PowerStation } from "../data/powerStations";
 import type { Tower } from "../data/towers";
 import type { Wall } from "../data/walls";
@@ -19,11 +18,7 @@ export function extractionFloorContribution(tweaks: Tweaks, tile: ExtractionTile
   return base * tweaks.noise.extraction_tier_noise_multiplier ** tierIndex;
 }
 
-export function pathFloorContribution(tweaks: Tweaks, tile: PathTile): number {
-  return isStructureActive(tile) ? tweaks.noise.path_noise_floor[tile.tier] : 0;
-}
-
-/** Towers/walls are built to watch and hold ground quietly — a tiny per-level/tier floor contribution vs. an active extraction/path tile. A damaged (horde-captured) or still-under-construction one contributes nothing, same as everywhere else it goes non-functional (engine/formulas.ts:isStructureActive). */
+/** Towers/walls are built to watch and hold ground quietly — a tiny per-level/tier floor contribution vs. an active extraction tile. A damaged (horde-captured) or still-under-construction one contributes nothing, same as everywhere else it goes non-functional (engine/formulas.ts:isStructureActive). */
 export function towerFloorContribution(tweaks: Tweaks, tower: Tower): number {
   return isStructureActive(tower) ? tweaks.noise.passive_watch_noise_floor.tower_per_level * tower.level : 0;
 }
@@ -64,7 +59,7 @@ export function noiseCap(tweaks: Tweaks, baseLevel: number): number {
 /**
  * The steady-state noise level your current structures settle toward —
  * DESIGN.md §12. Towers/walls only ever add a sliver each
- * (passive_watch_noise_floor) — extraction/path tiles are the loud ones.
+ * (passive_watch_noise_floor) — extraction tiles are the loud ones.
  * Walls additionally dampen the total (wallNoiseDampening, above) — the only
  * negative contribution in this sum. Never below noise_floor_minimum —
  * TWEAKS.md's "practically silent" floor, even with zero structures standing.
@@ -72,7 +67,6 @@ export function noiseCap(tweaks: Tweaks, baseLevel: number): number {
 export function noiseFloor(
   tweaks: Tweaks,
   extractionTiles: ExtractionTile[],
-  pathTiles: PathTile[],
   towers: Tower[],
   walls: Wall[],
   baseLevel: number,
@@ -80,12 +74,11 @@ export function noiseFloor(
   powerNetwork?: PowerNetworkSnapshot,
 ): number {
   const extractionTotal = extractionTiles.reduce((sum, tile) => sum + extractionFloorContribution(tweaks, tile), 0);
-  const pathTotal = pathTiles.reduce((sum, tile) => sum + pathFloorContribution(tweaks, tile), 0);
   const towerTotal = towers.reduce((sum, tower) => sum + towerFloorContribution(tweaks, tower), 0);
   const wallTotal = walls.reduce((sum, wall) => sum + wallFloorContribution(tweaks, wall), 0);
   const stationTotal = powerStations.reduce((sum, station) => sum + powerStationFloorContribution(tweaks, station), 0);
   const wallDampeningTotal = walls.reduce((sum, wall) => sum + wallNoiseDampening(tweaks, wall, powerNetwork), 0);
-  const structureTotal = extractionTotal + pathTotal + towerTotal + wallTotal + stationTotal - wallDampeningTotal;
+  const structureTotal = extractionTotal + towerTotal + wallTotal + stationTotal - wallDampeningTotal;
   return Math.min(noiseCap(tweaks, baseLevel), Math.max(tweaks.noise.noise_floor_minimum, structureTotal));
 }
 
@@ -101,7 +94,6 @@ export function noiseFloor(
 export function accrueNoise(
   tweaks: Tweaks,
   extractionTiles: ExtractionTile[],
-  pathTiles: PathTile[],
   towers: Tower[],
   walls: Wall[],
   noise: number,
@@ -114,7 +106,6 @@ export function accrueNoise(
   const floor = noiseFloor(
     tweaks,
     extractionTiles,
-    pathTiles,
     towers,
     walls,
     baseLevel,
