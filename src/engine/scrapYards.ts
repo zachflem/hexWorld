@@ -8,7 +8,7 @@ import type { Axial } from "./hexCoords";
 import { isStructureActive, scaledCostMap } from "./formulas";
 import { storageCapacity } from "./storage";
 import { tierUpgradeCost, tierUpgradeDurationMs } from "./tiers";
-import { advanceCourierSite } from "./couriers";
+import { advanceCourierSite, structureHasCourierAutomation } from "./couriers";
 
 /** Formula A build cost — same base as steel extraction small (Q56). */
 export function scrapYardBuildCost(tweaks: Tweaks, n: number): Record<string, number> {
@@ -57,8 +57,8 @@ export function collectScrapYard(
 }
 
 /**
- * Yard last-mile courier always runs when the yard is active (Q69) — not gated
- * on L2 the way food/wood/stone extractors are.
+ * Yard last-mile courier unlocks at L2+ — same pattern as food/wood/stone/docks
+ * (`structureHasCourierAutomation`). L1 is manual collect only.
  */
 export function advanceScrapYardCouriers(
   tweaks: Tweaks,
@@ -91,7 +91,7 @@ export function advanceScrapYardCouriers(
       territory,
       scoutedTiles,
       gridSize,
-      true,
+      structureHasCourierAutomation(yard.level),
     );
     nextResources = afterCourier;
     return { ...yard, stockpile: site.stockpile, courier: site.courier ?? null };

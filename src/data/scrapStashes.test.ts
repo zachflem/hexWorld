@@ -93,10 +93,12 @@ describe("createScrapStashes", () => {
 
   it("applies wandering-scout steel samples when a scout steps onto a stash", () => {
     const tweaks = loadRealTweaks();
+    const sample = tweaks.scrap_stashes.wandering_scout_sample_steel;
+    const pool = sample + 40;
     const stash = {
       id: "scrap-0",
       coord: { q: 2, r: 2 },
-      remainingSteel: 10,
+      remainingSteel: pool,
       artVariant: 1,
       tileLevel: 1,
     };
@@ -106,7 +108,7 @@ describe("createScrapStashes", () => {
       [{ coord: { q: 1, r: 2 } }],
       [{ coord: { q: 2, r: 2 } }],
     );
-    expect(result.steelGained).toBe(tweaks.scrap_stashes.wandering_scout_sample_steel);
-    expect(result.scrapStashes[0]!.remainingSteel).toBe(10 - tweaks.scrap_stashes.wandering_scout_sample_steel);
+    expect(result.steelGained).toBe(sample);
+    expect(result.scrapStashes[0]!.remainingSteel).toBe(pool - sample);
   });
 });

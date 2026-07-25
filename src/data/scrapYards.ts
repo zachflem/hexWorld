@@ -23,7 +23,7 @@ export interface ScrapperTrip {
 
 /**
  * Land structure that receives Scrapper hauls into a local steel stockpile,
- * then last-mile delivers to base via implied courier (Q69) and/or collect pin.
+ * then last-mile delivers to base via implied courier at L2+ (Q69) and/or collect pin.
  * Unified yard/Scrapper level track (Q58) — L1–L3 ship in M26; L4/L5 later.
  */
 export interface ScrapYardRecord {

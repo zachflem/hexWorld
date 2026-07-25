@@ -65,7 +65,28 @@ describe("scrapYards", () => {
     expect(result.yard.stockpile).toBe(0);
   });
 
-  it("advanceScrapYardCouriers deposits stockpile steel to base when a route exists", () => {
+  it("L1 yards stay manual-collect only (no courier)", () => {
+    const tweaks = loadRealTweaks();
+    const base = { q: 0, r: 0 };
+    const yardCoord = { q: 1, r: 0 };
+    const result = advanceScrapYardCouriers(
+      tweaks,
+      [yard({ coord: yardCoord, level: 1, stockpile: 25 })],
+      { food: 0, wood: 0, stone: 0, steel: 0 },
+      { food: 1, wood: 1, stone: 1, steel: 1 },
+      60_000,
+      1,
+      base,
+      { base, owned: [base, yardCoord] },
+      [],
+      32,
+    );
+    expect(result.resources.steel).toBe(0);
+    expect(result.scrapYards[0]!.courier).toBeNull();
+    expect(result.scrapYards[0]!.stockpile).toBe(25);
+  });
+
+  it("advanceScrapYardCouriers deposits stockpile steel to base at L2+ when a route exists", () => {
     const tweaks = loadRealTweaks();
     const base = { q: 0, r: 0 };
     const yardCoord = { q: 1, r: 0 };
@@ -76,7 +97,7 @@ describe("scrapYards", () => {
 
     const started = advanceScrapYardCouriers(
       tweaks,
-      [yard({ coord: yardCoord, stockpile: 25 })],
+      [yard({ coord: yardCoord, level: 2, stockpile: 25 })],
       empty,
       storage,
       1_000,

@@ -327,7 +327,7 @@ Works the same way across every structure type — extraction tile, tower, wall,
 - **L2+:** implied courier loops the structure ↔ main base. Travel duration = expedition route cost (`findExpeditionPath`) × `expeditions.travel_seconds_per_cost`.
 - **L3:** production upgrade (docks: former fishing-boat bonus folds into this level).
 
-Steel moves via Scrap Yard + Scrapper + yard courier — see [Milestone26.md](Milestone26.md) / [ScrapperEconomy.md](ScrapperEconomy.md). New courier / yard / stash numeric blocks are **first pass, untested** when added to `tweaks.jsonc`.
+Steel moves via Scrap Yard + Scrapper + yard courier — see [Milestone26.md](Milestone26.md) / [ScrapperEconomy.md](ScrapperEconomy.md). Stash pools (`scrap_stashes.steel_pool_by_terrain`) are tuned so a sparse dump covers early steel sinks (power station = 150 steel): grassland L1 ≈ 1050, mountain L5 ≈ 7920. Wandering-scout sample is 36 steel. New worlds only: existing saves keep baked-in `remainingSteel`.
 
 ---
 

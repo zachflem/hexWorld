@@ -3304,14 +3304,17 @@ export function GameScreen({
       );
     }
     if (selectedScrapYard) {
+      const yardCourierAutomated = structureHasCourierAutomation(selectedScrapYard.level);
       rows.push(
         <div key="scrap-yard-stockpile">Stockpile: {Math.floor(selectedScrapYard.stockpile)} steel</div>,
         <div key="scrap-yard-courier">
-          {selectedScrapYard.courier
-            ? selectedScrapYard.courier.phase === "toBase"
-              ? "Courier — delivering to base"
-              : "Courier — returning"
-            : "Courier — automated last-mile"}
+          {yardCourierAutomated
+            ? selectedScrapYard.courier
+              ? selectedScrapYard.courier.phase === "toBase"
+                ? "Courier — delivering to base"
+                : "Courier — returning"
+              : "Courier — automated collection"
+            : "Manual collection only (upgrade to L2 to automate)"}
         </div>,
         <div key="scrap-yard-scrapper">{scrapperStatusText(selectedScrapYard)}</div>,
       );

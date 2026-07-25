@@ -173,8 +173,7 @@
       "tower": 3,
       "wall": 1,
       "barracks": 4,
-      "dock": 2
-    ,
+      "dock": 2,
       "scrap_yard": 2
     },
     "noise_build": 8,
@@ -724,13 +723,13 @@
     "art_variant_count": 3,
     "_art_variant_note": "resources/scrap-1.png … scrap-N.png (Q70). Seeded per stash at world-gen.",
     "steel_pool_by_terrain": {
-      "grassland": 40,
-      "shore": 70,
-      "forest": 90,
-      "mountain": 120
+      "grassland": 1050,
+      "shore": 1800,
+      "forest": 2400,
+      "mountain": 3300
     },
-    "steel_pool_per_tile_level_pct": 0.25,
-    "_pool_note": "pool = round(steel_pool_by_terrain[terrain] * (1 + steel_pool_per_tile_level_pct * (tileLevel-1))). Tile level is hidden world-gen richness (Q49).",
+    "steel_pool_per_tile_level_pct": 0.35,
+    "_pool_note": "pool = round(steel_pool_by_terrain[terrain] * (1 + steel_pool_per_tile_level_pct * (tileLevel-1))). Tile level is hidden world-gen richness (Q49). Sparse (L1) grassland ≈ 1050 (~7× power station steel); rich (L5) mountain ≈ 7920.",
     "terrain_placement_weight": {
       "grassland": 1,
       "shore": 2,
@@ -738,7 +737,7 @@
       "mountain": 3
     },
     "_placement_note": "Weighted land picks; water excluded. Favors mountain/forest/shore, rare on grassland (Q18).",
-    "wandering_scout_sample_steel": 2,
+    "wandering_scout_sample_steel": 36,
     "_sample_note": "Steel granted each time a wandering scout visits an active stash hex (Q7)."
   },
 
@@ -747,7 +746,7 @@
   // SCRAP YARDS (Milestone 26 / #36 — steel hub; replaces steel extraction builds)
   // --------------------------------------------------------------------------
   "scrap_yards": {
-    "_status": "first pass, untested — L1–L3 reuse steel extraction small/mid/large cost/time baselines (ScrapperEconomy Q56). Yard courier last-mile always on (Q69). Scrapper movement ships separately.",
+    "_status": "first pass, untested — L1–L3 reuse steel extraction small/mid/large cost/time baselines (ScrapperEconomy Q56). Yard courier last-mile at L2+ (same as other resources). Scrapper hauls stash→yard.",
     "build_cost_base": { "wood": 400, "stone": 300 },
     "build_cost_scaling": "FORMULA_A",
     "build_time_minutes": 1,
