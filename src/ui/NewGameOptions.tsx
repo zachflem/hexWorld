@@ -26,7 +26,8 @@ export function NewGameOptions({
   confirmLabel?: string;
 }) {
   const [choice, setChoice] = useState<NewGameChoice>("replay");
-  const [seedInput, setSeedInput] = useState(() => String(generateSeed()));
+  /** Blank = random on confirm — do not pre-fill a mount-time seed (#68). */
+  const [seedInput, setSeedInput] = useState("");
   const [seedError, setSeedError] = useState<string | null>(null);
 
   function handleConfirm() {
@@ -90,6 +91,7 @@ export function NewGameOptions({
             type="text"
             inputMode="numeric"
             value={seedInput}
+            placeholder="Random Seed (enter custom seed here)"
             onChange={(event) => {
               setSeedInput(event.target.value);
               setSeedError(null);
@@ -97,7 +99,7 @@ export function NewGameOptions({
             style={{ display: "block", marginTop: "0.25rem", width: "100%", boxSizing: "border-box" }}
           />
           <p style={{ margin: "0.35rem 0 0", opacity: 0.7, fontSize: "0.85rem" }}>
-            Share this seed with someone else to both explore the identical map.
+            Leave blank for a fresh random map, or enter a seed to share/replay an identical one.
           </p>
           {seedError && (
             <p role="alert" style={{ margin: "0.35rem 0 0" }}>
