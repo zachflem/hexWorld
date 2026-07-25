@@ -85,6 +85,7 @@ export function totalStructureCount(
   walls: unknown[],
   barracksList: unknown[],
   docks: unknown[],
+  powerStations: unknown[] = [],
 ): number {
   return (
     extractionTiles.length +
@@ -92,7 +93,8 @@ export function totalStructureCount(
     towers.length +
     walls.length * tweaks.walls.slot_cost +
     barracksList.length +
-    docks.length
+    docks.length +
+    powerStations.length
   );
 }
 

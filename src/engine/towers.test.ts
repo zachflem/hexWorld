@@ -85,10 +85,10 @@ describe("towerUpgradeCost", () => {
     expect(cost.steel).toBeGreaterThan(0);
   });
 
-  it("L3->L4 adds power", () => {
+  it("L3->L4 adds steel", () => {
     const tweaks = loadRealTweaks();
     const cost = towerUpgradeCost(tweaks, 4);
-    expect(cost.power).toBeGreaterThan(0);
+    expect(cost.steel).toBeGreaterThan(0);
   });
 });
 

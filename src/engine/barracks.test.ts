@@ -52,10 +52,10 @@ describe("barracksUpgradeCost", () => {
     expect(cost.steel).toBeGreaterThan(0);
   });
 
-  it("L3->L4 adds power via the reused extraction-tile baseline", () => {
+  it("L3->L4 adds steel via the reused extraction-tile baseline", () => {
     const tweaks = loadRealTweaks();
     const cost = barracksUpgradeCost(tweaks, 4);
-    expect(cost.power).toBeGreaterThan(0);
+    expect(cost.steel).toBeGreaterThan(0);
   });
 });
 

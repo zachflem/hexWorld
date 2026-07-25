@@ -73,6 +73,14 @@ export interface TowerUpgradeOption {
   durationMinutes: number;
 }
 
+/** Same shape as TowerUpgradeOption — power station level upgrade. */
+export interface PowerStationUpgradeOption {
+  targetLevel: number;
+  cost: Partial<Record<ResourceType, number>>;
+  affordable: boolean;
+  durationMinutes: number;
+}
+
 export interface WallUpgradeOption {
   targetTier: WallTier;
   cost: Partial<Record<ResourceType, number>>;

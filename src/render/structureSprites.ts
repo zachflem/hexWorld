@@ -29,6 +29,21 @@ export function dockSpriteCandidates(hasBoat: boolean): string[] {
 }
 
 /**
+ * Power station art: prefer dedicated stems, then reuse legacy power extraction
+ * tier sprites (power-small/mid/large) until station-specific art ships.
+ */
+export function powerStationSpriteCandidates(level: number): string[] {
+  const tier = level >= 3 ? "large" : level === 2 ? "mid" : "small";
+  return [`power-station-${level}`, "power-station", `power-${tier}`, "power-small"];
+}
+
+export function powerStationVariantStem(level: number): string {
+  if (level >= 3) return "power-large";
+  if (level === 2) return "power-mid";
+  return "power-small";
+}
+
+/**
  * Flatten structure name candidates into profile→default URL order:
  * for ["tower-2", "tower"] on hard → hard/tower-2, default/tower-2, hard/tower, default/tower.
  */

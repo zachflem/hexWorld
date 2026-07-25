@@ -19,7 +19,7 @@ A small group arrives in unfamiliar territory. They settle, and immediately clai
 **Settle → Extract → Automate → Fortify → Expand → Confront**
 
 1. **Settle:** Choose where to place your first extraction tiles and any early defenses within your starting territory.
-2. **Extract:** Resource tiles generate food, wood, stone, steel, and power passively, in real time.
+2. **Extract:** Resource tiles generate food, wood, stone, and steel passively, in real time. Power is supplied by **power stations** (capacity over an area of effect), not stockpiled from extraction.
 3. **Automate:** Build infrastructure paths so resources flow to base without manual collection.
 4. **Fortify:** Place towers and walls — strategically, since build slots are capped and you can never fully wall off.
 5. **Expand:** Scout and attack tiles beyond your starting territory with militia, following clues toward zombie dens and the hidden lab.
@@ -56,9 +56,17 @@ Progress persists locally in IndexedDB automatically during play, so closing the
 
 ## 5. Resources
 
-Five types, ascending in rarity: **food → wood → stone → steel → power**. Rarity determines both extraction yield (common resources yield more) and noise generated while gathering (rarer resources are louder).
+Four stockpile types, ascending in rarity: **food → wood → stone → steel**. Rarity determines both extraction yield (common resources yield more) and noise generated while gathering (rarer resources are louder).
 
 Each resource has its own **storage cap**, upgraded independently via a tech-tree skill (no physical building required) — capacity doubles per level.
+
+### Power network
+
+**Power** is not a fifth stockpile resource. **Power stations** (levels 1–4) supply **capacity** over an **area of effect**; both grow with station level. Active stations’ coverage forms a **union**; capacity and draw are a **shared pool** (`powerFactor = capacity / draw`).
+
+- Level/tier **1** structures never need power and do not draw.
+- Level/tier **≥ 2** structures on powered tiles draw load (scaled by level). Outside coverage — or when `powerFactor` falls below the cut-off — they go **offline** (no yield/DPS/path flow/training progress/wall dampening). Between cut-off and full supply they **brown out** (performance scaled by `powerFactor`).
+- Hub work (storage upgrades, research, base level-up) does not require a powered base tile. See [Milestone25.md](Milestone25.md) / [issue #70](https://github.com/zachflem/hexWorld/issues/70).
 
 ---
 
@@ -80,9 +88,9 @@ The player owns their base tile plus the first two full rings around it (19 tile
 
 ## 7. Extraction Tiles
 
-Every resource type has three tiers — **small → mid → large** — built on suitable terrain, upgraded in place rather than rebuilt. Higher tiers yield disproportionately more (an exponential curve rewards investing in one location over spreading thin), but upgrade costs pull in a widening mix of resource types as you tier up, mirroring a believable "technology" progression (you need wood and stone before you can build the steel and power infrastructure that supports bigger extraction).
+Every stockpile resource type has three tiers — **small → mid → large** — built on suitable terrain, upgraded in place rather than rebuilt. Higher tiers yield disproportionately more (an exponential curve rewards investing in one location over spreading thin), but upgrade costs pull in a widening mix of resource types as you tier up, mirroring a believable "technology" progression (you need wood and stone before you can build the steel extraction and **power stations** that support bigger operations).
 
-None of the five resource types can be built on water — all extraction happens on dry land. Water tiles instead host a distinct building type, the **Dock** (see §16) — a food-generating structure, not a sixth extraction-tile type, and the one exception to "no building on water."
+None of the four stockpile resource types can be built on water — all extraction happens on dry land. Water tiles instead host a distinct building type, the **Dock** (see §16) — a food-generating structure, not a fifth extraction-tile type, and the one exception to "no building on water."
 
 Extraction tiles generate both passive noise (ongoing, scaled to resource rarity) and one-time noise on build/upgrade.
 
@@ -119,7 +127,7 @@ The base is a **hub, not a combat unit** — storage, tech tree, and the seat of
 Combat against hordes is **fully deterministic** — no luck/RNG rolls (unlike the abandoned PvP design this project pivoted away from).
 
 - **Towers** deal damage at range, every tick a horde remains within reach. Damage output scales with tower level; range extends by one tile per level.
-- **Walls** (wood → rock → steel, an upgrade path rather than separate structures) absorb horde damage via durability rather than fighting back. A tile can hold at most one structure of any kind — a tower, a wall, an extraction tile, or a path, never a combination — but a tower's range can cover a wall (or anything else) on a neighboring tile.
+- **Walls** (wood → rock → steel, an upgrade path rather than separate structures) absorb horde damage via durability rather than fighting back. A tile can hold at most one structure of any kind — a tower, a wall, an extraction tile, a path, a barracks, a dock, or a **power station**, never a combination — but a tower's range can cover a wall (or anything else) on a neighboring tile.
 - **No tile can host unlimited defense** — the build slot cap forces players to choose which approaches to fortify and which to leave exposed.
 - **Walls can only be repaired during peacetime**, at a cost proportional to damage taken (and inclusive of every tier below the wall's current one), and repairing generates its own noise.
 - **Demolishing** any structure returns a fixed percentage of everything ever spent on it (build + all upgrades) — deterministic, no luck involved.

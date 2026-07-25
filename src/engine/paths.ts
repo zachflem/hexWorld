@@ -9,7 +9,7 @@ import { terrainAt } from "./terrain";
 export const PATH_TIER_ORDER: PathTier[] = ["goat_track", "stone_road", "highway"];
 
 /** 1-based, matching Formula B's "target_level" semantics. */
-const PATH_TIER_LEVEL: Record<PathTier, number> = { goat_track: 1, stone_road: 2, highway: 3 };
+export const PATH_TIER_LEVEL: Record<PathTier, number> = { goat_track: 1, stone_road: 2, highway: 3 };
 
 /** Never actually returns "goat_track" — it's only ever the starting tier, not a reachable upgrade target. */
 export function nextPathTier(tier: PathTier): Exclude<PathTier, "goat_track"> | null {

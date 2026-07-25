@@ -26,8 +26,8 @@ function dock(overrides: Partial<DockRecord> = {}): DockRecord {
   };
 }
 
-const ALL_L1_STORAGE: StorageLevels = { food: 1, wood: 1, stone: 1, steel: 1, power: 1 };
-const NO_RESOURCES: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0, power: 0 };
+const ALL_L1_STORAGE: StorageLevels = { food: 1, wood: 1, stone: 1, steel: 1 };
+const NO_RESOURCES: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0 };
 
 describe("dockBuildCost", () => {
   it("applies linear (not Formula A) build-count scaling to the wood base cost", () => {

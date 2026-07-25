@@ -108,7 +108,7 @@ Tier 2 → Tier 3:  adds the next resource up the chain
 Tier 3 → Tier 4:  adds the one after that
 ```
 
-The chain is generally: **wood → stone → steel → power**, except infrastructure paths, which use **food → stone → steel** (since paths are "fed," not built).
+The chain is generally: **wood → stone → steel**, except infrastructure paths, which use **food → stone → steel** (since paths are "fed," not built). Power is no longer part of this stockpile chain — see **Power stations** below.
 
 This means a late-tier upgrade always costs a bit of everything you've unlocked so far — it's not just "more of the same," it's "your whole economy chipping in."
 
@@ -116,13 +116,13 @@ This means a late-tier upgrade always costs a bit of everything you've unlocked 
 
 ## Resources
 
-Five types, in ascending rarity: **food, wood, stone, steel, power**.
+Four stockpile types, in ascending rarity: **food, wood, stone, steel**.
 
 Rarity determines two things:
-1. **Extraction yield** — common resources (food, wood) generate more per tick than rare ones (steel, power).
-2. **Noise** — rarer resources are noisier to gather. Steel and power mining/generation will attract hordes faster than farming.
+1. **Extraction yield** — common resources (food, wood) generate more per tick than rare ones (steel).
+2. **Noise** — rarer resources are noisier to gather. Steel mining attracts hordes faster than farming.
 
-**Starting amounts (first pass, untested):** food 100, wood 500, stone 400, steel 0, power 0. Sized so a fresh player can build exactly one food tile (150 wood), one wood tile (150 wood), and one stone tile (195 stone), each with a healthy buffer left over — per DESIGN.md §6. Revisit once there's a playable loop to test against.
+**Starting amounts (first pass, untested):** food 100, wood 500, stone 400, steel 0. Sized so a fresh player can build exactly one food tile (150 wood), one wood tile (150 wood), and one stone tile (195 stone), each with a healthy buffer left over — per DESIGN.md §6. Revisit once there's a playable loop to test against.
 
 ---
 
@@ -143,11 +143,25 @@ So mid = 1.5× small, large = 2.25× small (1.5²). This is Formula-independent 
 | Wood | 18 |
 | Stone | 9 |
 | Steel | 5 |
-| Power | 5 |
 
-CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12, playtesting feedback: early game pacing too slow) — raised ~50% across the board from the original 15/12/6/3/3, alongside a 1-minute cut to every build/upgrade timer in the file (see the relevant sections below).
+CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12, playtesting feedback: early game pacing too slow) — raised ~50% across the board from the original 15/12/6/3, alongside a 1-minute cut to every build/upgrade timer in the file (see the relevant sections below). Power extraction yields were removed with Milestone 25 / #70.
 
-**Build cost:** Formula A (each additional tile of that type built costs more). Food/wood/stone cost their own resource (or wood, for food) — bootstrappable from starting resources. **Steel and power build costs were fixed from an earlier pass**: they used to cost steel and power respectively, which is unbuildable from a 0 starting balance with no other way to earn either resource first. Now: steel tile = wood + stone; power tile = wood + stone + steel (needs an established steel operation first). Tier upgrades stay self-referential (steel tiles upgrade using steel, etc.) since by then the tile is already producing that resource to reinvest. First pass, untested.
+**Build cost:** Formula A (each additional tile of that type built costs more). Food/wood/stone cost their own resource (or wood, for food) — bootstrappable from starting resources. **Steel build cost was fixed from an earlier pass**: it used to cost steel, which is unbuildable from a 0 starting balance. Now: steel tile = wood + stone. Tier upgrades stay self-referential (steel tiles upgrade using steel, etc.) since by then the tile is already producing that resource to reinvest. First pass, untested.
+
+### Power stations (Milestone 25 / #70 — first pass, untested)
+
+Top-level `power` block in `tweaks.jsonc` (not an extraction resource):
+
+| Key | First-pass value |
+|---|---|
+| `capacity_base` / `capacity_per_level` | 20 / +15 per level |
+| `aoe_base_tiles` / `aoe_per_level` | 2 / +1 |
+| `cutoff_factor` | 0.5 |
+| `build_cost_base` | 400 wood + 300 stone + 150 steel |
+| `upgrade_cost_base` | 200 wood + 200 stone + 100 steel |
+| `draw_base` | extraction 2, path 1, tower 3, wall 1, barracks 4, dock 2 (× structure level) |
+
+Union AoE + shared capacity pool; L1 structures exempt. See [Milestone25.md](Milestone25.md).
 **Tier upgrade cost (small→mid→large):** Formula B, plus the tech progression (mid tier adds stone; large tier adds stone + steel).
 
 **Noise:** two kinds —
@@ -206,7 +220,7 @@ Deal damage to hordes at range, per tick, for as long as the horde is within ran
 - **Damage vs horde formula:** `zombies_killed_per_tick = tower_damage × (horde_size / 100)` — meaning towers are *proportionally* more effective against bigger hordes in raw kill count, but a bigger horde still overwhelms faster in relative terms.
 - **Garrison bonus:** militia stationed on a tower's own tile add their attack power straight onto that tower's damage before the horde-size scaling above — `garrison_damage_bonus_per_militia` (2 per militia, mirroring `units.militia.attack_per_unit`), additive, not a separate attack. A tower with 5 militia garrisoned effectively fights as if `tower_damage` were 10 higher. First pass, untested.
 - **Build cost:** Formula A (300 wood + 150 stone base).
-- **Upgrade cost:** Formula B (150 wood + 75 stone base), tech progression: L1→L2 (wood+stone), L2→L3 (+steel), L3→L4 (+power). The steel/power amounts had no base of their own anywhere in the original design — resolved the same way as every other tech-progression gap in this project: reuse that resource's own extraction-tile upgrade base (steel: 254, power: 330) as the baseline, then apply Formula B.
+- **Upgrade cost:** Formula B (150 wood + 75 stone base), tech progression: L1→L2 (wood+stone), L2→L3 (+steel), L3→L4 (+steel). The steel amount had no base of its own anywhere in the original design — resolved by reusing steel's own extraction-tile upgrade base (254) as the baseline, then apply Formula B. (Power currency removed — Milestone 25 / #70.)
 - **Build noise:** 25 (`build_tower`). **Upgrade noise:** no dedicated value existed — reuses `upgrade_extraction_tile` (10) as a generic "any structure tier-up" noise, since upgrade noise doesn't intuitively vary much by structure type. First pass, untested.
 
 ---
@@ -257,7 +271,7 @@ damage_per_tick = wall_base_damage × (horde_size / 100)
 A tile-based structure (exclusive with extraction tiles, paths, towers, and walls — same one-structure-per-hex rule as everything else), levels 1–4 like towers. Trains standing combat units and builds the Wandering Scout.
 
 **Build cost:** Formula A (250 wood + 150 stone base for the first barracks; each additional barracks costs more).
-**Upgrade cost:** Formula B (150 wood + 75 stone base), tech progression L1→L2 (wood+stone), L2→L3 (+steel), L3→L4 (+power) — same reused-baseline resolution as towers and walls, above.
+**Upgrade cost:** Formula B (150 wood + 75 stone base), tech progression L1→L2 (wood+stone), L2→L3 (+steel), L3→L4 (+steel) — same reused-baseline resolution as towers and walls, above. (Power currency removed — Milestone 25 / #70.)
 
 **Capacity:** each barracks contributes `militia_capacity_per_level` (10), multiplied by *that barracks' own level*, to a shared player-wide pool. Multiple barracks stack — a single L1 barracks supports 10 militia. (`scout_capacity_per_level` removed with stockpile scouts, #76.)
 
@@ -346,7 +360,7 @@ capacity(L) = capacity(L-1) × 2
 ```
 Starting at 1000 for L1. This same 1000 baseline (not scaled by storage-skill level) also caps each extraction tile's own local stockpile — see Infrastructure Paths above.
 
-**Upgrade cost:** Formula B, base costs increase with resource rarity (food cheapest, power most expensive, each pulling in resources from every tier below it):
+**Upgrade cost:** Formula B, base costs increase with resource rarity (food cheapest, steel most expensive, each pulling in resources from every tier below it):
 
 | Resource | L1→L2 base cost |
 |---|---|
@@ -354,7 +368,6 @@ Starting at 1000 for L1. This same 1000 baseline (not scaled by storage-skill le
 | Wood | 750 wood + 500 stone |
 | Stone | 1,500 wood + 1,000 stone |
 | Steel | 2,000 wood + 1,500 stone + 500 steel |
-| Power | 2,500 wood + 2,000 stone + 1,000 steel + 500 food |
 
 *(These were bumped 10× from an initial pass that felt too cheap — worth sanity-checking again once you're playtesting.)*
 

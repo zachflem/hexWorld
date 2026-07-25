@@ -16,7 +16,9 @@ import { axialDistance, axialKey, type Axial } from "./hexCoords";
 import { seededRandom } from "./noise";
 import { noiseCap } from "./noiseMeter";
 import { findNearestHordeTarget } from "./pathfinding";
+import { powerPerformanceFactor, type PowerNetworkSnapshot } from "./power";
 import { towerDamage, towerRange, zombiesKilledPerTick } from "./towers";
+import { WALL_TIER_LEVEL } from "./walls";
 
 /** A one-shot-defended point advanceHordes checks a horde's route against — the main base, or any live Outpost (data/outposts.ts). `kind`/`id` are for the caller's benefit only (advanceHordes itself only ever keys off `coord`). */
 export interface HordeHub {
@@ -173,12 +175,23 @@ function structureCombatDefense(
   walls: Wall[],
   barracksList: Barracks[],
   key: string,
+  powerNetwork?: PowerNetworkSnapshot,
 ): number {
   const tower = towers.find((t) => axialKey(t.coord) === key);
-  if (tower) return isStructureActive(tower) ? towerDamage(tweaks, tower.level) : 0;
+  if (tower) {
+    if (!isStructureActive(tower)) return 0;
+    const mul = powerNetwork ? powerPerformanceFactor(powerNetwork, tower.level, tower.coord) : 1;
+    return towerDamage(tweaks, tower.level) * mul;
+  }
 
   const wall = walls.find((w) => axialKey(w.coord) === key);
-  if (wall) return isStructureActive(wall) ? wall.durability : 0;
+  if (wall) {
+    if (!isStructureActive(wall)) return 0;
+    const mul = powerNetwork
+      ? powerPerformanceFactor(powerNetwork, WALL_TIER_LEVEL[wall.tier], wall.coord)
+      : 1;
+    return wall.durability * mul;
+  }
 
   const extractionTile = extractionTiles.find((t) => axialKey(t.coord) === key);
   if (extractionTile) return isStructureActive(extractionTile) ? structureHp(tweaks, extractionTile.totalInvested) : 0;
@@ -337,11 +350,18 @@ export function towerDamagePerSecond(
   inRangeTowers: Tower[],
   hordeSize: number,
   garrisons: GarrisonsRecord,
+  powerNetwork?: PowerNetworkSnapshot,
 ): number {
   return inRangeTowers.reduce((sum, tower) => {
+    const powerMul = powerNetwork ? powerPerformanceFactor(powerNetwork, tower.level, tower.coord) : 1;
+    if (powerMul <= 0) return sum;
     const garrison = garrisonAt(garrisons, tower.coord);
     const garrisonBonusDamage = garrison ? garrison.militiaCount * tweaks.towers.garrison_damage_bonus_per_militia : 0;
-    return sum + zombiesKilledPerTick(tweaks, tower.level, hordeSize, garrisonBonusDamage) / tweaks.game.tick_interval_seconds;
+    return (
+      sum +
+      (powerMul * zombiesKilledPerTick(tweaks, tower.level, hordeSize, garrisonBonusDamage)) /
+        tweaks.game.tick_interval_seconds
+    );
   }, 0);
 }
 
@@ -437,6 +457,7 @@ export function advanceHordes(
   garrisons: GarrisonsRecord,
   hubs: HordeHub[],
   elapsedSeconds: number,
+  powerNetwork?: PowerNetworkSnapshot,
 ): {
   hordes: HordesRecord;
   territory: TerritoryRecord;
@@ -471,7 +492,7 @@ export function advanceHordes(
     let progress = horde.progress + rate;
 
     const dps =
-      towerDamagePerSecond(tweaks, inRangeTowers, horde.size, garrisons) +
+      towerDamagePerSecond(tweaks, inRangeTowers, horde.size, garrisons, powerNetwork) +
       sniperDamagePerSecond(tweaks, garrisons, walls, horde.path[pathIndex]);
     // Distance traveled is itself a defense — a horde loses decayPct% of its
     // CURRENT size (compounding) for every tile it successfully advances, so

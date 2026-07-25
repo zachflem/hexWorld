@@ -15,6 +15,7 @@ import type { DockRecord } from "../data/docks";
 import type { ResourceAmounts } from "../data/resources";
 import type { StorageLevels } from "../data/storageLevels";
 import { initialUnits, type UnitsRecord } from "../data/units";
+import type { PowerNetworkSnapshot } from "./power";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -60,10 +61,25 @@ function dock(overrides: Partial<DockRecord> = {}): DockRecord {
   };
 }
 
-const ALL_L1_STORAGE: StorageLevels = { food: 1, wood: 1, stone: 1, steel: 1, power: 1 };
-const NO_RESOURCES: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0, power: 0 };
+const ALL_L1_STORAGE: StorageLevels = { food: 1, wood: 1, stone: 1, steel: 1 };
+const NO_RESOURCES: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0 };
 const NO_UNITS: UnitsRecord = initialUnits();
 const BASE: Axial = { q: 0, r: 0 };
+
+/** Every tile always reads as powered, regardless of coord — these tests aren't about power. */
+class AlwaysPoweredSet extends Set<string> {
+  override has(): boolean {
+    return true;
+  }
+}
+
+const UNLIMITED_POWER: PowerNetworkSnapshot = {
+  poweredTiles: new AlwaysPoweredSet(),
+  totalCapacity: 1e9,
+  totalDraw: 0,
+  factor: 1,
+  cutoff: 0.25,
+};
 
 function findCoord(seed: number, wantTransition: boolean, candidates: Axial[], terrain?: TerrainType): Axial {
   const coord = candidates.find(
@@ -94,7 +110,7 @@ describe("computeResourceRates", () => {
     const coord = findCoord(seed, false, axialSpiral(BASE, 30));
     const tiles: ExtractionTile[] = [extractionTile({ coord, resource: "food", tier: "small" })];
 
-    const rates = computeResourceRates(tweaks, tiles, [], [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed);
+    const rates = computeResourceRates(tweaks, tiles, [], [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
 
     expect(rates.food).toBe(0);
   });
@@ -106,7 +122,7 @@ describe("computeResourceRates", () => {
     const tiles: ExtractionTile[] = [extractionTile({ coord: tileCoord, resource: "food", tier: "small" })];
     const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "goat_track" })];
 
-    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed);
+    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
 
     expect(rates.food).toBeCloseTo(foodYieldAt(tweaks, seed, tileCoord) * 0.5);
   });
@@ -118,7 +134,7 @@ describe("computeResourceRates", () => {
     const tiles: ExtractionTile[] = [extractionTile({ coord: tileCoord, resource: "food", tier: "small" })];
     const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "highway" })];
 
-    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed);
+    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
 
     // Production-limited: a tile can never hand off more per second than it produces per second,
     // regardless of how much spare transport capacity the path tier has.
@@ -132,7 +148,7 @@ describe("computeResourceRates", () => {
     const tiles: ExtractionTile[] = [extractionTile({ coord: tileCoord, resource: "food", tier: "small" })];
     const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "stone_road" })];
 
-    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed);
+    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
 
     expect(rates.food).toBeCloseTo(foodYieldAt(tweaks, seed, tileCoord));
   });
@@ -155,6 +171,7 @@ describe("computeResourceRates", () => {
       ALL_L1_STORAGE,
       NO_UNITS,
       seed,
+      UNLIMITED_POWER,
     );
 
     expect(rates.food).toBeCloseTo(foodYieldAt(tweaks, seed, tileCoord));
@@ -169,7 +186,7 @@ describe("computeResourceRates", () => {
     ];
     const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "highway" })];
 
-    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed);
+    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
 
     expect(rates.food).toBe(0);
   });
@@ -178,7 +195,7 @@ describe("computeResourceRates", () => {
     const tweaks = loadRealTweaks();
     const finishedRate = dockYieldPerSecond(tweaks, dock());
 
-    const finished = computeResourceRates(tweaks, [], [], [dock()], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, 1);
+    const finished = computeResourceRates(tweaks, [], [], [dock()], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, 1, UNLIMITED_POWER);
     expect(finished.food).toBeCloseTo(finishedRate);
 
     const underConstruction = computeResourceRates(
@@ -191,6 +208,7 @@ describe("computeResourceRates", () => {
       ALL_L1_STORAGE,
       NO_UNITS,
       1,
+      UNLIMITED_POWER,
     );
     expect(underConstruction.food).toBe(0);
   });
@@ -204,7 +222,7 @@ describe("computeResourceRates", () => {
     const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "highway" })];
     const fullResources: ResourceAmounts = { ...NO_RESOURCES, food: cap };
 
-    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], fullResources, ALL_L1_STORAGE, NO_UNITS, seed);
+    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], fullResources, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
 
     expect(rates.food).toBe(0);
   });
@@ -213,13 +231,12 @@ describe("computeResourceRates", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = { ...initialUnits(), militiaCount: 10 };
 
-    const rates = computeResourceRates(tweaks, [], [], [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, units, 1);
+    const rates = computeResourceRates(tweaks, [], [], [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, units, 1, UNLIMITED_POWER);
 
     expect(rates.food).toBeCloseTo(-totalUpkeepPerSecond(tweaks, units));
     expect(rates.wood).toBe(0);
     expect(rates.stone).toBe(0);
     expect(rates.steel).toBe(0);
-    expect(rates.power).toBe(0);
   });
 
   it("upkeep still applies even when food is already at storage cap — upkeep isn't blocked by the inflow clamp", () => {
@@ -228,7 +245,7 @@ describe("computeResourceRates", () => {
     const units: UnitsRecord = { ...initialUnits(), militiaCount: 10 };
     const fullResources: ResourceAmounts = { ...NO_RESOURCES, food: cap };
 
-    const rates = computeResourceRates(tweaks, [], [], [], [BASE], fullResources, ALL_L1_STORAGE, units, 1);
+    const rates = computeResourceRates(tweaks, [], [], [], [BASE], fullResources, ALL_L1_STORAGE, units, 1, UNLIMITED_POWER);
 
     expect(rates.food).toBeCloseTo(-totalUpkeepPerSecond(tweaks, units));
   });
@@ -242,7 +259,7 @@ describe("computeResourceRates", () => {
     ];
     const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "highway" })];
 
-    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed);
+    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
 
     expect(rates.food).toBe(0);
   });

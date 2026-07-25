@@ -45,10 +45,10 @@
   // RESOURCES
   // --------------------------------------------------------------------------
   "resources": {
-    "types": ["food", "wood", "stone", "steel", "power"],
+    "types": ["food", "wood", "stone", "steel"],
 
     // Rarity tier, low -> high. Informs yield curve and noise curve.
-    "rarity_order": ["food", "wood", "stone", "steel", "power"],
+    "rarity_order": ["food", "wood", "stone", "steel"],
 
     "starting_amounts": {
       "_status": "First pass, untested — locked for now, revisit once playable.",
@@ -56,13 +56,12 @@
       "food": 100,
       "wood": 500,
       "stone": 400,
-      "steel": 0,
-      "power": 0
+      "steel": 0
     }
   },
 
   // --------------------------------------------------------------------------
-  // EXTRACTION TILES (food / wood / stone / steel / power gathering)
+  // EXTRACTION TILES (food / wood / stone / steel gathering)
   // Each resource has 3 tiers: small -> mid -> large.
   // --------------------------------------------------------------------------
   "extraction_tiles": {
@@ -115,7 +114,7 @@
     "steel": {
       "small_yield_per_tick": 5,
       "build_cost_base": { "wood": 400, "stone": 300 },
-      "_build_cost_note": "Fixed from an earlier pass where this cost 254 steel — self-referential and literally unbuildable, since starting steel is (correctly) 0 and there's no other way to earn steel before a steel tile exists. Now costs wood+stone instead, matching the wood->stone->steel->power tech chain. Tier upgrades stay self-referential (steel:254) since by then the tile is already producing steel to reinvest. First pass, untested.",
+      "_build_cost_note": "Fixed from an earlier pass where this cost 254 steel — self-referential and literally unbuildable, since starting steel is (correctly) 0 and there's no other way to earn steel before a steel tile exists. Now costs wood+stone instead, matching the wood->stone->steel tech chain. Tier upgrades stay self-referential (steel:254) since by then the tile is already producing steel to reinvest. First pass, untested.",
       "build_cost_scaling": "FORMULA_A",
       "tier_upgrade_cost_base": { "steel": 254 },
       "tier_upgrade_cost_scaling": "FORMULA_B",
@@ -124,17 +123,6 @@
       "noise_upgrade": 10
     },
 
-    "power": {
-      "small_yield_per_tick": 5,
-      "build_cost_base": { "wood": 500, "stone": 400, "steel": 200 },
-      "_build_cost_note": "Fixed from an earlier pass where this cost 330 power — self-referential and unbuildable (starting power is 0). Now costs wood+stone+steel, requiring an established steel operation first. Tier upgrades stay self-referential (power:330). First pass, untested.",
-      "build_cost_scaling": "FORMULA_A",
-      "tier_upgrade_cost_base": { "power": 330 },
-      "tier_upgrade_cost_scaling": "FORMULA_B",
-      "noise_passive_per_min": 15,
-      "noise_build": 20,
-      "noise_upgrade": 10
-    },
 
     // Universal technology progression applied ON TOP of each resource's own
     // upgrade cost when moving small -> mid -> large. Mirrors tower/wall/path logic.
@@ -157,14 +145,42 @@
       "food": { "grassland": 1.5, "forest": 1.0, "mountain": 0.5, "shore": 1.0, "water": 1.0 },
       "wood": { "forest": 1.5, "grassland": 1.0, "mountain": 0.5, "shore": 1.0, "water": 1.0 },
       "stone": { "mountain": 1.5, "forest": 1.0, "grassland": 0.5, "shore": 1.0, "water": 1.0 },
-      "steel": { "grassland": 1.0, "forest": 1.0, "mountain": 1.0, "shore": 1.0, "water": 1.0 },
-      "power": { "grassland": 1.0, "forest": 1.0, "mountain": 1.0, "shore": 1.0, "water": 1.0 }
+      "steel": { "grassland": 1.0, "forest": 1.0, "mountain": 1.0, "shore": 1.0, "water": 1.0 }
     }
   },
 
   // --------------------------------------------------------------------------
   // TERRAIN TRANSITION TILES
   // --------------------------------------------------------------------------
+
+  // --------------------------------------------------------------------------
+  // POWER STATIONS (Milestone 25 / #70) — capacity + AoE, not a stockpile resource
+  // First pass, untested.
+  // --------------------------------------------------------------------------
+  "power": {
+    "max_level": 4,
+    "capacity_base": 20,
+    "capacity_per_level": 15,
+    "aoe_base_tiles": 2,
+    "aoe_per_level": 1,
+    "cutoff_factor": 0.5,
+    "build_cost_base": { "wood": 400, "stone": 300, "steel": 150 },
+    "upgrade_cost_base": { "wood": 200, "stone": 200, "steel": 100 },
+    "build_time_minutes": 3,
+    "upgrade_time_minutes_base": 4,
+    "draw_base": {
+      "extraction": 2,
+      "path": 1,
+      "tower": 3,
+      "wall": 1,
+      "barracks": 4,
+      "dock": 2
+    },
+    "noise_build": 8,
+    "noise_upgrade": 6,
+    "passive_noise_floor_per_level": 4
+  },
+
   "transition_tiles": {
     "yield_multiplier": 0.5, // building either terrain's structure on a transition tile halves output
     "scout_flavor_text": "This place doesn't quite feel right. Not one thing, not the other. Something in between."
@@ -221,7 +237,7 @@
     "upgrade_tech_progression": {
       "L1_to_L2": ["wood", "stone"],
       "L2_to_L3": ["wood", "stone", "steel"],
-      "L3_to_L4": ["wood", "stone", "steel", "power"]
+      "L3_to_L4": ["wood", "stone", "steel"]
     },
     "upgrade_time_minutes_base": 3,
     "_upgrade_time_note": "towerUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=6min, L3=9min, L4=12min. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
@@ -300,7 +316,7 @@
     "upgrade_tech_progression": {
       "L1_to_L2": ["wood", "stone"],
       "L2_to_L3": ["wood", "stone", "steel"],
-      "L3_to_L4": ["wood", "stone", "steel", "power"]
+      "L3_to_L4": ["wood", "stone", "steel"]
     },
     "upgrade_time_minutes_base": 3,
     "_upgrade_time_note": "barracksUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=6min, L3=9min, L4=12min. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
@@ -426,8 +442,7 @@
       "food":  { "wood": 500 },
       "wood":  { "wood": 750, "stone": 500 },
       "stone": { "wood": 1500, "stone": 1000 },
-      "steel": { "wood": 2000, "stone": 1500, "steel": 500 },
-      "power": { "wood": 2500, "stone": 2000, "steel": 1000, "food": 500 }
+      "steel": { "wood": 2000, "stone": 1500, "steel": 500 }
     }
   },
 
@@ -562,6 +577,7 @@
       "repair_wall": 15,
       "build_extraction_tile": 20,
       "build_tower": 25,
+      "build_power_station": 8,
       "build_wall": 20,
       "build_barracks": 20,
       "upgrade_extraction_tile": 10,
@@ -583,8 +599,7 @@
       "food": 2,
       "wood": 5,
       "stone": 9,
-      "steel": 12,
-      "power": 15
+      "steel": 12
     },
 
     "extraction_tier_noise_multiplier": 3,

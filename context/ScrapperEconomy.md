@@ -65,7 +65,9 @@ Working design doc for the proposed **Scrapper unit & scrap stashes** feature. R
 
 ### Q13 — Power resource
 
-**Decision:** **Out of scope for now** — power keeps passive extraction tiles; may get a similar logistics treatment in a future pass.
+**Decision (superseded by Milestone 25 / issue #70):** Power is **not** a stockpiled extraction
+resource and does **not** use the Scrapper haul loop. Power stations supply capacity over an AoE;
+see [Milestone25.md](Milestone25.md).
 
 ### Q14 — First yard timing
 

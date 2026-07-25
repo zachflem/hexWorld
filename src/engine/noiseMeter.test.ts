@@ -109,7 +109,7 @@ describe("noiseFloor", () => {
   it("clamps at the noise cap", () => {
     const tweaks = loadRealTweaks();
     const tiles: ExtractionTile[] = Array.from({ length: 50 }, (_, i) =>
-      extractionTile({ coord: { q: i, r: 0 }, resource: "power", tier: "large" }),
+      extractionTile({ coord: { q: i, r: 0 }, resource: "steel", tier: "large" }),
     );
     expect(noiseFloor(tweaks, tiles, [], [], [], BASE_LEVEL)).toBe(noiseCap(tweaks, BASE_LEVEL));
   });
@@ -117,7 +117,7 @@ describe("noiseFloor", () => {
   it("rises as base level rises, since the cap does", () => {
     const tweaks = loadRealTweaks();
     const tiles: ExtractionTile[] = Array.from({ length: 50 }, (_, i) =>
-      extractionTile({ coord: { q: i, r: 0 }, resource: "power", tier: "large" }),
+      extractionTile({ coord: { q: i, r: 0 }, resource: "steel", tier: "large" }),
     );
     expect(noiseFloor(tweaks, tiles, [], [], [], 5)).toBe(noiseCap(tweaks, 5));
     expect(noiseFloor(tweaks, tiles, [], [], [], 5)).toBeGreaterThan(noiseFloor(tweaks, tiles, [], [], [], BASE_LEVEL));
@@ -199,11 +199,11 @@ describe("noiseFloor with towers/walls", () => {
 
   it("more walls read as a quieter base than fewer, holding everything else constant", () => {
     const tweaks = loadRealTweaks();
-    const largePower = extractionTile({ resource: "power", tier: "large", coord: { q: 0, r: 0 } });
-    const floorWithoutWalls = noiseFloor(tweaks, [largePower], [], [], [], BASE_LEVEL);
+    const largeSteel = extractionTile({ resource: "steel", tier: "large", coord: { q: 0, r: 0 } });
+    const floorWithoutWalls = noiseFloor(tweaks, [largeSteel], [], [], [], BASE_LEVEL);
     const floorWithWalls = noiseFloor(
       tweaks,
-      [largePower],
+      [largeSteel],
       [],
       [],
       [wall({ tier: "steel", coord: { q: 1, r: 0 } }), wall({ tier: "steel", coord: { q: 2, r: 0 } })],
@@ -255,12 +255,12 @@ describe("accrueNoise", () => {
 
   it("rises toward a higher floor if noise starts below it", () => {
     const tweaks = loadRealTweaks();
-    const largePower = extractionTile({ resource: "power", tier: "large" });
-    const floor = noiseFloor(tweaks, [largePower], [], [], [], BASE_LEVEL);
+    const largeSteel = extractionTile({ resource: "steel", tier: "large" });
+    const floor = noiseFloor(tweaks, [largeSteel], [], [], [], BASE_LEVEL);
 
     const result = accrueNoise(
       tweaks,
-      [largePower],
+      [largeSteel],
       [],
       [],
       [],

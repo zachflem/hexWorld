@@ -61,9 +61,11 @@ You begin owning your base tile plus the two full rings around it (19 tiles) out
 
 ## Resources
 
-Five types, in ascending rarity: **food → wood → stone → steel → power**. Rarer resources yield less per tile and generate more noise while being gathered.
+Four stockpile types, in ascending rarity: **food → wood → stone → steel**. Rarer resources yield less per tile and generate more noise while being gathered.
 
 Each resource has its own **storage cap** at your base (1000 at level 1, doubling per storage upgrade level — upgraded per-resource from the base tile sheet’s **Storage** tab; first upgrade takes **2 minutes**, each further level **+50%** on that timer, and progress shows in the notification tray). Separate from the global tech tree under [Research](#research). The base sheet’s **Info** tab shows how full each stockpile is against its current cap.
+
+**Power** is not stockpiled. Build a **power station** on owned land to cover nearby tiles with capacity. Upgrade the station for more capacity and a wider area. Level-1 buildings work anywhere without power; upgraded (level/tier 2+) buildings need coverage. If demand exceeds supply you’ll **brown out** (slower yield/DPS/etc.); past the cut-off they go offline (“No power”).
 
 ---
 
@@ -82,7 +84,7 @@ Building extraction tiles gets progressively more expensive the more of that typ
   
   Paths can cross any terrain except water, with a throughput penalty over mountains.
 
-A tile can only hold one thing at a time — an extraction tile, a path, a tower, a wall, a barracks, or a dock — never a combination.
+A tile can only hold one thing at a time — an extraction tile, a path, a tower, a wall, a barracks, a dock, or a power station — never a combination.
 
 ---
 
@@ -197,7 +199,7 @@ Clearing dens is never *required* to win — a lucky, exploration-heavy game cou
 
 The **top-right** of the screen shows active timers and short event messages:
 
-- **Timer rows** — one per in-flight build, upgrade, repair, training queue, expedition, assault, recall, or den siege hold. Each shows an icon, what it is, coordinates, and time remaining (plus **Rush** when you can spend power to finish early).
+- **Timer rows** — one per in-flight build, upgrade, repair, training queue, expedition, assault, recall, or den siege hold. Each shows an icon, what it is, coordinates, and time remaining. **Rush** (where offered) finishes militia training early for a **noise spike** — it does not spend a power currency.
 - **Toasts** — brief one-off notices (e.g. base upgraded, den cleared, new lab clue).
 
 When a row appears it stays **fully expanded for 5 seconds**, then the text/countdown slides away and only the **icon** remains as a small peek along the right edge. **Tap the icon** to expand it again. Timer rows keep peeking until that action finishes; toasts fade out on their own after a short peek.
@@ -211,6 +213,7 @@ On the map, any building with a timed job also shows a **circular progress ring*
 ## Quick tips
 
 - Build your first food/wood/stone extraction tiles immediately — you start with exactly enough for one of each.
+- Before upgrading extractors or towers past level 1, place a **power station** nearby — otherwise mid/large (and L2+) buildings go offline.
 - Don't overbuild early — your build slot cap is tight at base level 1, and every structure (even a quiet one) raises your noise floor a little.
 - A tower's passive claim range is a cheap way to expand territory without spending militia.
 - Keep at least a little garrison on exposed tiles once hordes start showing up — a bare tile has almost no defense of its own.
