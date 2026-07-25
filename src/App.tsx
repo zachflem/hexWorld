@@ -164,7 +164,16 @@ import {
   outpostRepairCost,
   revertOutpostToDen,
 } from "./engine/outposts";
-import { accrueDockResources, collectDock, dockBuildCost, dockBuildDurationMs } from "./engine/docks";
+import {
+  accrueDockResources,
+  collectDock,
+  dockBuildCost,
+  dockBuildDurationMs,
+  dockLevel,
+  dockUpgradeCost,
+  dockUpgradeDurationMs,
+  nextDockLevel,
+} from "./engine/docks";
 import { advanceScoutSkiffs } from "./engine/scoutSkiffs";
 import { advanceWanderingScouts } from "./engine/wanderingScouts";
 import { nextTowerLevel, towerBuildCost, towerBuildDurationMs, towerUpgradeCost, towerUpgradeDurationMs } from "./engine/towers";
@@ -763,13 +772,6 @@ export default function App() {
       // resource/noise/horde simulation.
       const virtualNow = current.game.clock.virtualNow + elapsedSeconds * 1000;
 
-      // Base always goes first in this list — accrueResources claims a
-      // path-connected tile for whichever hub reaches it first in caller
-      // order, but every hub (base or outpost) feeds the same shared
-      // `resources` pool now (engine/tick.ts:accrueResources doc comment),
-      // so claim order only matters for picking which connection's
-      // tier/throughput applies, not who "gets" the resources.
-      const economyHubCoords: Axial[] = [current.game.territory.base, ...current.game.outposts.map((o) => o.coord)];
       // Computed once per tick from this tick's starting structure arrays —
       // every consumer below (accrual, noise, training, hordes) reads the
       // same snapshot, since the network itself only actually shifts at the
@@ -801,16 +803,23 @@ export default function App() {
           });
         }
       }
+      // Milestone 26: L2+ extraction tiles haul via implied courier to base
+      // (path auto-flow retired). Scouted tiles feed the same owned∪scouted
+      // route set as expeditions.
+      const economyGridSize = resolveWorldGridSize(current.game.world, current.tweaks);
       const { resources: producedResources, tiles: extractionTilesAfterYield } = accrueResources(
         current.tweaks,
         current.game.extractionTiles,
-        current.game.pathTiles,
         elapsedSeconds,
         current.game.world.seed,
         current.game.resources,
         current.game.storageLevels,
-        economyHubCoords,
         powerNetwork,
+        virtualNow,
+        current.game.territory.base,
+        current.game.territory,
+        current.game.scoutedTiles,
+        economyGridSize,
       );
       // Later stages (hold-period damage, horde overrun/reversion, fresh
       // conversions) build on top of this array, not current.game.outposts
@@ -825,6 +834,12 @@ export default function App() {
         producedResources,
         elapsedSeconds,
         current.game.storageLevels,
+        virtualNow,
+        current.game.world.seed,
+        current.game.territory.base,
+        current.game.territory,
+        current.game.scoutedTiles,
+        economyGridSize,
       );
       const { food: foodAfterUpkeep, units: unitsAfterUpkeep } = applyUpkeepTick(
         current.tweaks,
@@ -949,12 +964,36 @@ export default function App() {
       // tick's just-accrued stockpile deltas would be silently discarded —
       // same reasoning as extractionTiles above.
       const docks = docksAfterYield
-        .map((d) =>
-          d.fishingBoatUpgrade &&
-          isTimerComplete(d.fishingBoatUpgrade.startedAt, current.tweaks.docks.fishing_boat.build_time_minutes * 60_000, virtualNow)
-            ? { ...d, fishingBoat: true, fishingBoatUpgrade: null }
-            : d,
-        )
+        .map((d) => {
+          // Legacy fishing-boat timer → complete as L3.
+          if (
+            d.fishingBoatUpgrade &&
+            isTimerComplete(
+              d.fishingBoatUpgrade.startedAt,
+              current.tweaks.docks.fishing_boat.build_time_minutes * 60_000,
+              virtualNow,
+            )
+          ) {
+            return { ...d, level: 3, fishingBoat: true, fishingBoatUpgrade: null, upgrade: null };
+          }
+          if (
+            d.upgrade &&
+            isTimerComplete(
+              d.upgrade.startedAt,
+              dockUpgradeDurationMs(current.tweaks, d.upgrade.targetLevel as 2 | 3),
+              virtualNow,
+            )
+          ) {
+            const level = d.upgrade.targetLevel;
+            return {
+              ...d,
+              level,
+              fishingBoat: level >= 3 ? true : d.fishingBoat,
+              upgrade: null,
+            };
+          }
+          return d;
+        })
         .map((d) => resolveConstruction(d, dockBuildDurationMs(current.tweaks), virtualNow));
       const scoutSkiffsAfterBuild = current.game.scoutSkiffs.map((s) =>
         s.buildStartedAt != null &&
@@ -2470,6 +2509,7 @@ export default function App() {
         coord,
         buildStartedAt: game.clock.virtualNow,
         stockpile: 0,
+        level: 1,
         fishingBoat: false,
         fishingBoatUpgrade: null,
         totalInvested: cost,
@@ -2485,16 +2525,22 @@ export default function App() {
     return { ok: true };
   }
 
-  async function handleBuildFishingBoat(coord: Axial): Promise<BuildResult> {
+  async function handleUpgradeDock(coord: Axial): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
 
     const dock = game.docks.find((d) => axialKey(d.coord) === axialKey(coord));
     if (!dock) return { ok: false, reason: "No dock here" };
-    if (dock.fishingBoat) return { ok: false, reason: "Fishing boat already built" };
+    if (dock.buildStartedAt != null) return { ok: false, reason: "Still under construction" };
     if (isDockAtTaskCap(dock, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
-    const cost = tweaks.docks.fishing_boat.cost;
+    const currentLevel = dockLevel(dock);
+    const targetLevel = nextDockLevel(currentLevel);
+    if (targetLevel == null || (targetLevel !== 2 && targetLevel !== 3)) {
+      return { ok: false, reason: "Dock is already at max level" };
+    }
+
+    const cost = dockUpgradeCost(tweaks, targetLevel);
     for (const [key, amount] of Object.entries(cost)) {
       if (game.resources[key as keyof ResourceAmounts] < (amount ?? 0)) {
         return { ok: false, reason: `Not enough ${key}` };
@@ -2509,12 +2555,15 @@ export default function App() {
       axialKey(d.coord) === axialKey(coord)
         ? {
             ...d,
+            level: currentLevel,
             totalInvested: addToInvestment(d.totalInvested, cost),
-            fishingBoatUpgrade: { startedAt: game.clock.virtualNow },
+            upgrade: { targetLevel, startedAt: game.clock.virtualNow },
+            fishingBoatUpgrade: null,
           }
         : d,
     );
-    const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "build_fishing_boat", game.base.level) };
+    const noiseKey = targetLevel >= 3 ? "build_fishing_boat" : "upgrade_extraction_tile";
+    const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, noiseKey, game.base.level) };
 
     await Promise.all([set(RESOURCES_DB_KEY, resources), set(DOCKS_DB_KEY, docks), set(NOISE_DB_KEY, noise)]);
     setBoot((prev) =>
@@ -4617,7 +4666,7 @@ export default function App() {
       onGarrisonUnits={handleGarrisonUnits}
       onRecallMilitia={handleRecallMilitia}
       onBuildDock={handleBuildDock}
-      onBuildFishingBoat={handleBuildFishingBoat}
+      onUpgradeDock={handleUpgradeDock}
       onBuildScoutSkiff={handleBuildScoutSkiff}
       onCollectDock={handleCollectDock}
       onBuildWanderingScout={handleBuildWanderingScout}

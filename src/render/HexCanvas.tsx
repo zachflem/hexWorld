@@ -1261,10 +1261,9 @@ export const HexCanvas = forwardRef<
                 drawPlacedStructureIcon(ctx, constructionIcon, screenCenter.x, screenCenter.y, size, "construction");
               }
             } else if (dock) {
-              const dockStem = dock.fishingBoat ? "dock-boat" : "dock";
-              const dockIcon = getStructureIconTextureCandidates(
-                dockSpriteCandidates(Boolean(dock.fishingBoat)),
-              );
+              const level = dock.level ?? (dock.fishingBoat ? 3 : 1);
+              const dockStem = level >= 3 || dock.fishingBoat ? "dock-boat" : `dock-${level}`;
+              const dockIcon = getStructureIconTextureCandidates(dockSpriteCandidates(level));
               if (dockIcon) {
                 drawPlacedStructureIcon(ctx, dockIcon, screenCenter.x, screenCenter.y, size, "dock", dockStem);
               } else {
@@ -1276,7 +1275,7 @@ export const HexCanvas = forwardRef<
                 ctx.stroke();
               }
               // Emoji boat marker only when there is no dedicated dock-boat sprite yet.
-              if (dock.fishingBoat && !getStructureIconTexture("dock-boat")) {
+              if ((level >= 3 || dock.fishingBoat) && !getStructureIconTexture("dock-boat")) {
                 ctx.font = `${Math.max(9, size * 0.5)}px sans-serif`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";

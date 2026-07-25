@@ -23,9 +23,15 @@ export function extractionTierCandidates(resource: ResourceType, tier: Extractio
   return [`${resource}-${tier}`, `extraction-${tier}`, "extraction"];
 }
 
-/** Dock with fishing boat prefers dock-boat, else dock. */
-export function dockSpriteCandidates(hasBoat: boolean): string[] {
-  return hasBoat ? ["dock-boat", "dock"] : ["dock"];
+/**
+ * Dock art: prefer levelled stems; L3+ / fishing boat also tries dock-boat.
+ * `hasBoatOrLevel` — pass fishingBoat flag or level ≥ 3.
+ */
+export function dockSpriteCandidates(levelOrHasBoat: number | boolean): string[] {
+  const level = typeof levelOrHasBoat === "number" ? levelOrHasBoat : levelOrHasBoat ? 3 : 1;
+  const hasBoat = level >= 3 || levelOrHasBoat === true;
+  if (hasBoat) return ["dock-boat", `dock-${level}`, "dock"];
+  return [`dock-${level}`, "dock"];
 }
 
 /**

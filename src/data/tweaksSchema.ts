@@ -124,6 +124,18 @@ export const tweaksSchema = z.object({
     build_cost_scaling: z.string(),
     build_time_minutes: z.number(),
     yield_multiplier_vs_food_tile: z.number(),
+    /** M26: L1 manual → L2 courier → L3 production. Keys are target levels. */
+    level_upgrades: z.object({
+      "2": z.object({
+        cost: resourceCostMap,
+        build_time_minutes: z.number(),
+      }),
+      "3": z.object({
+        cost: resourceCostMap,
+        build_time_minutes: z.number(),
+      }),
+    }),
+    /** L3 yield multiplier (legacy fishing-boat bonus). */
     fishing_boat: z.object({
       cost: resourceCostMap,
       yield_bonus_multiplier: z.number(),

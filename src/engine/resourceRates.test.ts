@@ -10,10 +10,10 @@ import { totalUpkeepPerSecond } from "./units";
 import { axialEquals, axialNeighbors, axialSpiral, type Axial } from "./hexCoords";
 import { isTransitionTile, terrainAt, type TerrainType } from "./terrain";
 import type { ExtractionTile } from "../data/extractionTiles";
-import type { PathTile } from "../data/pathTiles";
 import type { DockRecord } from "../data/docks";
 import type { ResourceAmounts } from "../data/resources";
 import type { StorageLevels } from "../data/storageLevels";
+import type { TerritoryRecord } from "../data/territory";
 import { initialUnits, type UnitsRecord } from "../data/units";
 import type { PowerNetworkSnapshot } from "./power";
 
@@ -36,23 +36,12 @@ function extractionTile(overrides: Partial<ExtractionTile> = {}): ExtractionTile
   };
 }
 
-function pathTile(overrides: Partial<PathTile> = {}): PathTile {
-  return {
-    coord: { q: 0, r: 0 },
-    tier: "goat_track",
-    totalInvested: {},
-    upgrade: null,
-    buildCost: {},
-    damaged: false,
-    ...overrides,
-  };
-}
-
 function dock(overrides: Partial<DockRecord> = {}): DockRecord {
   return {
     coord: { q: 0, r: 0 },
     buildStartedAt: null,
     stockpile: 0,
+    level: 1,
     fishingBoat: false,
     fishingBoatUpgrade: null,
     totalInvested: {},
@@ -65,8 +54,8 @@ const ALL_L1_STORAGE: StorageLevels = { food: 1, wood: 1, stone: 1, steel: 1 };
 const NO_RESOURCES: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0 };
 const NO_UNITS: UnitsRecord = initialUnits();
 const BASE: Axial = { q: 0, r: 0 };
+const GRID = 32;
 
-/** Every tile always reads as powered, regardless of coord — these tests aren't about power. */
 class AlwaysPoweredSet extends Set<string> {
   override has(): boolean {
     return true;
@@ -89,178 +78,127 @@ function findCoord(seed: number, wantTransition: boolean, candidates: Axial[], t
   return coord;
 }
 
-function findConnectedPair(seed: number): { pathCoord: Axial; tileCoord: Axial } {
-  const pathCoord = axialNeighbors(BASE)[0];
-  const tileCoord = findCoord(
-    seed,
-    false,
-    axialNeighbors(pathCoord).filter((c) => !axialEquals(c, BASE)),
-  );
-  return { pathCoord, tileCoord };
+function ownedTerritory(...coords: Axial[]): TerritoryRecord {
+  const owned = [BASE, ...coords.filter((c) => !axialEquals(c, BASE))];
+  return { base: BASE, owned };
 }
 
-function foodYieldAt(tweaks: ReturnType<typeof loadRealTweaks>, seed: number, coord: Axial): number {
-  return yieldPerSecond(tweaks, extractionTile({ coord, resource: "food", tier: "small" }), seed);
+function rates(
+  tweaks: ReturnType<typeof loadRealTweaks>,
+  tiles: ExtractionTile[],
+  docks: DockRecord[],
+  resources: ResourceAmounts,
+  units: UnitsRecord,
+  seed: number,
+  territory: TerritoryRecord,
+) {
+  return computeResourceRates(
+    tweaks,
+    tiles,
+    docks,
+    resources,
+    ALL_L1_STORAGE,
+    units,
+    seed,
+    UNLIMITED_POWER,
+    BASE,
+    territory,
+    [],
+    GRID,
+  );
+}
+
+function foodYieldAt(tweaks: ReturnType<typeof loadRealTweaks>, seed: number, coord: Axial, tier: "small" | "mid" = "mid"): number {
+  return yieldPerSecond(tweaks, extractionTile({ coord, resource: "food", tier }), seed);
 }
 
 describe("computeResourceRates", () => {
-  it("credits nothing for a tile with no path connection to any hub", () => {
+  it("credits nothing for an L1 tile (manual only)", () => {
     const tweaks = loadRealTweaks();
     const seed = 1;
     const coord = findCoord(seed, false, axialSpiral(BASE, 30));
     const tiles: ExtractionTile[] = [extractionTile({ coord, resource: "food", tier: "small" })];
 
-    const rates = computeResourceRates(tweaks, tiles, [], [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
-
-    expect(rates.food).toBe(0);
+    expect(rates(tweaks, tiles, [], NO_RESOURCES, NO_UNITS, seed, ownedTerritory(coord)).food).toBe(0);
   });
 
-  it("a goat-track-connected tile delivers half its raw yield — the transport tier IS the bottleneck", () => {
+  it("credits full yield for an L2 tile with a route to base", () => {
     const tweaks = loadRealTweaks();
     const seed = 1;
-    const { pathCoord, tileCoord } = findConnectedPair(seed);
-    const tiles: ExtractionTile[] = [extractionTile({ coord: tileCoord, resource: "food", tier: "small" })];
-    const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "goat_track" })];
+    const tileCoord = axialNeighbors(BASE)[0];
+    const tiles: ExtractionTile[] = [extractionTile({ coord: tileCoord, resource: "food", tier: "mid" })];
 
-    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
-
-    expect(rates.food).toBeCloseTo(foodYieldAt(tweaks, seed, tileCoord) * 0.5);
-  });
-
-  it("a highway-connected tile delivers exactly its raw yield, NOT yield times the 1000x transport-capacity multiplier", () => {
-    const tweaks = loadRealTweaks();
-    const seed = 1;
-    const { pathCoord, tileCoord } = findConnectedPair(seed);
-    const tiles: ExtractionTile[] = [extractionTile({ coord: tileCoord, resource: "food", tier: "small" })];
-    const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "highway" })];
-
-    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
-
-    // Production-limited: a tile can never hand off more per second than it produces per second,
-    // regardless of how much spare transport capacity the path tier has.
-    expect(rates.food).toBeCloseTo(foodYieldAt(tweaks, seed, tileCoord));
-  });
-
-  it("a stone-road-connected tile also delivers exactly its raw yield (2x capacity still isn't a rate multiplier)", () => {
-    const tweaks = loadRealTweaks();
-    const seed = 1;
-    const { pathCoord, tileCoord } = findConnectedPair(seed);
-    const tiles: ExtractionTile[] = [extractionTile({ coord: tileCoord, resource: "food", tier: "small" })];
-    const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "stone_road" })];
-
-    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
-
-    expect(rates.food).toBeCloseTo(foodYieldAt(tweaks, seed, tileCoord));
-  });
-
-  it("credits a tile only reachable from an outpost, through that outpost's hub coord", () => {
-    const tweaks = loadRealTweaks();
-    const seed = 1;
-    const { pathCoord, tileCoord } = findConnectedPair(seed);
-    const tiles: ExtractionTile[] = [extractionTile({ coord: tileCoord, resource: "food", tier: "small" })];
-    const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "highway" })];
-    const farAway: Axial = { q: 500, r: 500 }; // base has no route here — mirrors tick.test.ts's equivalent case
-
-    const rates = computeResourceRates(
-      tweaks,
-      tiles,
-      pathTiles,
-      [],
-      [farAway, BASE],
-      NO_RESOURCES,
-      ALL_L1_STORAGE,
-      NO_UNITS,
-      seed,
-      UNLIMITED_POWER,
+    expect(rates(tweaks, tiles, [], NO_RESOURCES, NO_UNITS, seed, ownedTerritory(tileCoord)).food).toBeCloseTo(
+      foodYieldAt(tweaks, seed, tileCoord, "mid"),
     );
-
-    expect(rates.food).toBeCloseTo(foodYieldAt(tweaks, seed, tileCoord));
   });
 
   it("credits nothing for an extraction tile still under construction", () => {
     const tweaks = loadRealTweaks();
     const seed = 1;
-    const { pathCoord, tileCoord } = findConnectedPair(seed);
+    const tileCoord = axialNeighbors(BASE)[0];
     const tiles: ExtractionTile[] = [
-      extractionTile({ coord: tileCoord, resource: "food", tier: "small", buildStartedAt: 0 }),
+      extractionTile({ coord: tileCoord, resource: "food", tier: "mid", buildStartedAt: 0 }),
     ];
-    const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "highway" })];
 
-    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
-
-    expect(rates.food).toBe(0);
+    expect(rates(tweaks, tiles, [], NO_RESOURCES, NO_UNITS, seed, ownedTerritory(tileCoord)).food).toBe(0);
   });
 
-  it("includes a finished dock's food yield, but not one still under construction", () => {
+  it("includes a finished L2 dock's food yield, but not L1 or under construction", () => {
     const tweaks = loadRealTweaks();
-    const finishedRate = dockYieldPerSecond(tweaks, dock());
+    const seed = 1;
+    const coord = axialNeighbors(BASE)[0];
+    const territory = ownedTerritory(coord);
+    const finishedRate = dockYieldPerSecond(tweaks, dock({ coord, level: 2 }));
 
-    const finished = computeResourceRates(tweaks, [], [], [dock()], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, 1, UNLIMITED_POWER);
-    expect(finished.food).toBeCloseTo(finishedRate);
-
-    const underConstruction = computeResourceRates(
-      tweaks,
-      [],
-      [],
-      [dock({ buildStartedAt: 1000 })],
-      [BASE],
-      NO_RESOURCES,
-      ALL_L1_STORAGE,
-      NO_UNITS,
-      1,
-      UNLIMITED_POWER,
+    expect(rates(tweaks, [], [dock({ coord, level: 2 })], NO_RESOURCES, NO_UNITS, seed, territory).food).toBeCloseTo(
+      finishedRate,
     );
-    expect(underConstruction.food).toBe(0);
+    expect(rates(tweaks, [], [dock({ coord, level: 1 })], NO_RESOURCES, NO_UNITS, seed, territory).food).toBe(0);
+    expect(
+      rates(tweaks, [], [dock({ coord, level: 2, buildStartedAt: 1000 })], NO_RESOURCES, NO_UNITS, seed, territory).food,
+    ).toBe(0);
   });
 
-  it("zeroes a resource's rate once it's already at (or above) its storage cap, even with an active connected tile", () => {
+  it("zeroes a resource's rate once it's already at storage cap", () => {
     const tweaks = loadRealTweaks();
     const seed = 1;
     const cap = tweaks.storage.capacity_base_per_resource;
-    const { pathCoord, tileCoord } = findConnectedPair(seed);
-    const tiles: ExtractionTile[] = [extractionTile({ coord: tileCoord, resource: "food", tier: "small" })];
-    const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "highway" })];
+    const tileCoord = axialNeighbors(BASE)[0];
+    const tiles: ExtractionTile[] = [extractionTile({ coord: tileCoord, resource: "food", tier: "mid" })];
     const fullResources: ResourceAmounts = { ...NO_RESOURCES, food: cap };
 
-    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], fullResources, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
-
-    expect(rates.food).toBe(0);
+    expect(rates(tweaks, tiles, [], fullResources, NO_UNITS, seed, ownedTerritory(tileCoord)).food).toBe(0);
   });
 
-  it("subtracts standing-unit food upkeep from the food rate, leaving other resources untouched", () => {
+  it("subtracts standing-unit food upkeep from the food rate", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = { ...initialUnits(), militiaCount: 10 };
 
-    const rates = computeResourceRates(tweaks, [], [], [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, units, 1, UNLIMITED_POWER);
-
-    expect(rates.food).toBeCloseTo(-totalUpkeepPerSecond(tweaks, units));
-    expect(rates.wood).toBe(0);
-    expect(rates.stone).toBe(0);
-    expect(rates.steel).toBe(0);
+    const result = rates(tweaks, [], [], NO_RESOURCES, units, 1, ownedTerritory());
+    expect(result.food).toBeCloseTo(-totalUpkeepPerSecond(tweaks, units));
+    expect(result.wood).toBe(0);
   });
 
-  it("upkeep still applies even when food is already at storage cap — upkeep isn't blocked by the inflow clamp", () => {
+  it("upkeep still applies when food is at storage cap", () => {
     const tweaks = loadRealTweaks();
     const cap = tweaks.storage.capacity_base_per_resource;
     const units: UnitsRecord = { ...initialUnits(), militiaCount: 10 };
     const fullResources: ResourceAmounts = { ...NO_RESOURCES, food: cap };
 
-    const rates = computeResourceRates(tweaks, [], [], [], [BASE], fullResources, ALL_L1_STORAGE, units, 1, UNLIMITED_POWER);
-
-    expect(rates.food).toBeCloseTo(-totalUpkeepPerSecond(tweaks, units));
+    expect(rates(tweaks, [], [], fullResources, units, 1, ownedTerritory()).food).toBeCloseTo(
+      -totalUpkeepPerSecond(tweaks, units),
+    );
   });
 
-  it("a damaged tile contributes nothing, connected or not", () => {
+  it("a damaged tile contributes nothing", () => {
     const tweaks = loadRealTweaks();
     const seed = 1;
-    const { pathCoord, tileCoord } = findConnectedPair(seed);
+    const tileCoord = axialNeighbors(BASE)[0];
     const tiles: ExtractionTile[] = [
-      extractionTile({ coord: tileCoord, resource: "food", tier: "small", damaged: true }),
+      extractionTile({ coord: tileCoord, resource: "food", tier: "mid", damaged: true }),
     ];
-    const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "highway" })];
 
-    const rates = computeResourceRates(tweaks, tiles, pathTiles, [], [BASE], NO_RESOURCES, ALL_L1_STORAGE, NO_UNITS, seed, UNLIMITED_POWER);
-
-    expect(rates.food).toBe(0);
+    expect(rates(tweaks, tiles, [], NO_RESOURCES, NO_UNITS, seed, ownedTerritory(tileCoord)).food).toBe(0);
   });
 });

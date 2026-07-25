@@ -201,10 +201,24 @@
     "yield_multiplier_vs_food_tile": 0.7,
     "_yield_note": "dockYieldPerSecond (engine/docks.ts) = extraction_tiles.food.small_yield_per_tick/game.tick_interval_seconds * this multiplier * (fishing_boat.yield_bonus_multiplier if built). Deliberately NOT also multiplied by transition_tiles.yield_multiplier — a dock sits on transition water by definition, so 0.7 already IS its full intended rate, not a rate to be halved again.",
 
+    "level_upgrades": {
+      "2": {
+        "cost": { "wood": 100, "food": 80 },
+        "build_time_minutes": 2,
+        "_note": "M26 L2 — unlock implied courier (automate collection)."
+      },
+      "3": {
+        "cost": { "wood": 150, "steel": 20 },
+        "build_time_minutes": 3,
+        "_note": "M26 L3 — increase production (replaces standalone fishing-boat build; same cost/timer as legacy fishing_boat)."
+      }
+    },
+
     "fishing_boat": {
       "cost": { "wood": 150, "steel": 20 },
       "yield_bonus_multiplier": 1.5,
-      "build_time_minutes": 3
+      "build_time_minutes": 3,
+      "_note": "yield_bonus_multiplier applies at dock level ≥ 3. cost/build_time kept for parity with level_upgrades.3 / legacy saves."
     },
 
     "scout_skiff": {

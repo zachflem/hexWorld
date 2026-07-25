@@ -43,9 +43,12 @@ describe("structureSprites", () => {
     ]);
   });
 
-  it("lists dock-boat before dock when a boat is present", () => {
-    expect(dockSpriteCandidates(true)).toEqual(["dock-boat", "dock"]);
-    expect(dockSpriteCandidates(false)).toEqual(["dock"]);
+  it("lists levelled dock stems, with dock-boat preferred at L3+", () => {
+    expect(dockSpriteCandidates(1)).toEqual(["dock-1", "dock"]);
+    expect(dockSpriteCandidates(2)).toEqual(["dock-2", "dock"]);
+    expect(dockSpriteCandidates(3)).toEqual(["dock-boat", "dock-3", "dock"]);
+    expect(dockSpriteCandidates(true)).toEqual(["dock-boat", "dock-3", "dock"]);
+    expect(dockSpriteCandidates(false)).toEqual(["dock-1", "dock"]);
   });
 
   it("lists power station stems, falling back to legacy power extraction tier sprites", () => {

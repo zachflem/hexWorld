@@ -61,12 +61,15 @@ export function isWallBusy(wall: WallFields): boolean {
 
 export type DockFields = {
   buildStartedAt?: number | null;
+  upgrade?: unknown | null;
+  /** @deprecated Legacy — counts toward the busy slot until migrated to `upgrade`. */
   fishingBoatUpgrade?: unknown | null;
 };
 
 export function countDockTasks(dock: DockFields): number {
   let count = 0;
   if (dock.buildStartedAt != null) count++;
+  if (dock.upgrade != null) count++;
   if (dock.fishingBoatUpgrade != null) count++;
   return count;
 }

@@ -1,7 +1,7 @@
 # Milestone 26 — Scrappers & Couriers (replace paths)
 
 **GitHub:** [issue #36](https://github.com/zachflem/hexWorld/issues/36) · [milestone M26](https://github.com/zachflem/hexWorld/milestone/25)  
-**Status:** Design promoted — implementation not started  
+**Status:** Implementation started on `goblin` (#36 ACTIVE) — courier core + path auto-flow retired; path-tile deletion, Scrap Yard/Scrapper, dock L2 upgrade UI still open  
 **Design Q&A:** [ScrapperEconomy.md](ScrapperEconomy.md) (Q1–Q69)
 
 Replace **infrastructure path tiles** and **passive steel extraction** with two logistics roles:

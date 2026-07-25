@@ -12,6 +12,11 @@ export function extractionTierLevel(tier: ExtractionTier): number {
   return TIER_LEVEL[tier];
 }
 
+/** Player-facing level label for Milestone 26 (small→L1, mid→L2, large→L3). */
+export function extractionTierDisplayLabel(tier: ExtractionTier): string {
+  return `L${extractionTierLevel(tier)}`;
+}
+
 export function nextTier(tier: ExtractionTier): ExtractionTier | null {
   const index = TIER_ORDER.indexOf(tier);
   return index < TIER_ORDER.length - 1 ? TIER_ORDER[index + 1] : null;

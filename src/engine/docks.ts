@@ -1,16 +1,17 @@
 import type { DockRecord } from "../data/docks";
-import type { ResourceAmounts } from "../data/resources";
+import { MAX_DOCK_LEVEL } from "../data/docks";
+import type { ResourceAmounts, ResourceType } from "../data/resources";
 import type { StorageLevels } from "../data/storageLevels";
+import type { TerritoryRecord } from "../data/territory";
 import type { Tweaks } from "../data/tweaksSchema";
+import type { Axial } from "./hexCoords";
 import { linearBuildCost } from "./formulas";
 import { storageCapacity } from "./storage";
+import { advanceCourierSite, structureHasCourierAutomation } from "./couriers";
 
 /**
  * Linear (not Formula A) build-count cost — same reasoning as
- * walls.slot_cost/wallBuildCost: Formula A's compounding pushed a 13th dock
- * to ~62,000 wood (CORRECTION, 2026-07-21 playtesting feedback: "60k wood
- * for one dock" was far too steep), so docks now scale the same gentler way
- * walls and goat tracks already do. See TWEAKS.md.
+ * walls.slot_cost/wallBuildCost. See TWEAKS.md.
  */
 export function dockBuildCost(tweaks: Tweaks, n: number): Record<string, number> {
   const cost: Record<string, number> = {};
@@ -20,33 +21,47 @@ export function dockBuildCost(tweaks: Tweaks, n: number): Record<string, number>
   return cost;
 }
 
-/** Flat construction duration for a freshly-built dock — tweaks.jsonc docks.build_time_minutes. CORRECTION (2026-07-21, playtesting feedback): docks previously had no construction timer at all, unlike every other structure. */
 export function dockBuildDurationMs(tweaks: Tweaks): number {
   return tweaks.docks.build_time_minutes * 60_000;
 }
 
-/**
- * Food generated per real second by one dock — a flat rate off the food
- * extraction tile's base yield (tweaks.docks.yield_multiplier_vs_food_tile),
- * boosted further once a fishing boat is built. Deliberately NOT also scaled
- * by transition_tiles.yield_multiplier the way ExtractionTile's yieldPerSecond
- * (engine/tick.ts) is — a dock sits on transition water by definition, so
- * 0.7x is already its full intended rate, not a rate to be halved again.
- */
-export function dockYieldPerSecond(tweaks: Tweaks, dock: DockRecord): number {
-  const base = tweaks.extraction_tiles.food.small_yield_per_tick / tweaks.game.tick_interval_seconds;
-  const boatMultiplier = dock.fishingBoat ? tweaks.docks.fishing_boat.yield_bonus_multiplier : 1;
-  return base * tweaks.docks.yield_multiplier_vs_food_tile * boatMultiplier;
+/** Effective dock level — legacy fishingBoat without level counts as L3. */
+export function dockLevel(dock: DockRecord): number {
+  if (dock.level != null) return dock.level;
+  if (dock.fishingBoat) return 3;
+  return 1;
+}
+
+export function nextDockLevel(level: number): number | null {
+  return level < MAX_DOCK_LEVEL ? level + 1 : null;
+}
+
+export function dockUpgradeCost(
+  tweaks: Tweaks,
+  targetLevel: 2 | 3,
+): Partial<Record<ResourceType, number>> {
+  return { ...tweaks.docks.level_upgrades[String(targetLevel) as "2" | "3"].cost };
+}
+
+export function dockUpgradeDurationMs(tweaks: Tweaks, targetLevel: 2 | 3): number {
+  return tweaks.docks.level_upgrades[String(targetLevel) as "2" | "3"].build_time_minutes * 60_000;
 }
 
 /**
- * Mirrors engine/tick.ts:accrueResources, food-only and simplified for
- * docks: no path-connection draining (a water tile is never on the land path
- * network) — each dock's local stockpile fills, then deposits straight into
- * base food storage every tick, capped there same as everywhere else. No
- * `damaged` freeze either — docks are immune to horde capture. A dock still
- * under construction (`buildStartedAt` set) yields nothing yet, same as any
- * other not-yet-finished structure.
+ * Food generated per real second by one dock. L3+ applies the legacy fishing-boat
+ * yield bonus. Not also scaled by transition_tiles.yield_multiplier.
+ */
+export function dockYieldPerSecond(tweaks: Tweaks, dock: DockRecord): number {
+  const base = tweaks.extraction_tiles.food.small_yield_per_tick / tweaks.game.tick_interval_seconds;
+  const level = dockLevel(dock);
+  const productionMultiplier =
+    level >= 3 || dock.fishingBoat ? tweaks.docks.fishing_boat.yield_bonus_multiplier : 1;
+  return base * tweaks.docks.yield_multiplier_vs_food_tile * productionMultiplier;
+}
+
+/**
+ * Accrue dock yield into local stockpile; L2+ runs implied courier to base.
+ * L1 docks are manual-collect only (Milestone 26).
  */
 export function accrueDockResources(
   tweaks: Tweaks,
@@ -54,27 +69,43 @@ export function accrueDockResources(
   resources: ResourceAmounts,
   elapsedSeconds: number,
   storageLevels: StorageLevels,
+  now: number,
+  seed: number,
+  baseCoord: Axial,
+  territory: TerritoryRecord,
+  scoutedTiles: Axial[],
+  gridSize: number,
 ): { resources: ResourceAmounts; docks: DockRecord[] } {
   if (elapsedSeconds <= 0 || docks.length === 0) return { resources, docks };
 
   const tileStockpileCap = tweaks.storage.capacity_base_per_resource;
-  let food = resources.food;
+  let nextResources = { ...resources };
 
   const nextDocks = docks.map((dock) => {
     if (dock.buildStartedAt != null) return dock;
     const rate = dockYieldPerSecond(tweaks, dock);
     let stockpile = Math.min(tileStockpileCap, dock.stockpile + rate * elapsedSeconds);
 
-    const baseCap = storageCapacity(tweaks, storageLevels.food);
-    const roomAtBase = Math.max(0, baseCap - food);
-    const transferred = Math.min(stockpile, roomAtBase);
-    stockpile -= transferred;
-    food += transferred;
-
-    return { ...dock, stockpile };
+    const { site, resources: afterCourier } = advanceCourierSite(
+      tweaks,
+      seed,
+      dock.coord,
+      "food",
+      { stockpile, courier: dock.courier },
+      nextResources,
+      storageLevels,
+      now,
+      baseCoord,
+      territory,
+      scoutedTiles,
+      gridSize,
+      structureHasCourierAutomation(dockLevel(dock)),
+    );
+    nextResources = afterCourier;
+    return { ...dock, stockpile: site.stockpile, courier: site.courier };
   });
 
-  return { resources: { ...resources, food }, docks: nextDocks };
+  return { resources: nextResources, docks: nextDocks };
 }
 
 /** Manual collection: instantly moves a dock's entire local stockpile to base food storage, capped there. */

@@ -2,19 +2,28 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { axialDistance, axialEquals, axialKey, type Axial } from "../engine/hexCoords";
 import { isBuildableLand, isTransitionTile, terrainAt } from "../engine/terrain";
-import { dockBuildCost, dockBuildDurationMs, dockYieldPerSecond } from "../engine/docks";
+import {
+  dockBuildCost,
+  dockBuildDurationMs,
+  dockLevel,
+  dockUpgradeCost,
+  dockUpgradeDurationMs,
+  dockYieldPerSecond,
+  nextDockLevel,
+} from "../engine/docks";
 import { isStructureActive, repairCost, scaledCostMap, structureRepairDurationMs } from "../engine/formulas";
 import { yieldPerSecond } from "../engine/tick";
 import {
+  extractionTierDisplayLabel,
   extractionTierLevel,
   extractionTileBuildDurationMs,
   nextTier,
   tierUpgradeCost,
   tierUpgradeDurationMs,
 } from "../engine/tiers";
+import { structureHasCourierAutomation } from "../engine/couriers";
 import { storageCapacity, storageUpgradeCost, storageUpgradeDurationMs } from "../engine/storage";
 import {
-  findResourceTileConnection,
   nextPathTier,
   pathBuildCost,
   pathBuildDurationMs,
@@ -428,7 +437,7 @@ export function GameScreen({
   onGarrisonUnits,
   onRecallMilitia,
   onBuildDock,
-  onBuildFishingBoat,
+  onUpgradeDock,
   onBuildScoutSkiff,
   onCollectDock,
   onBuildWanderingScout,
@@ -540,7 +549,7 @@ export function GameScreen({
   ) => Promise<BuildResult>;
   onRecallMilitia: (coord: Axial) => Promise<BuildResult>;
   onBuildDock: (coord: Axial) => Promise<BuildResult>;
-  onBuildFishingBoat: (coord: Axial) => Promise<BuildResult>;
+  onUpgradeDock: (coord: Axial) => Promise<BuildResult>;
   onBuildScoutSkiff: (coord: Axial) => Promise<BuildResult>;
   onCollectDock: (coord: Axial) => Promise<BuildResult>;
   onBuildWanderingScout: (coord: Axial) => Promise<BuildResult>;
@@ -835,11 +844,23 @@ export function GameScreen({
     return { cost, affordable: affordable(cost) };
   }
 
-  /** Null once already built or while the dock hub is busy — a dock gets at most one fishing boat. */
-  function fishingBoatOptionFor(d: DockRecord): SimpleCostOption | null {
-    if (d.fishingBoat || isDockAtTaskCap(d, research)) return null;
-    const cost = tweaks.docks.fishing_boat.cost;
-    return { cost, affordable: affordable(cost) };
+  /** Null at max level or while the dock hub is busy. */
+  function dockUpgradeOptionFor(d: DockRecord): {
+    targetLevel: 2 | 3;
+    cost: Partial<Record<ResourceType, number>>;
+    affordable: boolean;
+    durationMinutes: number;
+  } | null {
+    if (d.buildStartedAt != null || isDockAtTaskCap(d, research)) return null;
+    const target = nextDockLevel(dockLevel(d));
+    if (target !== 2 && target !== 3) return null;
+    const cost = dockUpgradeCost(tweaks, target);
+    return {
+      targetLevel: target,
+      cost,
+      affordable: affordable(cost),
+      durationMinutes: dockUpgradeDurationMs(tweaks, target) / 60_000,
+    };
   }
 
   /** Null once this dock already has as many skiffs (built or under construction) as tweaks.docks.scout_skiff.max_per_dock allows. */
@@ -1318,9 +1339,9 @@ export function GameScreen({
     applyActionResult(result);
   }
 
-  async function handleBuildFishingBoat() {
+  async function handleUpgradeDockLevel() {
     if (!selected) return;
-    const result = await onBuildFishingBoat(selected);
+    const result = await onUpgradeDock(selected);
     applyActionResult(result);
   }
 
@@ -1572,10 +1593,8 @@ export function GameScreen({
     !selectedDen &&
     !selectedOutpost &&
     !selectedIsLab;
-  const selectedConnected =
-    selected && selectedTile
-      ? findResourceTileConnection(extractionTiles, pathTiles, territory.base, selected) !== null
-      : false;
+  const selectedCourierAutomated =
+    selectedTile != null && structureHasCourierAutomation(extractionTierLevel(selectedTile.tier));
   // A horde can be sitting on a tile that's back in territory.owned (a
   // manual militia assault reclaims ownership without necessarily clearing
   // the horde standing there) — repairing a structure it's still occupying
@@ -1651,20 +1670,22 @@ export function GameScreen({
             ? powerDrawText("barracks", selectedBarracks.level)
             : null;
   const resourceRates = useMemo(() => {
-    const hubCoords: Axial[] = [territory.base, ...outposts.map((o) => o.coord)];
+    const gridSize = resolveWorldGridSize(world, tweaks);
     return computeResourceRates(
       tweaks,
       extractionTiles,
-      pathTiles,
       docks,
-      hubCoords,
       resources,
       storageLevels,
       units,
       world.seed,
       powerNetwork,
+      territory.base,
+      territory,
+      scoutedTiles,
+      gridSize,
     );
-  }, [tweaks, extractionTiles, pathTiles, docks, territory.base, outposts, resources, storageLevels, units, world.seed, powerNetwork]);
+  }, [tweaks, extractionTiles, docks, resources, storageLevels, units, world, powerNetwork, territory, scoutedTiles]);
   const collectableTiles = useMemo(() => {
     const stockpileCap = tweaks.storage.capacity_base_per_resource;
     const fromExtraction = extractionTiles
@@ -2083,15 +2104,20 @@ export function GameScreen({
     }
 
     if (selectedDock) {
-      const fishingBoat = fishingBoatOptionFor(selectedDock);
-      if (fishingBoat) {
+      const dockUpgrade = dockUpgradeOptionFor(selectedDock);
+      if (dockUpgrade) {
+        const levelNote =
+          dockUpgrade.targetLevel === 2
+            ? " — automate collection"
+            : " — increase production";
         actions.push({
-          key: "fishing-boat",
-          icon: structureIcon(dockSpriteCandidates(true), 45, <Anchor size={18} />),
-          title: "Build fishing boat",
-          detail: formatCost(fishingBoat.cost),
-          disabled: !fishingBoat.affordable,
-          onClick: handleBuildFishingBoat,
+          key: "dock-upgrade",
+          icon: structureIcon(dockSpriteCandidates(dockUpgrade.targetLevel), 45, <Anchor size={18} />),
+          title: `Upgrade to L${dockUpgrade.targetLevel}${levelNote}`,
+          detail: `${formatCost(dockUpgrade.cost)}, ${dockUpgrade.durationMinutes}m`,
+          disabled: !dockUpgrade.affordable,
+          upgradeAvailable: dockUpgrade.affordable,
+          onClick: handleUpgradeDockLevel,
         });
       }
       const scoutSkiff = scoutSkiffOptionFor(selectedDock);
@@ -2128,10 +2154,12 @@ export function GameScreen({
         if (upgrade) {
           const fromLevel = extractionTierLevel(selectedTile.tier);
           const toLevel = extractionTierLevel(upgrade.targetTier);
+          const levelNote =
+            toLevel === 2 ? " — automate collection" : toLevel === 3 ? " — increase production" : "";
           actions.push({
             key: "tile-upgrade",
             icon: resourceIcon(selectedTile.resource),
-            title: `Upgrade to ${upgrade.targetTier}`,
+            title: `Upgrade to ${extractionTierDisplayLabel(upgrade.targetTier)}${levelNote}`,
             detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("extraction", fromLevel, toLevel)}`,
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
@@ -2906,13 +2934,24 @@ export function GameScreen({
           remainingMs: remainingMs(dock.buildStartedAt, durationMs, now),
         });
       }
-      if (dock.fishingBoatUpgrade) {
+      if (dock.upgrade) {
+        const durationMs = dockUpgradeDurationMs(tweaks, dock.upgrade.targetLevel as 2 | 3);
+        rows.push({
+          key: `dock-upgrade-${key}`,
+          kind: "build",
+          icon: buildIcon,
+          label: `Upgrading dock to L${dock.upgrade.targetLevel}`,
+          coord: dock.coord,
+          durationMs,
+          remainingMs: remainingMs(dock.upgrade.startedAt, durationMs, now),
+        });
+      } else if (dock.fishingBoatUpgrade) {
         const durationMs = tweaks.docks.fishing_boat.build_time_minutes * 60_000;
         rows.push({
           key: `dock-boat-${key}`,
           kind: "build",
           icon: buildIcon,
-          label: "Building fishing boat",
+          label: "Upgrading dock to L3",
           coord: dock.coord,
           durationMs,
           remainingMs: remainingMs(dock.fishingBoatUpgrade.startedAt, durationMs, now),
@@ -3117,7 +3156,15 @@ export function GameScreen({
     }
     if (selectedTile) {
       rows.push(
-        <div key="flow">{selectedConnected ? "Connected — auto-flowing to base" : "Not connected — manual collection only"}</div>,
+        <div key="flow">
+          {selectedCourierAutomated
+            ? selectedTile.courier
+              ? selectedTile.courier.phase === "toBase"
+                ? "Courier — delivering to base"
+                : "Courier — returning"
+              : "Courier — automated collection"
+            : "Manual collection only (upgrade to L2 to automate)"}
+        </div>,
       );
     }
     if (selectedNoiseFloorContribution !== null) {
@@ -3176,7 +3223,7 @@ export function GameScreen({
     if (selectedOutpost) return `Outpost — L${selectedOutpost.reinforcementLevel}`;
     if (selectedDen) return `Den — L${selectedDen.level}`;
     if (selectedIsLab) return "Research lab";
-    if (selectedDock) return "Dock";
+    if (selectedDock) return `Dock — L${dockLevel(selectedDock)}`;
     if (selectedBarracks) return `Barracks — L${selectedBarracks.level}`;
     if (selectedTower) return `Tower — L${selectedTower.level}`;
     if (selectedPowerStation) return `Power station — L${selectedPowerStation.level}`;
@@ -3259,14 +3306,14 @@ export function GameScreen({
           ? tile.damageRepair
             ? "Repairing…"
             : "Damaged"
-          : tile.upgrade
-            ? `Upgrading to ${tile.upgrade.targetTier}…`
+            : tile.upgrade
+            ? `Upgrading to ${extractionTierDisplayLabel(tile.upgrade.targetTier)}…`
             : "Operational";
-      const connected = findResourceTileConnection(extractionTiles, pathTiles, territory.base, coord) !== null;
+      const automated = structureHasCourierAutomation(extractionTierLevel(tile.tier));
       return (
         <HoverPanel
           icon={structureIcon(extractionTierCandidates(tile.resource, tile.tier), 28, resourceIcon(tile.resource, 28))}
-          title={`${capitalize(tile.resource)} — ${tile.tier}`}
+          title={`${capitalize(tile.resource)} — ${extractionTierDisplayLabel(tile.tier)}`}
           status={status}
         >
           {isStructureActive(tile) && (
@@ -3274,7 +3321,15 @@ export function GameScreen({
               Yield: {yieldPerSecond(tweaks, tile, world.seed).toFixed(1)} {tile.resource}/sec
             </span>
           )}
-          <span>{connected ? "Connected — auto-flows to base" : "Not connected — manual collection"}</span>
+          <span>
+            {automated
+              ? tile.courier
+                ? tile.courier.phase === "toBase"
+                  ? "Courier delivering to base"
+                  : "Courier returning"
+                : "Courier automated"
+              : "Manual collection (L2 automates)"}
+          </span>
           <span>Stockpile: {Math.floor(tile.stockpile)}</span>
           <span>{powerDrawText("extraction", extractionTierLevel(tile.tier))}</span>
           {powerStateLabelFor(extractionTierLevel(tile.tier), tile.coord) && (
@@ -3413,14 +3468,31 @@ export function GameScreen({
 
     const dock = dockAt(coord);
     if (dock) {
-      const status = dock.buildStartedAt ? "Under construction" : "Operational";
+      const level = dockLevel(dock);
+      const status = dock.buildStartedAt
+        ? "Under construction"
+        : dock.upgrade
+          ? `Upgrading to L${dock.upgrade.targetLevel}…`
+          : dock.fishingBoatUpgrade
+            ? "Upgrading to L3…"
+            : "Operational";
+      const automated = structureHasCourierAutomation(level);
       return (
         <HoverPanel
-          icon={structureIcon(dockSpriteCandidates(Boolean(dock.fishingBoat)), 28)}
-          title={dock.fishingBoat ? "Dock — with fishing boat" : "Dock"}
+          icon={structureIcon(dockSpriteCandidates(level), 28)}
+          title={`Dock — L${level}`}
           status={status}
         >
           {!dock.buildStartedAt && <span>Yield: {dockYieldPerSecond(tweaks, dock).toFixed(1)} food/sec</span>}
+          <span>
+            {automated
+              ? dock.courier
+                ? dock.courier.phase === "toBase"
+                  ? "Courier delivering to base"
+                  : "Courier returning"
+                : "Courier automated"
+              : "Manual collection (L2 automates)"}
+          </span>
           <span>Stockpile: {Math.floor(dock.stockpile)}</span>
         </HoverPanel>
       );
