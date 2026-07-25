@@ -46,16 +46,15 @@ export type AdvanceWanderingScoutsOptions = {
 
 /**
  * Wanders a land-based scout randomly across connected land, one tile per
- * tweaks.units.wandering_scout.seconds_per_step — closed-form over
- * `elapsedSeconds` like every other per-tick system here (a fractional step
- * count, floored, so both live 1s ticks and multi-hour offline gaps resolve
- * the same way). Land-only filtering (terrainAt !== "water") naturally
- * confines it to reachable land without any explicit flood-fill — the exact
- * mirror of engine/scoutSkiffs.ts's water-only confinement. Excludes the
- * tile it just came from when another option exists, so it doesn't just
- * oscillate between two tiles forever. Each new tile visited is appended to
- * `scoutedTiles` if not already present — the same reveal mechanism the
- * scout skiff uses.
+ * tweaks.units.wandering_scout.seconds_per_step. Accumulates
+ * `stepProgressSeconds` across live ~1s ticks (and offline gaps) so flooring
+ * a single tick's elapsedSeconds never discards progress. Land-only filtering
+ * (terrainAt !== "water") naturally confines it to reachable land without any
+ * explicit flood-fill — the exact mirror of engine/scoutSkiffs.ts's water-only
+ * confinement. Excludes the tile it just came from when another option exists,
+ * so it doesn't just oscillate between two tiles forever. Each new tile visited
+ * is appended to `scoutedTiles` if not already present — the same reveal
+ * mechanism the scout skiff uses.
  *
  * Newly scouted tiles roll a passive lab clue (`per_scout_action_chance`);
  * at most one clue per advance. An active watchtower signal (#38) only biases
@@ -74,9 +73,7 @@ export function advanceWanderingScouts(
     return { scouts, scoutedTiles, clueAwarded: false };
   }
 
-  const steps = Math.floor(elapsedSeconds / tweaks.units.wandering_scout.seconds_per_step);
-  if (steps <= 0) return { scouts, scoutedTiles, clueAwarded: false };
-
+  const secondsPerStep = tweaks.units.wandering_scout.seconds_per_step;
   const signal = options?.signal ?? null;
   const cluesCollected = options?.cluesCollected ?? 0;
   const canRollClue = cluesCollected < tweaks.lab_clues.total_clues;
@@ -85,9 +82,14 @@ export function advanceWanderingScouts(
   const newlyScouted: Axial[] = [];
   let clueAwarded = false;
   let scoutCount = scoutedTiles.length;
+  let anyChanged = false;
 
   const nextScouts = scouts.map((scout) => {
     if (scout.buildStartedAt != null) return scout;
+
+    const available = (scout.stepProgressSeconds ?? 0) + elapsedSeconds;
+    const steps = Math.floor(available / secondsPerStep);
+    const stepProgressSeconds = available - steps * secondsPerStep;
 
     let coord = scout.coord;
     let prevCoord = scout.prevCoord;
@@ -123,11 +125,19 @@ export function advanceWanderingScouts(
       }
     }
 
-    return coord === scout.coord && prevCoord === scout.prevCoord ? scout : { ...scout, coord, prevCoord };
+    if (
+      coord === scout.coord &&
+      prevCoord === scout.prevCoord &&
+      stepProgressSeconds === (scout.stepProgressSeconds ?? 0)
+    ) {
+      return scout;
+    }
+    anyChanged = true;
+    return { ...scout, coord, prevCoord, stepProgressSeconds };
   });
 
   return {
-    scouts: nextScouts,
+    scouts: anyChanged ? nextScouts : scouts,
     scoutedTiles: newlyScouted.length > 0 ? [...scoutedTiles, ...newlyScouted] : scoutedTiles,
     clueAwarded,
   };

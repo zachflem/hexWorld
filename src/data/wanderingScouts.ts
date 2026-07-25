@@ -17,6 +17,12 @@ export interface WanderingScoutRecord {
   spawnedAt: number;
   /** Set while under construction; cleared (set null) once tweaks.units.wandering_scout.build_time_minutes elapses — engine/wanderingScouts.ts skips movement/scouting until then. */
   buildStartedAt: number | null;
+  /**
+   * Fractional seconds accumulated toward the next tile step (0 … seconds_per_step).
+   * Live ~1s ticks are smaller than seconds_per_step, so this carry is required —
+   * flooring elapsed alone would discard every tick. Missing on legacy saves → treat as 0.
+   */
+  stepProgressSeconds?: number;
 }
 
 export type WanderingScoutsRecord = WanderingScoutRecord[];

@@ -1190,7 +1190,9 @@ export const HexCanvas = forwardRef<
           // per-tile structure marker above, since it's a transient mobile
           // unit, not something standing on this specific tile permanently.
           const scoutSkiff = scoutSkiffsByKey.get(coordKey);
-          if (scoutSkiff) {
+          // Hide while training — tray shows the build timer; drawing the unit
+          // on the dock made unfinished skiffs look idle/stuck.
+          if (scoutSkiff && scoutSkiff.buildStartedAt == null) {
             const skiffIcon = getUnitIconTexture("skiff");
             if (skiffIcon) {
               drawImageAtWidth(ctx, skiffIcon, screenCenter.x, screenCenter.y, size);
@@ -1205,7 +1207,7 @@ export const HexCanvas = forwardRef<
           // Land counterpart of the scout skiff above — same top-layer,
           // transient-marker treatment.
           const wanderingScout = wanderingScoutsByKey.get(coordKey);
-          if (wanderingScout) {
+          if (wanderingScout && wanderingScout.buildStartedAt == null) {
             const wanderingScoutImg = getUnitIconTexture("wandering-scout");
             if (wanderingScoutImg) {
               drawImageAtWidth(ctx, wanderingScoutImg, screenCenter.x, screenCenter.y, size);

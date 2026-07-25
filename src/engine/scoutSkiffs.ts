@@ -11,17 +11,16 @@ function skiffRollIndex(coord: Axial, spawnedAt: number, step: number): number {
 
 /**
  * Wanders a scout skiff randomly across its connected body of water, one
- * tile per tweaks.docks.scout_skiff.seconds_per_step — closed-form over
- * `elapsedSeconds` like every other per-tick system here (a fractional step
- * count, floored, so both live 1s ticks and multi-hour offline gaps resolve
- * the same way). Water-only filtering (terrainAt) naturally confines it to
- * its own connected body of water without any explicit flood-fill. Excludes
- * the tile it just came from when another option exists, so it doesn't just
- * oscillate between two tiles forever. Each new tile visited is appended to
- * `scoutedTiles` if not already present — the same reveal mechanism manual
- * land scouting uses (App.tsx:handleScoutTile). A skiff with no water
+ * tile per tweaks.docks.scout_skiff.seconds_per_step. Accumulates
+ * `stepProgressSeconds` across live ~1s ticks (and offline gaps) so flooring
+ * a single tick's elapsedSeconds never discards progress. Water-only filtering
+ * (terrainAt) naturally confines it to its own connected body of water without
+ * any explicit flood-fill. Excludes the tile it just came from when another
+ * option exists, so it doesn't just oscillate between two tiles forever. Each
+ * new tile visited is appended to `scoutedTiles` if not already present — the
+ * same reveal mechanism land Wandering Scouts use. A skiff with no water
  * neighbors at all (shouldn't happen — it spawns on its dock's own water
- * tile) simply stays put for this call.
+ * tile) simply stays put for this call (progress still carries).
  */
 export function advanceScoutSkiffs(
   tweaks: Tweaks,
@@ -33,14 +32,17 @@ export function advanceScoutSkiffs(
 ): { skiffs: ScoutSkiffRecord[]; scoutedTiles: Axial[] } {
   if (elapsedSeconds <= 0 || skiffs.length === 0) return { skiffs, scoutedTiles };
 
-  const steps = Math.floor(elapsedSeconds / tweaks.docks.scout_skiff.seconds_per_step);
-  if (steps <= 0) return { skiffs, scoutedTiles };
-
+  const secondsPerStep = tweaks.docks.scout_skiff.seconds_per_step;
   const scoutedKeys = new Set(scoutedTiles.map(axialKey));
   const newlyScouted: Axial[] = [];
+  let anyChanged = false;
 
   const nextSkiffs = skiffs.map((skiff) => {
     if (skiff.buildStartedAt != null) return skiff;
+
+    const available = (skiff.stepProgressSeconds ?? 0) + elapsedSeconds;
+    const steps = Math.floor(available / secondsPerStep);
+    const stepProgressSeconds = available - steps * secondsPerStep;
 
     let coord = skiff.coord;
     let prevCoord = skiff.prevCoord;
@@ -66,11 +68,19 @@ export function advanceScoutSkiffs(
       }
     }
 
-    return coord === skiff.coord && prevCoord === skiff.prevCoord ? skiff : { ...skiff, coord, prevCoord };
+    if (
+      coord === skiff.coord &&
+      prevCoord === skiff.prevCoord &&
+      stepProgressSeconds === (skiff.stepProgressSeconds ?? 0)
+    ) {
+      return skiff;
+    }
+    anyChanged = true;
+    return { ...skiff, coord, prevCoord, stepProgressSeconds };
   });
 
   return {
-    skiffs: nextSkiffs,
+    skiffs: anyChanged ? nextSkiffs : skiffs,
     scoutedTiles: newlyScouted.length > 0 ? [...scoutedTiles, ...newlyScouted] : scoutedTiles,
   };
 }

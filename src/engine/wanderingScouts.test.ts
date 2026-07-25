@@ -27,7 +27,16 @@ function findLandCoord(seed: number): Axial {
 }
 
 function makeScout(coord: Axial, overrides: Partial<WanderingScoutRecord> = {}): WanderingScoutRecord {
-  return { id: "scout-1", coord, homeBarracksCoord: coord, prevCoord: null, spawnedAt: 0, buildStartedAt: null, ...overrides };
+  return {
+    id: "scout-1",
+    coord,
+    homeBarracksCoord: coord,
+    prevCoord: null,
+    spawnedAt: 0,
+    buildStartedAt: null,
+    stepProgressSeconds: 0,
+    ...overrides,
+  };
 }
 
 /** Runs `steps` single-step advances, threading scout/scoutedTiles state through, and returns the recorded coord path (including the start). */
@@ -107,15 +116,36 @@ describe("advanceWanderingScouts", () => {
     const seed = 5;
     const start = findLandCoord(seed);
     const scouts = [makeScout(start)];
+    const stepSec = tweaks.units.wandering_scout.seconds_per_step;
 
     const zero = advanceWanderingScouts(tweaks, scouts, [], seed, gridSize, 0);
     expect(zero.scouts).toBe(scouts);
 
-    const subStep = advanceWanderingScouts(tweaks, scouts, [], seed, gridSize, tweaks.units.wandering_scout.seconds_per_step - 1);
-    expect(subStep.scouts).toBe(scouts);
+    const subStep = advanceWanderingScouts(tweaks, scouts, [], seed, gridSize, stepSec - 1);
+    expect(axialKey(subStep.scouts[0].coord)).toBe(axialKey(start));
+    expect(subStep.scouts[0].stepProgressSeconds).toBe(stepSec - 1);
+    expect(subStep.scoutedTiles).toEqual([]);
 
     const noScouts = advanceWanderingScouts(tweaks, [], [], seed, gridSize, 100);
     expect(noScouts.scouts).toEqual([]);
+  });
+
+  it("accumulates live 1s ticks into a step (regression: floor(1/seconds_per_step) discarded progress)", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+    const stepSec = tweaks.units.wandering_scout.seconds_per_step;
+    let scouts = [makeScout(start)];
+
+    for (let i = 0; i < stepSec - 1; i++) {
+      const mid = advanceWanderingScouts(tweaks, scouts, [], seed, gridSize, 1);
+      scouts = mid.scouts;
+      expect(axialKey(scouts[0].coord)).toBe(axialKey(start));
+    }
+
+    const result = advanceWanderingScouts(tweaks, scouts, [], seed, gridSize, 1);
+    expect(axialKey(result.scouts[0].coord)).not.toBe(axialKey(start));
+    expect(result.scouts[0].stepProgressSeconds).toBe(0);
   });
 
   it("does not move or scout a scout still under construction (buildStartedAt set)", () => {

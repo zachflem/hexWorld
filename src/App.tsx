@@ -875,7 +875,7 @@ export default function App() {
       const scoutSkiffsAfterBuild = current.game.scoutSkiffs.map((s) =>
         s.buildStartedAt != null &&
         isTimerComplete(s.buildStartedAt, current.tweaks.docks.scout_skiff.build_time_minutes * 60_000, virtualNow)
-          ? { ...s, buildStartedAt: null }
+          ? { ...s, buildStartedAt: null, stepProgressSeconds: 0 }
           : s,
       );
       const { skiffs: scoutSkiffs, scoutedTiles: scoutedTilesAfterSkiffs } = advanceScoutSkiffs(
@@ -889,7 +889,7 @@ export default function App() {
       const wanderingScoutsAfterBuild = current.game.wanderingScouts.map((s) =>
         s.buildStartedAt != null &&
         isTimerComplete(s.buildStartedAt, current.tweaks.units.wandering_scout.build_time_minutes * 60_000, virtualNow)
-          ? { ...s, buildStartedAt: null }
+          ? { ...s, buildStartedAt: null, stepProgressSeconds: 0 }
           : s,
       );
 
@@ -2452,6 +2452,7 @@ export default function App() {
         prevCoord: null,
         spawnedAt: game.clock.virtualNow,
         buildStartedAt: game.clock.virtualNow,
+        stepProgressSeconds: 0,
       },
     ];
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "build_scout_skiff", game.base.level) };
@@ -2516,6 +2517,7 @@ export default function App() {
         prevCoord: null,
         spawnedAt: game.clock.virtualNow,
         buildStartedAt: game.clock.virtualNow,
+        stepProgressSeconds: 0,
       },
     ];
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "build_wandering_scout", game.base.level) };
