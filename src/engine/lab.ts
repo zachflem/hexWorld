@@ -1,7 +1,7 @@
 import type { Compass4, LabRecord, WatchtowerSignal } from "../data/lab";
 import type { Tweaks } from "../data/tweaksSchema";
 import { resolveHordeTileFight } from "./hordes";
-import { axialSpiral, axialToPixel, isWithinMapBounds, type Axial } from "./hexCoords";
+import { axialKey, axialSpiral, axialToPixel, isWithinMapBounds, type Axial } from "./hexCoords";
 import { seededRandom } from "./noise";
 
 /** Towers below this level are combat-only — no listening / signal rolls (#38). */
@@ -167,4 +167,30 @@ export function labSearchZoneCenter(seed: number, labCoord: Axial, radius: numbe
   if (candidates.length === 0) return labCoord;
   const pickIndex = Math.floor(seededRandom(seed, 8_888_888) * candidates.length);
   return candidates[pickIndex];
+}
+
+/**
+ * Tile keys in the final-clue search cluster (DESIGN.md §13), or null when the
+ * player has not yet collected every clue / already secured the lab. Center is
+ * jittered so the true lab tile is inside the cluster but not marked exactly.
+ *
+ * `force: true` skips the clue/secured gate (dev "Show hint" preview).
+ */
+export function labSearchZoneTileKeys(
+  seed: number,
+  lab: LabRecord,
+  tweaks: Tweaks,
+  gridSize: number,
+  options?: { force?: boolean },
+): Set<string> | null {
+  if (!options?.force && (lab.secured || lab.cluesCollected < tweaks.lab_clues.total_clues)) {
+    return null;
+  }
+  const radius = tweaks.lab_clues.final_search_area_radius_tiles;
+  const center = labSearchZoneCenter(seed, lab.coord, radius, gridSize);
+  const keys = new Set<string>();
+  for (const coord of axialSpiral(center, radius)) {
+    if (isWithinMapBounds(coord, gridSize)) keys.add(axialKey(coord));
+  }
+  return keys;
 }

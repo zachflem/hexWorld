@@ -1873,6 +1873,13 @@ export default function App() {
     });
   }
 
+  /** Dev tools — jump to a specific rate when it exists in the unlocked cycle. */
+  function setDevSpeedMultiplier(rate: number) {
+    if (boot.status !== "ready" || !boot.game) return;
+    const rates = speedMultiplierRates(boot.tweaks, boot.game.research);
+    if (rates.includes(rate)) setSpeedMultiplier(rate);
+  }
+
   /**
    * Shared by every "wipe progress and start over" entry point (fresh
    * onboarding, starting a new game as an existing player, restarting the
@@ -4570,6 +4577,7 @@ export default function App() {
       now={boot.game.clock.virtualNow}
       speedMultiplier={speedMultiplier}
       onCycleFastForward={cycleFastForward}
+      onSetSpeedMultiplier={setDevSpeedMultiplier}
       onDismissToast={dismissToast}
       onStartResearch={handleStartResearch}
       onBuildExtractionTile={handleBuildExtractionTile}

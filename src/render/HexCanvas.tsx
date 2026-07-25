@@ -11,6 +11,8 @@ import {
   type Axial,
 } from "../engine/hexCoords";
 import { computeFogTiers, fogTierFor, type FogTier } from "../engine/fog";
+import { labSearchZoneTileKeys } from "../engine/lab";
+import type { LabRecord } from "../data/lab";
 import { terrainAt, type TerrainType } from "../engine/terrain";
 import { towerRange } from "../engine/towers";
 import { sniperDamagePerSecond, towerDamagePerSecond, towersInRange } from "../engine/hordes";
@@ -100,6 +102,19 @@ const FOG_OVERLAY: Record<FogTier, string | null> = {
   light: "rgba(0, 0, 0, 0.9)",
   scouted: "rgba(40, 70, 110, 0.35)",
   hidden: "#0a0a0c",
+};
+
+/**
+ * Final-clue lab search cluster (DESIGN.md §13) — tweakable first-pass values.
+ * Scouted tiles in the zone get a player-color wash; unscouted fog is eased
+ * by LAB_SEARCH_ZONE_FOG_REDUCTION so the cluster reads without revealing the tile.
+ */
+const LAB_SEARCH_ZONE_SCOUTED_ALPHA = 0.1;
+const LAB_SEARCH_ZONE_FOG_REDUCTION = 0.1;
+const LAB_SEARCH_ZONE_FOG: Record<"heavy" | "light" | "hidden", string> = {
+  heavy: `rgba(0, 0, 0, ${0.7 - LAB_SEARCH_ZONE_FOG_REDUCTION})`,
+  light: `rgba(0, 0, 0, ${0.9 - LAB_SEARCH_ZONE_FOG_REDUCTION})`,
+  hidden: `rgba(10, 10, 12, ${1 - LAB_SEARCH_ZONE_FOG_REDUCTION})`,
 };
 
 /**
@@ -239,6 +254,17 @@ function contrastingInk(hex: string): string {
   return luminance > 0.6 ? "#1a1a1a" : "#ffffff";
 }
 
+/** `#rrggbb` → `rgba(...)` for fog/knowledge tints. Falls back if the color is malformed. */
+function colorWithAlpha(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) {
+    return `rgba(40, 70, 110, ${alpha})`;
+  }
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 /** Imperative handle exposed via ref, since pan/zoom are internal state here — lets a parent (e.g. a "recenter" button in the header) drive the view without lifting that state up. */
 export interface HexCanvasHandle {
   recenterOnBase: () => void;
@@ -266,6 +292,8 @@ export const HexCanvas = forwardRef<
     powerStations: PowerStation[];
     garrisons: GarrisonsRecord;
     scoutedTiles: Axial[];
+    /** Hidden lab + clue progress — drives the final-clue search-zone highlight. */
+    lab: LabRecord;
     dens: DenRecord[];
     outposts: OutpostRecord[];
     hordes: HordeRecord[];
@@ -332,6 +360,12 @@ export const HexCanvas = forwardRef<
      * builds should always pass false/omit.
      */
     fogDisabled?: boolean;
+    /**
+     * Dev-server-only lab preview (Dev tools cycle):
+     * - `hint` — paint the final-clue search cluster even before clues are in
+     * - `reveal` — highlight the exact lab tile
+     */
+    devLabMode?: "off" | "hint" | "reveal";
   }
 >(function HexCanvas(
   {
@@ -348,6 +382,7 @@ export const HexCanvas = forwardRef<
     powerStations,
     garrisons,
     scoutedTiles,
+    lab,
     dens,
     outposts,
     hordes,
@@ -371,6 +406,7 @@ export const HexCanvas = forwardRef<
     onTileHover,
     onViewportChange,
     fogDisabled = false,
+    devLabMode = "off",
   },
   ref,
 ) {
@@ -488,6 +524,11 @@ export const HexCanvas = forwardRef<
     return map;
   }, [denAssaults, now]);
   const fogByKey = useMemo(() => computeFogTiers(owned, scoutedTiles), [owned, scoutedTiles]);
+  const labSearchZoneKeys = useMemo(
+    () => labSearchZoneTileKeys(seed, lab, tweaks, gridSize, { force: devLabMode === "hint" }),
+    [seed, lab, tweaks, gridSize, devLabMode],
+  );
+  const devHighlightLab = devLabMode === "reveal";
   // Only the selected tower's range is shaded (towerRange scales with level,
   // engine/towers.ts) — shading every tower's range at once buried the whole
   // map under a red tint, so coverage is only shown on demand.
@@ -836,7 +877,10 @@ export const HexCanvas = forwardRef<
         for (let q = qMin; q <= qMax; q++) {
           const coord: Axial = { q, r };
           if (!isWithinMapBounds(coord, gridSize)) continue;
-          if (!fogDisabled && fogTierFor(coord, fogByKey) === "hidden") continue;
+          const inLabSearchZone = labSearchZoneKeys?.has(axialKey(coord)) ?? false;
+          // Hidden tiles normally skip terrain; draw them inside the final-clue
+          // search zone so a reduced fog overlay can show a faint peek.
+          if (!fogDisabled && fogTierFor(coord, fogByKey) === "hidden" && !inLabSearchZone) continue;
 
           const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
           const screenCenter = { x: worldPixel.x * zoom + pan.x, y: worldPixel.y * zoom + pan.y };
@@ -897,6 +941,7 @@ export const HexCanvas = forwardRef<
 
           const tier = fogDisabled ? "owned" : fogTierFor(coord, fogByKey);
           const isSelected = selected !== null && axialEquals(coord, selected);
+          const isDevLabHighlight = devHighlightLab && axialEquals(coord, lab.coord);
 
           const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
           const screenCenter = { x: worldPixel.x * zoom + pan.x, y: worldPixel.y * zoom + pan.y };
@@ -909,20 +954,34 @@ export const HexCanvas = forwardRef<
           });
           ctx.closePath();
 
+          const coordKey = axialKey(coord);
+          const inLabSearchZone = labSearchZoneKeys?.has(coordKey) ?? false;
+
           if (tier === "hidden") {
-            ctx.fillStyle = FOG_OVERLAY.hidden as string;
+            ctx.fillStyle = inLabSearchZone ? LAB_SEARCH_ZONE_FOG.hidden : (FOG_OVERLAY.hidden as string);
             ctx.fill();
-            if (isSelected) strokeSelection(corners);
+            if (isSelected || isDevLabHighlight) strokeSelection(corners);
             continue;
           }
 
-          const overlay = FOG_OVERLAY[tier];
-          if (overlay) {
-            ctx.fillStyle = overlay;
+          if (tier === "scouted") {
+            // Final-clue cluster: light player-color wash instead of the usual
+            // blue knowledge tint so the search area reads clearly.
+            ctx.fillStyle = inLabSearchZone
+              ? colorWithAlpha(playerColor, LAB_SEARCH_ZONE_SCOUTED_ALPHA)
+              : (FOG_OVERLAY.scouted as string);
             ctx.fill();
+          } else if (inLabSearchZone && (tier === "heavy" || tier === "light")) {
+            ctx.fillStyle = LAB_SEARCH_ZONE_FOG[tier];
+            ctx.fill();
+          } else {
+            const overlay = FOG_OVERLAY[tier];
+            if (overlay) {
+              ctx.fillStyle = overlay;
+              ctx.fill();
+            }
           }
 
-          const coordKey = axialKey(coord);
           if (selectedTowerRangeKeys?.has(coordKey)) {
             ctx.fillStyle = TOWER_RANGE_TINT_SELECTED;
             ctx.fill();
@@ -939,11 +998,15 @@ export const HexCanvas = forwardRef<
             ctx.fillStyle = BUILD_MODE_TINT;
             ctx.fill();
           }
+          if (isDevLabHighlight) {
+            ctx.fillStyle = colorWithAlpha(playerColor, 0.35);
+            ctx.fill();
+          }
 
           // Selection ring after terrain/path (pass 1) and fog/tints, but
           // before structure sprites so the stroke sits under buildings
           // instead of clipping their lower edge.
-          if (isSelected) strokeSelection(corners);
+          if (isSelected || isDevLabHighlight) strokeSelection(corners);
 
           if (axialEquals(coord, base)) {
             const baseIcon = getStructureIconTextureCandidates(structureLevelCandidates("base", baseLevel));
@@ -1327,6 +1390,19 @@ export const HexCanvas = forwardRef<
             }
           }
 
+          // Dev Show-lab toggle — label on top of the tint/ring so the tile
+          // is unmistakable even on busy terrain.
+          if (isDevLabHighlight) {
+            ctx.font = `bold ${Math.max(11, size * 0.5)}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.lineWidth = Math.max(3, size * 0.12);
+            ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+            ctx.strokeText("LAB", screenCenter.x, screenCenter.y);
+            ctx.fillStyle = "#ffffff";
+            ctx.fillText("LAB", screenCenter.x, screenCenter.y);
+          }
+
           // Drawn on top of everything else, including the base icon — a
           // horde parked on a tile (even the base, which it can never
           // actually capture pre-Milestone 12) must always stay visible;
@@ -1505,7 +1581,10 @@ export const HexCanvas = forwardRef<
     buildModeEligibleKeys,
     structureProgressByKey,
     fogByKey,
+    labSearchZoneKeys,
     fogDisabled,
+    devLabMode,
+    lab,
     selected,
     playerColor,
     textureVersion,
