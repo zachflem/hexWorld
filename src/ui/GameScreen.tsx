@@ -203,6 +203,7 @@ import {
   Archive,
   ArrowUpCircle,
   Binoculars,
+  EyeOff,
   Flag,
   FlaskConical,
   Footprints,
@@ -521,6 +522,8 @@ export function GameScreen({
   const [openPanel, setOpenPanel] = useState<"garrisons" | "scouting" | "military" | "settings" | "research" | null>(null);
   /** Hammer slot — highlights owned/empty/buildable tiles with an affordable build option, see buildModeEligibleKeysFor below. */
   const [buildModeActive, setBuildModeActive] = useState(false);
+  /** Dev-server-only — reveals the whole map through fog of war. Session-local; never persisted. */
+  const [fogDisabled, setFogDisabled] = useState(false);
   /** Scaled ResourceHud height — when the bar shrinks (narrow viewport), notifications sit below it so they don't cover the noise chip. */
   const [resourceHudLayout, setResourceHudLayout] = useState({ height: 0, scale: 1 });
   const handleResourceHudLayout = useCallback((metrics: { height: number; scale: number }) => {
@@ -3244,6 +3247,7 @@ export function GameScreen({
           onTileClick={selectTile}
           onTileHover={handleTileHover}
           onViewportChange={handleViewportChange}
+          fogDisabled={import.meta.env.DEV && fogDisabled}
         />
       </div>
       <ResourceHud
@@ -3283,13 +3287,26 @@ export function GameScreen({
         />
       )}
       <GlobalHexCluster
-        pinnedSlot={{
-          key: "fast-forward",
-          icon: <span style={{ fontSize: "0.8rem", fontWeight: 700 }}>{speedMultiplier > 1 ? `${speedMultiplier}x` : "▶"}</span>,
-          title: "Playtesting only — cycles speed, scaling resource/noise/horde simulation AND every build/upgrade/training timer",
-          active: speedMultiplier > 1,
-          onClick: onCycleFastForward,
-        }}
+        pinnedSlots={[
+          {
+            key: "fast-forward",
+            icon: <span style={{ fontSize: "0.8rem", fontWeight: 700 }}>{speedMultiplier > 1 ? `${speedMultiplier}x` : "▶"}</span>,
+            title: "Playtesting only — cycles speed, scaling resource/noise/horde simulation AND every build/upgrade/training timer",
+            active: speedMultiplier > 1,
+            onClick: onCycleFastForward,
+          },
+          ...(import.meta.env.DEV
+            ? [
+                {
+                  key: "fog-reveal",
+                  icon: <EyeOff size={20} />,
+                  title: fogDisabled ? "Restore fog of war" : "Reveal map (dev — disable fog)",
+                  active: fogDisabled,
+                  onClick: () => setFogDisabled((v) => !v),
+                },
+              ]
+            : []),
+        ]}
         slots={[
           {
             key: "garrisons",

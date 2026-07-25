@@ -319,6 +319,12 @@ export const HexCanvas = forwardRef<
     onTileHover?: (coord: Axial | null) => void;
     /** Fired after every redraw with the viewport currently on screen — lets a parent keep a DOM overlay (e.g. a per-tile action ring) glued to a tile through pan/zoom. Read via a ref internally, not a draw-effect dependency, so an unstable callback identity from the parent doesn't itself trigger extra redraws. */
     onViewportChange?: (viewport: { pan: { x: number; y: number }; zoom: number }) => void;
+    /**
+     * Dev-server-only: skip fog-of-war culling and overlays so the whole map
+     * is visible. Gated by the caller with import.meta.env.DEV — production
+     * builds should always pass false/omit.
+     */
+    fogDisabled?: boolean;
   }
 >(function HexCanvas(
   {
@@ -356,6 +362,7 @@ export const HexCanvas = forwardRef<
     onTileClick,
     onTileHover,
     onViewportChange,
+    fogDisabled = false,
   },
   ref,
 ) {
@@ -806,7 +813,7 @@ export const HexCanvas = forwardRef<
         for (let q = qMin; q <= qMax; q++) {
           const coord: Axial = { q, r };
           if (!isWithinMapBounds(coord, gridSize)) continue;
-          if (fogTierFor(coord, fogByKey) === "hidden") continue;
+          if (!fogDisabled && fogTierFor(coord, fogByKey) === "hidden") continue;
 
           const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
           const screenCenter = { x: worldPixel.x * zoom + pan.x, y: worldPixel.y * zoom + pan.y };
@@ -865,7 +872,7 @@ export const HexCanvas = forwardRef<
           const coord: Axial = { q, r };
           if (!isWithinMapBounds(coord, gridSize)) continue;
 
-          const tier = fogTierFor(coord, fogByKey);
+          const tier = fogDisabled ? "owned" : fogTierFor(coord, fogByKey);
           const isSelected = selected !== null && axialEquals(coord, selected);
 
           const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
@@ -1438,6 +1445,7 @@ export const HexCanvas = forwardRef<
     buildModeEligibleKeys,
     structureProgressByKey,
     fogByKey,
+    fogDisabled,
     selected,
     playerColor,
     textureVersion,

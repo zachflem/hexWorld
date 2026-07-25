@@ -18,11 +18,11 @@ export interface HexClusterSlot {
  * second click or a click outside. Per-slot click handlers own what happens
  * after a slot is clicked (this component only owns open/closed state).
  *
- * `pinnedSlot`, if given, sits to the left of the toggle — always visible,
+ * `pinnedSlots`, if given, sit to the left of the toggle — always visible,
  * unaffected by open/closed state. Meant for playtest-only controls
- * (fast-forward) that should stay reachable without opening the menu.
+ * (fast-forward, fog reveal) that should stay reachable without opening the menu.
  */
-export function GlobalHexCluster({ slots, pinnedSlot }: { slots: HexClusterSlot[]; pinnedSlot?: HexClusterSlot }) {
+export function GlobalHexCluster({ slots, pinnedSlots }: { slots: HexClusterSlot[]; pinnedSlots?: HexClusterSlot[] }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -79,15 +79,15 @@ export function GlobalHexCluster({ slots, pinnedSlot }: { slots: HexClusterSlot[
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-        {pinnedSlot && (
+        {pinnedSlots?.map((slot) => (
           <HexButton
-            key={pinnedSlot.key}
-            icon={pinnedSlot.icon}
-            title={pinnedSlot.title}
-            active={pinnedSlot.active}
-            onClick={pinnedSlot.onClick}
+            key={slot.key}
+            icon={slot.icon}
+            title={slot.title}
+            active={slot.active}
+            onClick={slot.onClick}
           />
-        )}
+        ))}
         <HexButton
           icon={open ? <X size={20} /> : <Menu size={20} />}
           title={open ? "Close menu" : "Menu"}
