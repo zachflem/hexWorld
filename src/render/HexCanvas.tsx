@@ -1355,6 +1355,7 @@ export const HexCanvas = forwardRef<
           // Bottom-right corner — the other three are taken by the garrison
           // badge (top-right) and expedition badge (top-left), with the
           // horde triangle and 💀 overlay both centered on the tile.
+          // (Power-station grid status uses a DOM collect-style pin instead.)
           if (relocationDestination && axialEquals(coord, relocationDestination)) {
             const badgeX = screenCenter.x + size * 0.55;
             const badgeY = screenCenter.y + size * 0.55;

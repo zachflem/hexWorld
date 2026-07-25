@@ -156,7 +156,7 @@ Top-level `power` block in `tweaks.jsonc` (not an extraction resource):
 |---|---|
 | `capacity_base` / `capacity_per_level` | 20 / +15 per level |
 | `aoe_base_tiles` / `aoe_per_level` | 2 / +1 |
-| `cutoff_factor` | 0.25 |
+| `cutoff_factor` | 0.5 |
 | `build_cost_base` | 400 wood + 300 stone + 150 steel |
 | `upgrade_cost_base` | 200 wood + 200 stone + 100 steel |
 | `draw_base` | extraction 2, path 1, tower 3, wall 1, barracks 4, dock 2 (× structure level) |

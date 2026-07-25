@@ -110,7 +110,7 @@ if totalDraw <= 0:
 else:
   powerFactor = clamp(totalCapacity / totalDraw, 0, 1)
 
-cutoff = power.cutoff_factor   // e.g. 0.25
+cutoff = power.cutoff_factor   // e.g. 0.5
 ```
 
 Per structure that **requires** power (L2+):
@@ -193,7 +193,7 @@ New block `power` (profile `tweaks.jsonc` + Zod in `tweaksSchema.ts`):
   "capacity_per_level": 15,
   "aoe_base_tiles": 2,
   "aoe_per_level": 1,
-  "cutoff_factor": 0.25,
+  "cutoff_factor": 0.5,
   "build_cost_base": { "wood": 400, "stone": 300, "steel": 150 },
   "upgrade_cost_base": { "wood": 200, "stone": 200, "steel": 100 },
   "build_time_minutes": 3,

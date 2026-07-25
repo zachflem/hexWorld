@@ -198,3 +198,108 @@ export function powerStateLabel(state: StructurePowerState): string | null {
       return "No power";
   }
 }
+
+/** Toast episode memory — cleared when the grid returns to full supply (`factor >= 1`). */
+export type PowerAlertMemory = {
+  brownoutFired: boolean;
+  /** Decade thresholds already toasted this episode (e.g. 0.9, 0.8). */
+  stepsFired: ReadonlySet<number>;
+  blackoutFired: boolean;
+};
+
+export type PowerAlert =
+  | { kind: "brownout"; supplyPercent: number }
+  | { kind: "step"; supplyPercent: number; thresholdPercent: number }
+  | { kind: "imminent"; supplyPercent: number; cutoffPercent: number }
+  | { kind: "blackout"; supplyPercent: number; cutoffPercent: number };
+
+export function emptyPowerAlertMemory(): PowerAlertMemory {
+  return { brownoutFired: false, stepsFired: new Set(), blackoutFired: false };
+}
+
+/**
+ * 10% supply steps strictly above cutoff, descending — e.g. cutoff 0.5 →
+ * [0.9, 0.8, 0.7, 0.6]. The lowest step is the "about to cut off" warning.
+ */
+export function powerAlertStepThresholds(cutoff: number): number[] {
+  const steps: number[] = [];
+  for (let tenths = 9; tenths >= 1; tenths -= 1) {
+    const threshold = tenths / 10;
+    if (threshold > cutoff + 1e-9) steps.push(threshold);
+  }
+  return steps;
+}
+
+export function powerAlertToastText(alert: PowerAlert): string {
+  switch (alert.kind) {
+    case "brownout":
+      return "Brownout — power demand exceeds supply";
+    case "step":
+      return `Power supply below ${alert.thresholdPercent}%`;
+    case "imminent":
+      return `Power critical — blackout at ${alert.cutoffPercent}%`;
+    case "blackout":
+      return `Blackout — power grid failed (below ${alert.cutoffPercent}%)`;
+  }
+}
+
+/**
+ * Emit brownout / 10%-step / imminent-cutoff / blackout toasts as the shared
+ * grid factor falls. Remembers what already fired so each threshold toasts
+ * once per brownout episode; recovering above a step (or back to full)
+ * clears that memory so a later drop can warn again.
+ *
+ * When several step thresholds are crossed in one tick, only the most severe
+ * (lowest) new step fires — avoids toast spam on a sudden load spike.
+ */
+export function reconcilePowerAlerts(
+  factor: number,
+  cutoff: number,
+  prev: PowerAlertMemory,
+): { next: PowerAlertMemory; alerts: PowerAlert[] } {
+  if (factor >= 1) {
+    return { next: emptyPowerAlertMemory(), alerts: [] };
+  }
+
+  const alerts: PowerAlert[] = [];
+  let brownoutFired = prev.brownoutFired;
+  const stepsFired = new Set(prev.stepsFired);
+  let blackoutFired = prev.blackoutFired;
+  const supplyPercent = Math.max(0, Math.min(100, Math.round(factor * 100)));
+  const cutoffPercent = Math.round(cutoff * 100);
+
+  if (!brownoutFired) {
+    brownoutFired = true;
+    alerts.push({ kind: "brownout", supplyPercent });
+  }
+
+  for (const threshold of [...stepsFired]) {
+    if (factor >= threshold) stepsFired.delete(threshold);
+  }
+  if (factor >= cutoff) blackoutFired = false;
+
+  const steps = powerAlertStepThresholds(cutoff);
+  const newlyCrossed = steps.filter((threshold) => factor < threshold && !stepsFired.has(threshold));
+  for (const threshold of newlyCrossed) stepsFired.add(threshold);
+
+  if (newlyCrossed.length > 0) {
+    const lowest = Math.min(...newlyCrossed);
+    const thresholdPercent = Math.round(lowest * 100);
+    const isImminent = lowest === steps[steps.length - 1];
+    if (isImminent) {
+      alerts.push({ kind: "imminent", supplyPercent, cutoffPercent });
+    } else {
+      alerts.push({ kind: "step", supplyPercent, thresholdPercent });
+    }
+  }
+
+  if (factor < cutoff && !blackoutFired) {
+    blackoutFired = true;
+    alerts.push({ kind: "blackout", supplyPercent, cutoffPercent });
+  }
+
+  return {
+    next: { brownoutFired, stepsFired, blackoutFired },
+    alerts,
+  };
+}

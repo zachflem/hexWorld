@@ -6,10 +6,14 @@ import type { PowerStation } from "../data/powerStations";
 import { tweaksSchema } from "../data/tweaksSchema";
 import {
   computePowerNetwork,
+  emptyPowerAlertMemory,
+  powerAlertStepThresholds,
+  powerAlertToastText,
   powerFactor,
   powerPerformanceFactor,
   powerStationAoeRadius,
   powerStationCapacity,
+  reconcilePowerAlerts,
   structurePowerState,
 } from "./power";
 
@@ -61,5 +65,69 @@ describe("power stations", () => {
     const network = computePowerNetwork(tweaks, [damaged], [], [], [], [], [], []);
     expect(network.totalCapacity).toBe(0);
     expect(network.poweredTiles.size).toBe(0);
+  });
+});
+
+describe("reconcilePowerAlerts", () => {
+  it("lists 10% steps above cutoff", () => {
+    expect(powerAlertStepThresholds(0.5)).toEqual([0.9, 0.8, 0.7, 0.6]);
+    expect(powerAlertStepThresholds(0.25)).toEqual([0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]);
+  });
+
+  it("fires brownout once, then step warnings, imminent at last step, then blackout", () => {
+    let memory = emptyPowerAlertMemory();
+
+    let result = reconcilePowerAlerts(0.95, 0.5, memory);
+    expect(result.alerts.map((a) => a.kind)).toEqual(["brownout"]);
+    memory = result.next;
+
+    result = reconcilePowerAlerts(0.85, 0.5, memory);
+    expect(result.alerts).toEqual([{ kind: "step", supplyPercent: 85, thresholdPercent: 90 }]);
+    memory = result.next;
+
+    result = reconcilePowerAlerts(0.85, 0.5, memory);
+    expect(result.alerts).toEqual([]);
+
+    result = reconcilePowerAlerts(0.55, 0.5, memory);
+    expect(result.alerts.map((a) => a.kind)).toEqual(["imminent"]);
+    expect(result.alerts[0]).toMatchObject({ kind: "imminent", cutoffPercent: 50 });
+    memory = result.next;
+
+    result = reconcilePowerAlerts(0.4, 0.5, memory);
+    expect(result.alerts.map((a) => a.kind)).toEqual(["blackout"]);
+    memory = result.next;
+
+    result = reconcilePowerAlerts(0.3, 0.5, memory);
+    expect(result.alerts).toEqual([]);
+  });
+
+  it("collapses a sudden drop to brownout + most severe new step", () => {
+    const result = reconcilePowerAlerts(0.65, 0.5, emptyPowerAlertMemory());
+    expect(result.alerts.map((a) => a.kind)).toEqual(["brownout", "step"]);
+    expect(result.alerts[1]).toMatchObject({ kind: "step", thresholdPercent: 70 });
+  });
+
+  it("resets when supply recovers to full, and re-warns on a later drop", () => {
+    let memory = reconcilePowerAlerts(0.8, 0.5, emptyPowerAlertMemory()).next;
+    memory = reconcilePowerAlerts(1, 0.5, memory).next;
+    expect(memory).toEqual(emptyPowerAlertMemory());
+
+    const again = reconcilePowerAlerts(0.8, 0.5, memory);
+    expect(again.alerts.map((a) => a.kind)).toEqual(["brownout", "step"]);
+  });
+
+  it("formats toast copy", () => {
+    expect(powerAlertToastText({ kind: "brownout", supplyPercent: 92 })).toBe(
+      "Brownout — power demand exceeds supply",
+    );
+    expect(powerAlertToastText({ kind: "step", supplyPercent: 84, thresholdPercent: 90 })).toBe(
+      "Power supply below 90%",
+    );
+    expect(powerAlertToastText({ kind: "imminent", supplyPercent: 55, cutoffPercent: 50 })).toBe(
+      "Power critical — blackout at 50%",
+    );
+    expect(powerAlertToastText({ kind: "blackout", supplyPercent: 40, cutoffPercent: 50 })).toBe(
+      "Blackout — power grid failed (below 50%)",
+    );
   });
 });

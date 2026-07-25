@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Skull } from "lucide-react";
+import { Skull, Zap } from "lucide-react";
 import { loadProfile, fetchProfileRegistry, resolveProfileSlug, DEFAULT_PROFILE_SLUG, type ProfileEntry } from "./data/profileRegistry";
 import type { Tweaks } from "./data/tweaksSchema";
 import { PROFILE_SLUG_DB_KEY } from "./data/profile";
@@ -163,11 +163,15 @@ import { advanceWanderingScouts } from "./engine/wanderingScouts";
 import { nextTowerLevel, towerBuildCost, towerBuildDurationMs, towerUpgradeCost, towerUpgradeDurationMs } from "./engine/towers";
 import {
   computePowerNetwork,
+  emptyPowerAlertMemory,
   nextPowerStationLevel,
+  powerAlertToastText,
   powerStationBuildCost,
   powerStationBuildDurationMs,
   powerStationUpgradeCost,
   powerStationUpgradeDurationMs,
+  reconcilePowerAlerts,
+  type PowerAlertMemory,
 } from "./engine/power";
 import {
   maxWallDurability,
@@ -562,6 +566,8 @@ export default function App() {
   const toastSeqRef = useRef(0);
   /** Horde ids currently inside a tower's combat range — used to toast once on entry (#38). */
   const hordeAlertedIdsRef = useRef<Set<string>>(new Set());
+  /** Power-grid toast episode memory — brownout / 10% steps / blackout (engine/power.ts). */
+  const powerAlertMemoryRef = useRef<PowerAlertMemory>(emptyPowerAlertMemory());
   const pushToast = useCallback((toast: Omit<ToastRecord, "id">) => {
     setToasts((prev) => [...prev, { ...toast, id: `toast-${Date.now()}-${toastSeqRef.current++}` }]);
   }, []);
@@ -756,6 +762,23 @@ export default function App() {
         current.game.barracksList,
         current.game.docks,
       );
+      {
+        const { next, alerts } = reconcilePowerAlerts(
+          powerNetwork.factor,
+          powerNetwork.cutoff,
+          powerAlertMemoryRef.current,
+        );
+        powerAlertMemoryRef.current = next;
+        const stationCoord =
+          current.game.powerStations.find((s) => s.buildStartedAt == null)?.coord ?? undefined;
+        for (const alert of alerts) {
+          pushToast({
+            icon: <Zap size={NOTIFICATION_ICON_SIZE} />,
+            coord: stationCoord,
+            message: powerAlertToastText(alert),
+          });
+        }
+      }
       const { resources: producedResources, tiles: extractionTilesAfterYield } = accrueResources(
         current.tweaks,
         current.game.extractionTiles,

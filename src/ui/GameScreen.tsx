@@ -33,6 +33,7 @@ import {
 } from "../engine/towers";
 import {
   computePowerNetwork,
+  consumerDraw,
   nextPowerStationLevel,
   powerStateLabel,
   powerStationAoeRadius,
@@ -42,6 +43,7 @@ import {
   powerStationUpgradeCost,
   powerStationUpgradeDurationMs,
   structurePowerState,
+  type PowerConsumerKind,
 } from "../engine/power";
 import {
   maxWallDurability,
@@ -212,6 +214,12 @@ import { GlobalHexCluster } from "./menu/GlobalHexCluster";
 import { TileActionSheet, type SheetAction, type SheetQuickAction } from "./menu/TileActionSheet";
 import { HoverTooltip, type HoverTooltipHandle } from "./menu/HoverTooltip";
 import { CollectPinOverlay, type CollectPinOverlayHandle } from "./menu/CollectPinOverlay";
+import {
+  PowerStatusPinOverlay,
+  type PowerPinStatus,
+  type PowerStatusPin,
+  type PowerStatusPinOverlayHandle,
+} from "./menu/PowerStatusPinOverlay";
 import { formatCost, formatDuration } from "./format";
 import { GarrisonsPanel } from "./panels/GarrisonsPanel";
 import { ScoutingPanel } from "./panels/ScoutingPanel";
@@ -530,6 +538,7 @@ export function GameScreen({
   /** Same imperative-positioning convention as TileActionSheet's predecessor used — see HoverTooltip.tsx. */
   const hoverTooltipRef = useRef<HoverTooltipHandle>(null);
   const collectPinOverlayRef = useRef<CollectPinOverlayHandle>(null);
+  const powerStatusPinOverlayRef = useRef<PowerStatusPinOverlayHandle>(null);
   const [selected, setSelected] = useState<Axial | null>(null);
   /** Desktop-mouse hover target (HexCanvas's onTileHover) — null on touch devices, which never report hover. Only changes when the hovered tile itself changes (deduped in HexCanvas), not on every mousemove pixel. */
   const [hoveredCoord, setHoveredCoord] = useState<Axial | null>(null);
@@ -1520,6 +1529,17 @@ export function GameScreen({
   function powerStateLabelFor(level: number, coord: Axial): string | null {
     return powerStateLabel(structurePowerState(powerNetwork, level, coord));
   }
+  /** Nominal draw at this level (draw_base × level). L1 is always "none". */
+  function powerDrawText(kind: PowerConsumerKind, level: number): string {
+    if (level < 2) return "Power draw: none (L1)";
+    return `Power draw: ${consumerDraw(tweaks, kind, level)}`;
+  }
+  /** Suffix for upgrade action details — shows how draw changes after the upgrade. */
+  function powerDrawUpgradeSuffix(kind: PowerConsumerKind, fromLevel: number, toLevel: number): string {
+    const to = consumerDraw(tweaks, kind, toLevel);
+    if (fromLevel < 2) return `Power draw → ${to}`;
+    return `Power draw ${consumerDraw(tweaks, kind, fromLevel)} → ${to}`;
+  }
   /**
    * "No power" / brownout label for whichever L2+ consumer (extraction,
    * path, tower, wall, barracks) is currently selected — power stations
@@ -1535,6 +1555,18 @@ export function GameScreen({
           ? powerStateLabelFor(WALL_TIER_LEVEL[selectedWall.tier], selectedWall.coord)
           : selectedBarracks
             ? powerStateLabelFor(selectedBarracks.level, selectedBarracks.coord)
+            : null;
+  /** Nominal power draw for the selected consumer structure (null for stations / hubs). */
+  const selectedPowerDrawText = selectedTile
+    ? powerDrawText("extraction", extractionTierLevel(selectedTile.tier))
+    : selectedPath
+      ? powerDrawText("path", PATH_TIER_LEVEL[selectedPath.tier])
+      : selectedTower
+        ? powerDrawText("tower", selectedTower.level)
+        : selectedWall
+          ? powerDrawText("wall", WALL_TIER_LEVEL[selectedWall.tier])
+          : selectedBarracks
+            ? powerDrawText("barracks", selectedBarracks.level)
             : null;
   const resourceRates = useMemo(() => {
     const hubCoords: Axial[] = [territory.base, ...outposts.map((o) => o.coord)];
@@ -1617,6 +1649,20 @@ export function GameScreen({
     return set;
   }
   const upgradeAvailableKeys = upgradeAvailableKeysFor();
+
+  /**
+   * Collect-style pins above built power stations (same map slot as extraction
+   * collect pins). Green = grid OK, orange = brownout, red = blackout.
+   */
+  const powerStatusPins = useMemo((): PowerStatusPin[] => {
+    let status: PowerPinStatus = "full";
+    if (powerNetwork.totalDraw > 0 && powerNetwork.factor < 1) {
+      status = powerNetwork.factor >= powerNetwork.cutoff ? "degraded" : "offline";
+    }
+    return powerStations
+      .filter((station) => station.buildStartedAt == null)
+      .map((station) => ({ coord: station.coord, status }));
+  }, [powerNetwork, powerStations]);
 
   /**
    * Owned, empty, buildable-land tiles where at least one structure type is
@@ -1704,6 +1750,7 @@ export function GameScreen({
     const hexCircumradius = BASE_HEX_SIZE * viewport.zoom;
     hoverTooltipRef.current?.reposition(getScreenPosition, hexCircumradius);
     collectPinOverlayRef.current?.reposition(getScreenPosition, hexCircumradius);
+    powerStatusPinOverlayRef.current?.reposition(getScreenPosition, hexCircumradius);
   }
 
   /** HexCanvas's onTileHover — already deduped to only fire on an actual tile change, so this is a cheap, infrequent state update rather than a per-mousemove-frame one. */
@@ -1979,11 +2026,13 @@ export function GameScreen({
       if (isOwned(selected)) {
         const upgrade = tierUpgradeFor(selectedTile);
         if (upgrade) {
+          const fromLevel = extractionTierLevel(selectedTile.tier);
+          const toLevel = extractionTierLevel(upgrade.targetTier);
           actions.push({
             key: "tile-upgrade",
             icon: resourceIcon(selectedTile.resource),
             title: `Upgrade to ${upgrade.targetTier}`,
-            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("extraction", fromLevel, toLevel)}`,
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradeTier,
@@ -2009,11 +2058,13 @@ export function GameScreen({
       if (isOwned(selected)) {
         const upgrade = pathUpgradeOptionFor(selectedPath);
         if (upgrade) {
+          const fromLevel = PATH_TIER_LEVEL[selectedPath.tier];
+          const toLevel = PATH_TIER_LEVEL[upgrade.targetTier];
           actions.push({
             key: "path-upgrade",
             icon: structureIcon(PATH_TIER_ICON_NAMES[selectedPath.tier]),
             title: `Upgrade to ${upgrade.targetTier}`,
-            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("path", fromLevel, toLevel)}`,
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradePath,
@@ -2043,7 +2094,7 @@ export function GameScreen({
             key: "tower-upgrade",
             icon: structureIcon(structureLevelCandidates("tower", upgrade.targetLevel)),
             title: `Upgrade to L${upgrade.targetLevel}`,
-            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("tower", selectedTower.level, upgrade.targetLevel)}`,
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradeTower,
@@ -2069,11 +2120,15 @@ export function GameScreen({
       if (isOwned(selected)) {
         const upgrade = powerStationUpgradeOptionFor(selectedPowerStation);
         if (upgrade) {
+          const fromCap = powerStationCapacity(tweaks, selectedPowerStation.level).toFixed(0);
+          const toCap = powerStationCapacity(tweaks, upgrade.targetLevel).toFixed(0);
+          const fromAoe = powerStationAoeRadius(tweaks, selectedPowerStation.level);
+          const toAoe = powerStationAoeRadius(tweaks, upgrade.targetLevel);
           actions.push({
             key: "power-station-upgrade",
             icon: structureIcon(powerStationTierIconName(upgrade.targetLevel), 45, <Zap size={18} />),
             title: `Upgrade to L${upgrade.targetLevel}`,
-            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, capacity ${fromCap} → ${toCap}, AoE ${fromAoe} → ${toAoe}`,
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradePowerStation,
@@ -2104,11 +2159,13 @@ export function GameScreen({
         if (!wallActionStatusFor(selectedWall)) {
           const upgrade = wallUpgradeOptionFor(selectedWall);
           if (upgrade) {
+            const fromLevel = WALL_TIER_LEVEL[selectedWall.tier];
+            const toLevel = WALL_TIER_LEVEL[upgrade.targetTier];
             actions.push({
               key: "wall-upgrade",
               icon: structureIcon(WALL_TIER_ICON_NAMES[selectedWall.tier]),
               title: `Upgrade to ${upgrade.targetTier}`,
-              detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+              detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("wall", fromLevel, toLevel)}`,
               disabled: !upgrade.affordable,
               upgradeAvailable: upgrade.affordable,
               onClick: handleUpgradeWall,
@@ -2150,7 +2207,7 @@ export function GameScreen({
             key: "barracks-upgrade",
             icon: structureIcon(structureLevelCandidates("barracks", upgrade.targetLevel)),
             title: `Upgrade to L${upgrade.targetLevel}`,
-            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("barracks", selectedBarracks.level, upgrade.targetLevel)}`,
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradeBarracks,
@@ -2896,14 +2953,14 @@ export function GameScreen({
 
   /**
    * Passive status for the sheet Info tab. Extraction connection, noise floor
-   * contribution, and tower range/damage live here because they have no other
-   * home. Base HP/noise/storage also belong here: the map HP bar is glance-only,
-   * desktop hover is suppressed while the tile is selected, and storage fill vs
-   * caps appear nowhere else on the HUD. Tombstones and siege countdowns stay
-   * map/tray-first. Selected-tile countdown timers also appear under the sheet's
-   * In progress tab (and globally in the notification tray) — see
-   * activeCountdownRows. Returns null when the selected tile has nothing to
-   * show, so the Info tab only appears when needed.
+   * contribution, tower range/damage, and consumer power draw live here because
+   * they have no other home. Base HP/noise/storage also belong here: the map HP
+   * bar is glance-only, desktop hover is suppressed while the tile is selected,
+   * and storage fill vs caps appear nowhere else on the HUD. Tombstones and
+   * siege countdowns stay map/tray-first. Selected-tile countdown timers also
+   * appear under the sheet's In progress tab (and globally in the notification
+   * tray) — see activeCountdownRows. Returns null when the selected tile has
+   * nothing to show, so the Info tab only appears when needed.
    */
   function infoSheetContent(): ReactNode | null {
     if (!selected) return null;
@@ -2968,6 +3025,9 @@ export function GameScreen({
           {Math.round(powerNetwork.factor * 100)}%)
         </div>,
       );
+    }
+    if (selectedPowerDrawText) {
+      rows.push(<div key="power-draw">{selectedPowerDrawText}</div>);
     }
     if (selectedPowerStateLabel) {
       rows.push(<div key="power-state">{selectedPowerStateLabel}</div>);
@@ -3086,6 +3146,7 @@ export function GameScreen({
           )}
           <span>{connected ? "Connected — auto-flows to base" : "Not connected — manual collection"}</span>
           <span>Stockpile: {Math.floor(tile.stockpile)}</span>
+          <span>{powerDrawText("extraction", extractionTierLevel(tile.tier))}</span>
           {powerStateLabelFor(extractionTierLevel(tile.tier), tile.coord) && (
             <span>{powerStateLabelFor(extractionTierLevel(tile.tier), tile.coord)}</span>
           )}
@@ -3107,6 +3168,7 @@ export function GameScreen({
       return (
         <HoverPanel icon={structureIcon(PATH_TIER_ICON_NAMES[path.tier], 28)} title={`Path — ${path.tier}`} status={status}>
           <span>Noise floor: +{pathFloorContribution(tweaks, path).toFixed(1)}db</span>
+          <span>{powerDrawText("path", PATH_TIER_LEVEL[path.tier])}</span>
           {powerStateLabelFor(PATH_TIER_LEVEL[path.tier], path.coord) && (
             <span>{powerStateLabelFor(PATH_TIER_LEVEL[path.tier], path.coord)}</span>
           )}
@@ -3134,6 +3196,7 @@ export function GameScreen({
             </>
           )}
           <span>Noise floor: +{towerFloorContribution(tweaks, tower).toFixed(1)}db</span>
+          <span>{powerDrawText("tower", tower.level)}</span>
           {powerStateLabelFor(tower.level, tower.coord) && <span>{powerStateLabelFor(tower.level, tower.coord)}</span>}
         </HoverPanel>
       );
@@ -3187,6 +3250,7 @@ export function GameScreen({
             Durability: {Math.floor(wall.durability)}/{maxHp}
           </span>
           <span>Noise floor: +{wallFloorContribution(tweaks, wall).toFixed(1)}db</span>
+          <span>{powerDrawText("wall", WALL_TIER_LEVEL[wall.tier])}</span>
           {powerStateLabelFor(WALL_TIER_LEVEL[wall.tier], wall.coord) && (
             <span>{powerStateLabelFor(WALL_TIER_LEVEL[wall.tier], wall.coord)}</span>
           )}
@@ -3211,6 +3275,7 @@ export function GameScreen({
           title={`Barracks — L${barracks.level}`}
           status={status}
         >
+          <span>{powerDrawText("barracks", barracks.level)}</span>
           {powerStateLabelFor(barracks.level, barracks.coord) && <span>{powerStateLabelFor(barracks.level, barracks.coord)}</span>}
         </HoverPanel>
       );
@@ -3406,6 +3471,7 @@ export function GameScreen({
       )}
       <HoverTooltip ref={hoverTooltipRef} coord={hoveredCoord} content={hoverInfoContent} />
       <CollectPinOverlay ref={collectPinOverlayRef} tiles={collectableTiles} onCollect={handleQuickCollect} />
+      <PowerStatusPinOverlay ref={powerStatusPinOverlayRef} pins={powerStatusPins} />
       {selected && sheetActions.length > 0 && (
         <TileActionSheet
           key={axialKey(selected)}
