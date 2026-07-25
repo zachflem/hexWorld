@@ -227,6 +227,8 @@ import {
 import { formatCost, formatDuration } from "./format";
 import { GarrisonsPanel } from "./panels/GarrisonsPanel";
 import { ScoutingPanel } from "./panels/ScoutingPanel";
+import { DevToolsPanel, type DevLabMode } from "./panels/DevToolsPanel";
+import { labSearchZoneCenter } from "../engine/lab";
 import { MilitaryPanel } from "./panels/MilitaryPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
 import {
@@ -234,8 +236,6 @@ import {
   Archive,
   ArrowUpCircle,
   Binoculars,
-  Dices,
-  EyeOff,
   Flag,
   FlaskConical,
   Footprints,
@@ -254,6 +254,8 @@ import {
   Wrench,
   Zap,
 } from "lucide-react";
+
+type OpenPanel = "garrisons" | "scouting" | "military" | "settings" | "research" | "dev";
 
 /**
  * Reuses the same painted sprites HexCanvas draws on the map — ring-hex actions
@@ -386,6 +388,7 @@ export function GameScreen({
   now,
   speedMultiplier,
   onCycleFastForward,
+  onSetSpeedMultiplier,
   onDismissToast,
   onStartResearch,
   onBuildExtractionTile,
@@ -472,6 +475,8 @@ export function GameScreen({
   /** Playtesting convenience — cycles through rates that scale the tick loop's resource/noise/horde simulation AND every build/upgrade/training timer (via `now` above), see App.tsx. */
   speedMultiplier: number;
   onCycleFastForward: () => void;
+  /** Dev tools — set an explicit speed rate (1x / 10x toggle). */
+  onSetSpeedMultiplier: (rate: number) => void;
   onDismissToast: (id: string) => void;
   onStartResearch: (id: ResearchId) => Promise<BuildResult>;
   onBuildExtractionTile: (coord: Axial, resource: ResourceType) => Promise<BuildResult>;
@@ -563,12 +568,15 @@ export function GameScreen({
   const [reinforceExpeditionId, setReinforceExpeditionId] = useState<string | null>(null);
   /** Desktop-mouse hover target (HexCanvas's onTileHover) — null on touch devices, which never report hover. Only changes when the hovered tile itself changes (deduped in HexCanvas), not on every mousemove pixel. */
   const [hoveredCoord, setHoveredCoord] = useState<Axial | null>(null);
-  /** Which of the global hex cluster's five panel slots (flag/binoculars/gear/chart — hammer is a toggle, not a panel) is open, if any. Only one at a time. Dismissed via BottomSheet Close/backdrop. */
-  const [openPanel, setOpenPanel] = useState<"garrisons" | "scouting" | "military" | "settings" | "research" | null>(null);
+  /** Which of the global hex cluster's panel slots is open, if any. Only one at a time. Dismissed via BottomSheet Close/backdrop. */
+  const [openPanel, setOpenPanel] = useState<OpenPanel | null>(null);
   /** Hammer slot — highlights owned/empty/buildable tiles with an affordable build option, see buildModeEligibleKeysFor below. */
   const [buildModeActive, setBuildModeActive] = useState(false);
   /** Dev-server-only — reveals the whole map through fog of war. Session-local; never persisted. */
   const [fogDisabled, setFogDisabled] = useState(false);
+  /** Dev-server-only — Off | final-clue search hint | exact lab reveal. */
+  const [devLabMode, setDevLabMode] = useState<DevLabMode>("off");
+  const mapRevealed = fogDisabled || devLabMode === "reveal";
   /** Scaled ResourceHud height — when the bar shrinks (narrow viewport), notifications sit below it so they don't cover the noise chip. */
   const [resourceHudLayout, setResourceHudLayout] = useState({ height: 0, scale: 1 });
   const handleResourceHudLayout = useCallback((metrics: { height: number; scale: number }) => {
@@ -576,9 +584,45 @@ export function GameScreen({
   }, []);
 
   /** Open a global cluster panel (or toggle the same slot closed). Clears any tile sheet so only one BottomSheet is up. */
-  function toggleOpenPanel(panel: "garrisons" | "scouting" | "military" | "settings" | "research") {
+  function toggleOpenPanel(panel: OpenPanel) {
     setSelected(null);
     setOpenPanel((p) => (p === panel ? null : panel));
+  }
+
+  function handleDevToggleFog() {
+    if (mapRevealed) {
+      setFogDisabled(false);
+      setDevLabMode("off");
+    } else {
+      setFogDisabled(true);
+    }
+  }
+
+  function handleDevCycleLabMode() {
+    setDevLabMode((mode) => {
+      const next: DevLabMode = mode === "off" ? "hint" : mode === "hint" ? "reveal" : "off";
+      if (next === "hint") {
+        const center = labSearchZoneCenter(
+          world.seed,
+          lab.coord,
+          tweaks.lab_clues.final_search_area_radius_tiles,
+          gridSize,
+        );
+        hexCanvasRef.current?.centerOnCoord(center);
+      } else if (next === "reveal") {
+        hexCanvasRef.current?.centerOnCoord(lab.coord);
+      }
+      return next;
+    });
+  }
+
+  function handleDevToggleSpeed10x() {
+    onSetSpeedMultiplier(speedMultiplier === 10 ? 1 : 10);
+  }
+
+  function handleDevRerollSeed() {
+    setOpenPanel(null);
+    onStartNewSeed(generateSeed());
   }
   const [actionError, setActionError] = useState<string | null>(null);
   const [militiaToSend, setMilitiaToSend] = useState(1);
@@ -1468,7 +1512,7 @@ export function GameScreen({
   }
 
   function canRepairHordeDamagedAt(coord: Axial): boolean {
-    return canRepairHordeDamagedTile(tweaks, towers, territory, coord, gridSize);
+    return canRepairHordeDamagedTile(tweaks, towers, territory, coord, gridSize, world.seed);
   }
 
   /**
@@ -3082,7 +3126,8 @@ export function GameScreen({
     if (selectedTower) {
       rows.push(
         <div key="tower-stats">
-          Range {towerRange(tweaks, selectedTower.level)}, damage {towerDamage(tweaks, selectedTower.level).toFixed(1)}
+          Range {towerRange(tweaks, selectedTower.level, terrainAt(world.seed, selectedTower.coord))}, damage{" "}
+          {towerDamage(tweaks, selectedTower.level).toFixed(1)}
         </div>,
       );
     }
@@ -3276,7 +3321,7 @@ export function GameScreen({
         <HoverPanel icon={structureIcon(structureLevelCandidates("tower", tower.level), 28)} title={`Tower — L${tower.level}`} status={status}>
           {isStructureActive(tower) && (
             <>
-              <span>Range: {towerRange(tweaks, tower.level)} tiles</span>
+              <span>Range: {towerRange(tweaks, tower.level, terrainAt(world.seed, tower.coord))} tiles</span>
               <span>Damage: {towerDamage(tweaks, tower.level).toFixed(1)} DPS</span>
             </>
           )}
@@ -3563,6 +3608,7 @@ export function GameScreen({
           powerStations={powerStations}
           garrisons={garrisons}
           scoutedTiles={scoutedTiles}
+          lab={lab}
           dens={dens}
           outposts={outposts}
           hordes={hordes}
@@ -3579,7 +3625,8 @@ export function GameScreen({
           onTileClick={selectTile}
           onTileHover={handleTileHover}
           onViewportChange={handleViewportChange}
-          fogDisabled={import.meta.env.DEV && fogDisabled}
+          fogDisabled={import.meta.env.DEV && mapRevealed}
+          devLabMode={import.meta.env.DEV ? devLabMode : "off"}
         />
       </div>
       <ResourceHud
@@ -3620,32 +3667,19 @@ export function GameScreen({
         />
       )}
       <GlobalHexCluster
-        pinnedSlots={[
-          {
-            key: "fast-forward",
-            icon: <span style={{ fontSize: "0.8rem", fontWeight: 700 }}>{speedMultiplier > 1 ? `${speedMultiplier}x` : "▶"}</span>,
-            title: "Playtesting only — cycles speed, scaling resource/noise/horde simulation AND every build/upgrade/training timer",
-            active: speedMultiplier > 1,
-            onClick: onCycleFastForward,
-          },
-          ...(import.meta.env.DEV
-            ? [
+        pinnedSlots={
+          import.meta.env.DEV
+            ? undefined
+            : [
                 {
-                  key: "fog-reveal",
-                  icon: <EyeOff size={20} />,
-                  title: fogDisabled ? "Restore fog of war" : "Reveal map (dev — disable fog)",
-                  active: fogDisabled,
-                  onClick: () => setFogDisabled((v) => !v),
-                },
-                {
-                  key: "dev-new-seed",
-                  icon: <Dices size={20} />,
-                  title: "Dev — new game with a fresh random seed (same map size)",
-                  onClick: () => onStartNewSeed(generateSeed()),
+                  key: "fast-forward",
+                  icon: <span style={{ fontSize: "0.8rem", fontWeight: 700 }}>{speedMultiplier > 1 ? `${speedMultiplier}x` : "▶"}</span>,
+                  title: "Playtesting only — cycles speed, scaling resource/noise/horde simulation AND every build/upgrade/training timer",
+                  active: speedMultiplier > 1,
+                  onClick: onCycleFastForward,
                 },
               ]
-            : []),
-        ]}
+        }
         slots={[
           {
             key: "garrisons",
@@ -3690,6 +3724,17 @@ export function GameScreen({
             active: openPanel === "settings",
             onClick: () => toggleOpenPanel("settings"),
           },
+          ...(import.meta.env.DEV
+            ? [
+                {
+                  key: "dev",
+                  icon: <span style={{ fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.04em" }}>DEV</span>,
+                  title: "Dev tools",
+                  active: openPanel === "dev" || mapRevealed || devLabMode !== "off" || speedMultiplier === 10,
+                  onClick: () => toggleOpenPanel("dev"),
+                },
+              ]
+            : []),
         ]}
       />
       <MapControls
@@ -3722,6 +3767,18 @@ export function GameScreen({
           onReplayCurrent={onReplayCurrent}
           onStartNewSeed={onStartNewSeed}
           onNewPlayer={onNewPlayer}
+          onClose={() => setOpenPanel(null)}
+        />
+      )}
+      {import.meta.env.DEV && openPanel === "dev" && (
+        <DevToolsPanel
+          fogDisabled={mapRevealed}
+          speed10x={speedMultiplier === 10}
+          labMode={devLabMode}
+          onToggleFog={handleDevToggleFog}
+          onToggleSpeed10x={handleDevToggleSpeed10x}
+          onCycleLabMode={handleDevCycleLabMode}
+          onRerollSeed={handleDevRerollSeed}
           onClose={() => setOpenPanel(null)}
         />
       )}

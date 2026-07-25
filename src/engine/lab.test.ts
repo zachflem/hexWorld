@@ -4,8 +4,8 @@ import stripJsonComments from "strip-json-comments";
 import { describe, expect, it } from "vitest";
 import type { LabRecord } from "../data/lab";
 import { tweaksSchema } from "../data/tweaksSchema";
-import { axialDistance } from "./hexCoords";
-import { labClueText, labSearchZoneCenter, resolveLabAssault, rollScoutClue, rollWatchtowerSignal, watchtowerSignalChance, compass4Bearing, coordInCompass4Sector, makeWatchtowerSignal, WATCHTOWER_SIGNAL_MIN_LEVEL } from "./lab";
+import { axialDistance, axialKey } from "./hexCoords";
+import { labClueText, labSearchZoneCenter, labSearchZoneTileKeys, resolveLabAssault, rollScoutClue, rollWatchtowerSignal, watchtowerSignalChance, compass4Bearing, coordInCompass4Sector, makeWatchtowerSignal, WATCHTOWER_SIGNAL_MIN_LEVEL } from "./lab";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -93,6 +93,54 @@ describe("labSearchZoneCenter", () => {
     const radius = 6;
     const center = labSearchZoneCenter(seed, labCoord, radius, 128);
     expect(axialDistance(center, labCoord)).toBeLessThanOrEqual(radius);
+  });
+});
+
+describe("labSearchZoneTileKeys", () => {
+  const labCoord = { q: 40, r: 40 };
+
+  it("is null until all clues are collected", () => {
+    const tweaks = loadRealTweaks();
+    const lab: LabRecord = {
+      coord: labCoord,
+      secured: false,
+      cluesCollected: tweaks.lab_clues.total_clues - 1,
+    };
+    expect(labSearchZoneTileKeys(42, lab, tweaks, 128)).toBeNull();
+  });
+
+  it("force previews the zone before clues are collected", () => {
+    const tweaks = loadRealTweaks();
+    const lab: LabRecord = {
+      coord: labCoord,
+      secured: false,
+      cluesCollected: 0,
+    };
+    const keys = labSearchZoneTileKeys(42, lab, tweaks, 128, { force: true });
+    expect(keys).not.toBeNull();
+    expect(keys!.has(axialKey(lab.coord))).toBe(true);
+  });
+
+  it("covers the true lab once all clues are in", () => {
+    const tweaks = loadRealTweaks();
+    const lab: LabRecord = {
+      coord: labCoord,
+      secured: false,
+      cluesCollected: tweaks.lab_clues.total_clues,
+    };
+    const keys = labSearchZoneTileKeys(42, lab, tweaks, 128);
+    expect(keys).not.toBeNull();
+    expect(keys!.has(axialKey(lab.coord))).toBe(true);
+  });
+
+  it("clears after the lab is secured", () => {
+    const tweaks = loadRealTweaks();
+    const lab: LabRecord = {
+      coord: labCoord,
+      secured: true,
+      cluesCollected: tweaks.lab_clues.total_clues,
+    };
+    expect(labSearchZoneTileKeys(42, lab, tweaks, 128)).toBeNull();
   });
 });
 

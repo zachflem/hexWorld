@@ -86,8 +86,9 @@ export function holdDefenseAt(
   towers: Tower[],
   walls: Wall[],
   garrisons: GarrisonsRecord,
+  seed: number,
 ): number {
-  const towerTotal = towersInRange(tweaks, towers, coord).reduce((sum, t) => sum + towerDamage(tweaks, t.level), 0);
+  const towerTotal = towersInRange(tweaks, towers, coord, seed).reduce((sum, t) => sum + towerDamage(tweaks, t.level), 0);
   const neighborKeys = new Set(axialNeighbors(coord).map(axialKey));
   const wallTotal = walls.reduce(
     (sum, w) => (isStructureActive(w) && neighborKeys.has(axialKey(w.coord)) ? sum + w.durability : sum),

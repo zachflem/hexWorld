@@ -17,6 +17,7 @@ import { seededRandom } from "./noise";
 import { noiseCap } from "./noiseMeter";
 import { findNearestHordeTarget } from "./pathfinding";
 import { powerPerformanceFactor, type PowerNetworkSnapshot } from "./power";
+import { terrainAt } from "./terrain";
 import { towerDamage, towerRange, zombiesKilledPerTick } from "./towers";
 import { WALL_TIER_LEVEL } from "./walls";
 
@@ -314,8 +315,10 @@ export function resolveGarrisonAutoAttacks(
 }
 
 /** Every active tower (engine/formulas.ts:isStructureActive) whose range (engine/towers.ts:towerRange) reaches `coord` — exported so the map renderer can highlight towers currently in combat (src/render/HexCanvas.tsx). */
-export function towersInRange(tweaks: Tweaks, towers: Tower[], coord: Axial): Tower[] {
-  return towers.filter((t) => isStructureActive(t) && axialDistance(t.coord, coord) <= towerRange(tweaks, t.level));
+export function towersInRange(tweaks: Tweaks, towers: Tower[], coord: Axial, seed: number): Tower[] {
+  return towers.filter(
+    (t) => isStructureActive(t) && axialDistance(t.coord, coord) <= towerRange(tweaks, t.level, terrainAt(seed, t.coord)),
+  );
 }
 
 /**
@@ -457,6 +460,7 @@ export function advanceHordes(
   garrisons: GarrisonsRecord,
   hubs: HordeHub[],
   elapsedSeconds: number,
+  seed: number,
   powerNetwork?: PowerNetworkSnapshot,
 ): {
   hordes: HordesRecord;
@@ -484,7 +488,7 @@ export function advanceHordes(
     // between towers doesn't matter within a single tick) AND slows it down
     // ("distracted, under attack") — stacking with its own noise-scaled
     // speedFactor from spawn, not replacing it.
-    const inRangeTowers = towersInRange(tweaks, towers, horde.path[pathIndex]);
+    const inRangeTowers = towersInRange(tweaks, towers, horde.path[pathIndex], seed);
     const slowFactor = inRangeTowers.length > 0 ? tweaks.horde.tower_range_slow_multiplier : 1;
     const rate = (elapsedSeconds / tweaks.game.tick_interval_seconds) * horde.speedFactor * slowFactor;
     const decayFactor = 1 - horde.decayPct / 100;

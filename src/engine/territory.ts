@@ -64,6 +64,7 @@ export function autoClaimTowerRange(
   territory: TerritoryRecord,
   gridSize: number,
   excludedTiles: Set<string>,
+  seed: number,
 ): TerritoryRecord {
   if (towers.length === 0) return territory;
 
@@ -73,7 +74,8 @@ export function autoClaimTowerRange(
 
   for (const tower of towers) {
     if (!isStructureActive(tower)) continue;
-    for (const coord of axialSpiral(tower.coord, towerRange(tweaks, tower.level))) {
+    const range = towerRange(tweaks, tower.level, terrainAt(seed, tower.coord));
+    for (const coord of axialSpiral(tower.coord, range)) {
       if (!isWithinMapBounds(coord, gridSize)) continue;
       const key = axialKey(coord);
       if (ownedKeys.has(key) || excludedTiles.has(key) || seen.has(key)) continue;
@@ -86,11 +88,18 @@ export function autoClaimTowerRange(
 }
 
 /** True when `coord` falls within any active tower's viewshed (same radius as autoClaimTowerRange). */
-export function isWithinActiveTowerClaim(tweaks: Tweaks, towers: Tower[], coord: Axial, gridSize: number): boolean {
+export function isWithinActiveTowerClaim(
+  tweaks: Tweaks,
+  towers: Tower[],
+  coord: Axial,
+  gridSize: number,
+  seed: number,
+): boolean {
   const key = axialKey(coord);
   for (const tower of towers) {
     if (!isStructureActive(tower)) continue;
-    for (const c of axialSpiral(tower.coord, towerRange(tweaks, tower.level))) {
+    const range = towerRange(tweaks, tower.level, terrainAt(seed, tower.coord));
+    for (const c of axialSpiral(tower.coord, range)) {
       if (!isWithinMapBounds(c, gridSize)) continue;
       if (axialKey(c) === key) return true;
     }
@@ -105,8 +114,9 @@ export function canRepairHordeDamagedTile(
   territory: TerritoryRecord,
   coord: Axial,
   gridSize: number,
+  seed: number,
 ): boolean {
   const key = axialKey(coord);
   if (territory.owned.some((o) => axialKey(o) === key)) return true;
-  return isWithinActiveTowerClaim(tweaks, towers, coord, gridSize);
+  return isWithinActiveTowerClaim(tweaks, towers, coord, gridSize, seed);
 }

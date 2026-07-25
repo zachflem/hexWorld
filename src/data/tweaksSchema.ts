@@ -144,6 +144,9 @@ export const tweaksSchema = z.object({
     _build_time_note: z.string(),
     base_range_tiles: z.number(),
     range_per_level: z.number(),
+    /** Flat tile offset added to tower range from the tower's own tile terrain (#79). */
+    range_terrain_offset: terrainYieldMultiplierSchema,
+    _range_terrain_offset_note: z.string(),
     base_damage: z.number(),
     damage_scaling: z.string(),
     damage_formula_vs_horde: z.string(),

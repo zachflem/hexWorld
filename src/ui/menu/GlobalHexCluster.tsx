@@ -19,8 +19,8 @@ export interface HexClusterSlot {
  * after a slot is clicked (this component only owns open/closed state).
  *
  * `pinnedSlots`, if given, sit to the left of the toggle — always visible,
- * unaffected by open/closed state. Meant for playtest-only controls
- * (fast-forward, fog reveal) that should stay reachable without opening the menu.
+ * unaffected by open/closed state. Production uses this for the playtest
+ * speed cycle; dev-only tools live in the Dev tools panel instead.
  */
 export function GlobalHexCluster({ slots, pinnedSlots }: { slots: HexClusterSlot[]; pinnedSlots?: HexClusterSlot[] }) {
   const [open, setOpen] = useState(false);

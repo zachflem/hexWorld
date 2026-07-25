@@ -102,7 +102,7 @@ The base is a hub, not a fighting unit — it holds your storage, tech upgrades,
 
 ## Defenses: Towers & Walls
 
-- **Towers** deal ranged damage to any horde within reach, every tick, for as long as it stays in range. Both damage and range grow with tower level (levels 1–4). Militia stationed on a tower's own tile add their attack power straight onto its damage. A horde lingering in a tower's range is also visibly slowed.
+- **Towers** deal ranged damage to any horde within reach, every tick, for as long as it stays in range. Both damage and range grow with tower level (levels 1–4). Building on a **mountain** extends range (+2 tiles); **forest** shortens it (−1); grassland and shore are neutral. Militia stationed on a tower's own tile add their attack power straight onto its damage. A horde lingering in a tower's range is also visibly slowed.
 - **Walls** (wood → rock → steel, an upgrade path) don't fight back — they soak up horde damage via durability instead. They can only be repaired during peacetime, at a cost proportional to the damage they've taken.
 - **Demolishing** any structure refunds a fixed percentage of everything you ever spent on it (build + every upgrade).
 - A structure a horde captures goes **damaged** (non-functional) until you retake the tile and pay to repair it. The tile stays known — hordes don't re-fog ground you've already held.
@@ -185,7 +185,9 @@ Losing an outpost to a horde doesn't end the game — it just reverts back to a 
 
 Somewhere out past every zombie den — deliberately farther out than any of them — sits a **hidden lab**, guarded, and finding + securing it is the win condition. There's nothing else to do to win; you don't need to clear every den or build a particular economy size, just reach the lab and beat its guardian.
 
-**Finding it** takes clues — 5 total, each a directional hint relative to your base that narrows the search area, from a rough compass quadrant down to a small cluster of hexes on the last one. Clues surface from a small passive chance when a **Wandering Scout** newly reveals a tile, and a **guaranteed clue every time you successfully clear a den's hold**. **Watchtowers (level 2+)** sometimes pick up a vague distant signal ("something in the north — send the scouts"); that does not count as a clue, but it steers wandering scouts toward that direction. Level 4 towers hear signals more often. Once you've collected all 5, you'll know roughly where to look.
+**Finding it** takes clues — 5 total, each a directional hint relative to your base that narrows the search area, from a rough compass quadrant down to a small cluster of hexes on the last one. Clues surface from a small passive chance when a **Wandering Scout** newly reveals a tile, and a **guaranteed clue every time you successfully clear a den's hold**. **Watchtowers (level 2+)** sometimes pick up a vague distant signal ("something in the north — send the scouts"); that does not count as a clue, but it steers wandering scouts toward that direction. Level 4 towers hear signals more often.
+
+Once you've collected all 5, the map marks that **search cluster**: scouted hexes inside it get a light tint in your chosen color, and unscouted hexes there show a little more through the fog — still not the exact lab tile. Send scouts through the cluster to find and assault the lab.
 
 Watchtowers also **alert** when a horde first enters their combat range.
 

@@ -2,6 +2,7 @@ import type { ResourceType } from "../data/resources";
 import { MAX_TOWER_LEVEL } from "../data/towers";
 import type { Tweaks } from "../data/tweaksSchema";
 import { formulaACost, formulaBCost } from "./formulas";
+import type { TerrainType } from "./terrain";
 
 export function towerBuildCost(tweaks: Tweaks, n: number): Record<string, number> {
   const cost: Record<string, number> = {};
@@ -16,8 +17,14 @@ export function towerBuildDurationMs(tweaks: Tweaks): number {
   return tweaks.towers.build_time_minutes * 60_000;
 }
 
-export function towerRange(tweaks: Tweaks, level: number): number {
-  return tweaks.towers.base_range_tiles + tweaks.towers.range_per_level * (level - 1);
+/**
+ * Combat / viewshed radius for a tower of `level` sitting on `terrain`.
+ * Level range + `towers.range_terrain_offset` (mountain +2, forest −1, grassland/shore 0),
+ * clamped to at least 1 tile so a heavy forest penalty can't zero the tower out (#79).
+ */
+export function towerRange(tweaks: Tweaks, level: number, terrain: TerrainType): number {
+  const base = tweaks.towers.base_range_tiles + tweaks.towers.range_per_level * (level - 1);
+  return Math.max(1, base + tweaks.towers.range_terrain_offset[terrain]);
 }
 
 /** dmg(L) = dmg(L-1) * (1 + 0.1*L), cumulative from base_damage at L1. */
