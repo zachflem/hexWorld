@@ -1,12 +1,84 @@
-# Scrapper economy — design notes (#P11)
+# Scrapper + Courier logistics — design notes (#P11)
 
-Working design doc for the proposed **Scrapper unit & scrap stashes** feature. ROADMAP entry stays brief; decisions and open questions live here until promotion to a milestone.
+Working design doc for **steel Scrappers**, **implied Couriers** on resource structures, and **removal of infrastructure path tiles**. Decisions live here; structured impl brief is [Milestone26.md](Milestone26.md).
 
-**Status:** Design Q&A complete (Q1–Q61); ready to promote to milestone
+**GitHub:** [issue #36](https://github.com/zachflem/hexWorld/issues/36) · [milestone M26](https://github.com/zachflem/hexWorld/milestone/25)  
+**Status:** Promoted to **Milestone 26** (was proposed #P11)
 
 ---
 
-## Agreed
+## Scope
+
+Two transport roles replace path-tile auto-flow:
+
+| Role | Presentation | Loop | Unlocked by |
+|------|--------------|------|-------------|
+| **Scrapper** | Dedicated sprite (wandering-scout family) | Scrap Yard → scrap stash → Scrap Yard | Scrap Yard build (L1 Scrapper included) |
+| **Courier** | **Implied** unit (no train/assign UI; no dedicated scout-like sprite) | Resource structure → **base** → structure | Structure upgrade **L2** (food / wood / stone / dock); Scrap Yard also runs a courier for last-mile steel |
+
+**Path tiles (goat track / stone road / highway) are removed entirely** when this ships — no parallel path network.
+
+**Not in courier scope:** power (Milestone 25 stations). Steel extraction tiles are removed (Q1); steel only via stashes + Scrapper + yard courier.
+
+```mermaid
+flowchart LR
+  subgraph steel [Steel]
+    stash[ScrapStash] --> scrapper[ScrapperSprite]
+    scrapper --> yard[ScrapYard]
+    yard --> yardCourier[YardCourierImplied]
+    yardCourier --> base[Base]
+  end
+  subgraph stockpile [FoodWoodStoneDock]
+    tile[ResourceStructure] -->|L1 manual| collect[CollectPin]
+    tile -->|L2plus courier| courier[CourierImplied]
+    courier --> base
+  end
+```
+
+---
+
+## Couriers & resource upgrades (Milestone 26)
+
+### Q65 — Courier vs Scrapper presentation
+
+**Decision:**
+
+- **Scrapper:** visible hex-by-hex sprite on the map, art treatment closer to the **wandering scout** than to expedition party markers (see also Q33–Q34).
+- **Courier:** **implied** — created by upgrading the structure; player does not train, assign, or lose a discrete courier unit. No dedicated scout-like sprite required for MVP (timer / stockpile motion may still telegraph trips).
+
+### Q66 — Resource structure upgrade track
+
+**Decision:** Food, wood, stone extraction and **docks** use a unified **L1–L5** track (replaces the player-facing meaning of small → mid → large):
+
+| Level | Effect | Milestone |
+|-------|--------|-----------|
+| **L1** | Manual collection only (collect pin) | Ship |
+| **L2** | Automated collection — implied courier loops structure ↔ base | Ship |
+| **L3** | Increase production | Ship |
+| **L4** | Increase collection speed | Future |
+| **L5** | Increase production | Future |
+
+Exact yield / speed multipliers and upgrade costs in tweaks when implemented. Base-level gates for L4/L5 TBD (same family as other structure caps).
+
+### Q67 — Courier destination & distance penalty
+
+**Decision:**
+
+- Courier destination is the **main base** (not outposts) for MVP unless playtest demands hub parity.
+- Round-trip travel time reuses expedition route math: Dijkstra path cost over owned∪scouted ground (`findExpeditionPath`) × `expeditions.travel_seconds_per_cost` (`expeditionTravelDurationMs` in `engine/expeditions.ts`). Farther / mountain-heavier routes take longer — that **is** the distance penalty.
+- Manual collect (L1 and always available as fallback) stays instant via collect pin; no travel time.
+
+### Q68 — Path tile removal
+
+**Decision:** **Remove** goat track / stone road / highway from the game when Milestone 26 ships (new games; no save migration of path networks — same spirit as Q23). Couriers replace path auto-flow. Impl must strip build UX, `PathTile` persistence, path power consumers, path noise floor, fractional path slot cost, and tick drain via `findResourceTileConnection`.
+
+### Q69 — Scrap Yard last-mile
+
+**Decision (supersedes Q27 yard→hub path rule):** Steel delivered into the yard’s local stockpile enters the **shared global pool** via an **implied yard courier** to base, using the same `travel_seconds_per_cost` timing as resource couriers (Q67). Manual collect droplet on the yard remains available (Q59/Q60).
+
+---
+
+## Agreed (Scrapper / stash — prior Q&A)
 
 ### Q1 — Steel extraction tiles
 
@@ -44,7 +116,7 @@ Working design doc for the proposed **Scrapper unit & scrap stashes** feature. R
 
 - Player **assigns a stash**; the Scrapper **loops** yard → stash → yard until that stash is empty.
 - **Auto (yard L3+):** when the assigned stash is exhausted, the Scrapper picks the **next closest known stash** to its yard (still yard-centric routing).
-- **One active Scrapper per yard**; **multiple yards** allowed on owned land; hauled steel lands in that yard's **local stockpile** first, then enters the **shared global pool** via collect and/or path auto-flow (Q27, Q60).
+- **One active Scrapper per yard**; **multiple yards** allowed on owned land; hauled steel lands in that yard's **local stockpile** first, then enters the **shared global pool** via **yard courier** and/or **manual collect** (Q69, Q60) — **not** path auto-flow.
 - Yards are normal structures — **can be damaged/overrun** and **repaired** like other buildings.
 
 ### Q9 — Stash highlight ring
@@ -107,7 +179,7 @@ see [Milestone25.md](Milestone25.md).
 
 ### Q23 — Existing saves
 
-**Decision:** **No migration** — Scrapper economy applies to **new games only**; in-progress saves with steel extraction tiles are not converted (continue/new-game flow as today).
+**Decision:** **No migration** — Scrapper + Courier economy and path removal apply to **new games only**; in-progress saves with steel extraction tiles and/or path networks are not converted (continue/new-game flow as today).
 
 ### Q24 — Yard upgrades
 
@@ -123,10 +195,13 @@ see [Milestone25.md](Milestone25.md).
 
 ### Q27 — Paths
 
-**Decision:**
+**Decision (superseded by Q68 / Q69 — Milestone 26):**
 
-- **Yard ↔ stash:** **No paths required** — Scrapper routes over normal travel rules (known/scouted ground — same family as expeditions, not path network).
-- **Yard → hub:** Yard must be **path-connected to base** (or outpost hub, same rules as extraction tiles today) for hauled steel to enter the **shared stockpile**.
+- ~~Yard → hub path-connected for shared stockpile.~~
+- **Yard ↔ stash:** Still **no path tiles** — Scrapper uses expedition-like travel (owned∪scouted).
+- **Yard → base:** Implied **yard courier** (Q69), not path network.
+- **Food / wood / stone / dock automation:** Implied **structure courier** from L2 (Q66), not path tiles.
+- **Path tiles removed** from the game (Q68).
 
 ### Q28 — Travel & territory
 
@@ -150,7 +225,7 @@ see [Milestone25.md](Milestone25.md).
 
 ### Q33 — Scrapper on the map
 
-**Decision:** **Visible sprite** — Scrapper shown **moving hex-by-hex** on the route (not abstracted to a yard timer only).
+**Decision (revised Milestone 26):** **Visible dedicated sprite** — Scrapper shown **moving hex-by-hex** on the route. Art direction: **wandering-scout family** (distinct from expedition party markers and from implied Couriers — Q65).
 
 ### Q34 — Loaded vs empty sprite
 
@@ -158,7 +233,7 @@ see [Milestone25.md](Milestone25.md).
 
 ### Q35 — Movement model
 
-**Decision:** **Expedition-like** — discrete steps per tick; **yard level** sets travel speed per leg (L1 slow → L4 max speed; exact multipliers TBD in tweaks).
+**Decision:** **Expedition-like** — discrete steps per tick; **yard level** sets travel speed per leg (L1 slow → L4 max speed; exact multipliers TBD in tweaks). Baseline duration still scales with route terrain cost × travel-time tweak (same family as Q67).
 
 ### Q36 — Notification tray
 
@@ -170,7 +245,7 @@ see [Milestone25.md](Milestone25.md).
 
 ### Q38 — Recall while loaded
 
-**Decision:** **Keeps the load** — if recalled while returning with steel, the Scrapper **carries that cargo back to the yard** (delivers on arrival if path-connected); cargo is **not dropped** on recall.
+**Decision (revised Q69):** **Keeps the load** — if recalled while returning with steel, the Scrapper **carries that cargo back to the yard** (credits yard stockpile on arrival; yard courier / manual collect moves it to the global pool); cargo is **not dropped** on recall.
 
 ### Q39 — Reassign when empty vs loaded
 
@@ -222,18 +297,18 @@ see [Milestone25.md](Milestone25.md).
 
 **Decision:**
 
-- Stash steel pool scales by **terrain type** and **tile level marker** on the hex (world-gen — exact table TBD in tweaks; same markers as future finite-resource work, ROADMAP #2).
+- Stash steel pool scales by **terrain type** and **tile level marker** on the hex (world-gen — exact table TBD in tweaks; same markers as future finite-resource work, issue #28 / ROADMAP #2).
 - **Early-game guarantee:** at least **one scrap stash within ~10 tiles** of spawn (base) so steel loop is reachable without deep exploration first.
 
 ### Q49 — “Tile level” for stash scaling
 
-**Decision:** Stash pool scales by **terrain type** and the hex’s **tile level marker** (world-gen value on each hex — same markers intended to drive future **finite per-tile resources**; see ROADMAP #2). Exact formula TBD in tweaks.
+**Decision:** Stash pool scales by **terrain type** and the hex’s **tile level marker** (world-gen value on each hex — same markers intended to drive future **finite per-tile resources**; see issue #28). Exact formula TBD in tweaks.
 
 ### Q50 — Stashes vs other tile uses
 
 **Decision:** There are **no separate natural-resource deposits** in the current build — only **terrain buffs/debuffs** for building/yield. Scrap stashes occupy a hex like a special site (reserved while steel remains, Q26); they do **not** compete with a not-yet-shipped deposit system.
 
-**Follow-up (ROADMAP #2):** Investigate **finite resources per tile** for food/wood/stone (and later power), with pool/yield scaled by the **same tile level markers** — design in parallel with #P11, not blocking Scrapper MVP unless markers must land first.
+**Follow-up (issue #28):** Investigate **finite resources per tile** for food/wood/stone, with pool/yield scaled by the **same tile level markers** — design in parallel with Milestone 26, not blocking MVP unless markers must land first.
 
 ### Q51 — Tile level markers: visibility
 
@@ -252,7 +327,7 @@ see [Milestone25.md](Milestone25.md).
 
 ### Q54 — Tile level markers in milestone scope
 
-**Decision:** **In scope for #P11** if implementation is a **minor lift** — world-gen tile level markers + banded hint copy in scouted tile menu ship alongside Scrapper economy (not a separate prerequisite milestone unless eng review says otherwise).
+**Decision:** **In scope for Milestone 26** if implementation is a **minor lift** — world-gen tile level markers + banded hint copy in scouted tile menu ship alongside Scrapper/Courier work (not a separate prerequisite milestone unless eng review says otherwise).
 
 ### Q55 — Build slot cap
 
@@ -287,7 +362,7 @@ Linear progression L1→L5; exact speed/capacity numbers and upgrade costs in tw
 **UI (reuse existing patterns):**
 
 - **Upgrade indicator:** Same as other structures — yard hex included in `upgradeAvailableKeysFor()` when the next level is unlocked **and** affordable; `drawLevelBadge` uses **`UPGRADE_AVAILABLE_BADGE_COLOR`** (orange) on the yard level badge. Tile action sheet tabs keep the same `upgradeAvailable` border cue.
-- **Collect droplet (yard):** Reuse the **collect-pin droplet** stack (`CollectPinOverlay`, `collectPinColorState`, `COLLECT_PIN_COLORS`) on the **Scrapper yard** when it has **stockpiled steel** — steel icon, fill/color from **yard stockpile ÷ cap** (same normal / warning / full thresholds as extraction tiles). One-click **collect** into the shared pool (same path-connectivity rules as Q27 for whether delivery/auto-flow applies). Orange droplet when stockpile is low **and** next yard level is affordable (upgrade wins only when stockpile ratio is normal, per existing `collectPinColorState` precedence). **Not** on stash hexes — stash map intel stays **grey ring** + tile popup (Q9, Q25, Q52).
+- **Collect droplet (yard):** Reuse the **collect-pin droplet** stack (`CollectPinOverlay`, `collectPinColorState`, `COLLECT_PIN_COLORS`) on the **Scrapper yard** when it has **stockpiled steel** — steel icon, fill/color from **yard stockpile ÷ cap** (same normal / warning / full thresholds as extraction tiles). One-click **collect** into the shared pool. Auto delivery uses the **yard courier** (Q69), not path connectivity. Orange droplet when stockpile is low **and** next yard level is affordable (upgrade wins only when stockpile ratio is normal, per existing `collectPinColorState` precedence). **Not** on stash hexes — stash map intel stays **grey ring** + tile popup (Q9, Q25, Q52).
 
 ### Q60 — Collect droplet placement (correction)
 
@@ -311,12 +386,15 @@ Linear progression L1→L5; exact speed/capacity numbers and upgrade costs in tw
 
 ---
 
-## Open questions
+## Open questions / remaining work
 
-**Design Q&A complete (Q1–Q64).** Remaining work: **tweaks tuning** (stash counts/weights, pool formulas, L4/L5 costs, banded hint copy, speed/capacity numbers, base level for L4/L5 gate) and **milestone promotion** → `MilestoneN.md` checklist.
+**Design Q&A complete (Q1–Q69).** Remaining:
+
+- **Tweaks tuning** — stash counts/weights, pool formulas, yard L4/L5 costs, banded hint copy, Scrapper speed/capacity, resource L2/L3 (and future L4/L5) costs and multipliers, courier load size / trip cadence.
+- **Impl** — see [Milestone26.md](Milestone26.md) checklist (not design-blocked).
 
 ---
 
 ## Related scope (expedition parity)
 
-When #P11 ships, audit **expedition / den assault / lab assault** in-transit behavior and align with Scrapper redirect vs recall-home rules above (likely new ROADMAP sub-item or milestone checklist row).
+When Milestone 26 ships Scrappers, audit **expedition / den assault / lab assault** in-transit behavior and align with Scrapper redirect vs recall-home rules above (checklist row on the milestone).
