@@ -28,6 +28,8 @@ import type { Wall, WallTier } from "../data/walls";
 import type { Barracks } from "../data/barracks";
 import type { GarrisonsRecord } from "../data/garrisons";
 import type { DenRecord } from "../data/dens";
+import type { ScrapStashRecord, ScrapStashesRecord } from "../data/scrapStashes";
+import { isActiveScrapStash } from "../data/scrapStashes";
 import type { OutpostRecord } from "../data/outposts";
 import type { HordeRecord } from "../data/hordes";
 import type { Expedition, ExpeditionsRecord } from "../data/expeditions";
@@ -43,13 +45,14 @@ import {
   drawHexTileTexture,
   drawImageAtWidth,
   getResourceTexture,
+  getScrapTexture,
   getStructureIconTexture,
   getStructureIconTextureCandidates,
   getTerrainTexture,
   getUnitIconTexture,
   onTextureLoad,
 } from "./tileTextures";
-import { drawPlacedResourceIcon, drawPlacedStructureIcon } from "./structurePlacement";
+import { drawPlacedResourceIcon, drawPlacedScrapIcon, drawPlacedStructureIcon } from "./structurePlacement";
 import {
   dockSpriteCandidates,
   extractionTierCandidates,
@@ -209,6 +212,9 @@ const WALL_TIER_COLORS: Record<WallTier, string> = {
 const TOWER_COLOR = "#c0392b";
 const TOWER_RANGE_TINT_SELECTED = "rgba(192, 57, 43, 0.6)";
 /** Ring drawn around any tower currently within range of a live horde — makes it visible towers are actually fighting, not just standing there. */
+/** Ring around a known, non-depleted scrap stash (ScrapperEconomy Q9). */
+const SCRAP_STASH_RING_COLOR = "rgba(140, 150, 160, 0.95)";
+
 const TOWER_ACTIVE_RING_COLOR = "#ffd23f";
 const BARRACKS_COLOR = "#8e44ad";
 const DOCK_COLOR = "#8a6d3b";
@@ -279,6 +285,7 @@ export const HexCanvas = forwardRef<
     /** Hidden lab + clue progress — drives the final-clue search-zone highlight. */
     lab: LabRecord;
     dens: DenRecord[];
+    scrapStashes: ScrapStashesRecord;
     outposts: OutpostRecord[];
     hordes: HordeRecord[];
     expeditions: ExpeditionsRecord;
@@ -367,6 +374,7 @@ export const HexCanvas = forwardRef<
     scoutedTiles,
     lab,
     dens,
+    scrapStashes,
     outposts,
     hordes,
     expeditions,
@@ -428,6 +436,11 @@ export const HexCanvas = forwardRef<
     for (const den of dens) map.set(axialKey(den.coord), den);
     return map;
   }, [dens]);
+  const scrapStashesByKey = useMemo(() => {
+    const map = new Map<string, ScrapStashRecord>();
+    for (const stash of scrapStashes) map.set(axialKey(stash.coord), stash);
+    return map;
+  }, [scrapStashes]);
   const outpostsByKey = useMemo(() => {
     const map = new Map<string, OutpostRecord>();
     for (const outpost of outposts) map.set(axialKey(outpost.coord), outpost);
@@ -973,6 +986,27 @@ export const HexCanvas = forwardRef<
           // instead of clipping their lower edge.
           if (isSelected || isDevLabHighlight) strokeSelection(corners);
 
+          // Known scrap stashes (owned/scouted fog) — resource-pin art + grey ring (Q9/Q70).
+          const scrapStash = scrapStashesByKey.get(coordKey);
+          if (scrapStash && isActiveScrapStash(scrapStash) && (tier === "owned" || tier === "scouted")) {
+            ctx.beginPath();
+            ctx.arc(screenCenter.x, screenCenter.y, size * 0.52, 0, Math.PI * 2);
+            ctx.strokeStyle = SCRAP_STASH_RING_COLOR;
+            ctx.lineWidth = Math.max(2, size * 0.1);
+            ctx.stroke();
+            const scrapImg = getScrapTexture(scrapStash.artVariant);
+            if (scrapImg) {
+              drawPlacedScrapIcon(ctx, scrapImg, screenCenter.x, screenCenter.y, size);
+            } else {
+              ctx.beginPath();
+              ctx.arc(screenCenter.x, screenCenter.y, size * 0.28, 0, Math.PI * 2);
+              ctx.fillStyle = RESOURCE_MARKER_COLORS.steel;
+              ctx.fill();
+              ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
+              ctx.stroke();
+            }
+          }
+
           if (axialEquals(coord, base)) {
             const baseIcon = getStructureIconTextureCandidates(structureLevelCandidates("base", baseLevel));
             if (baseIcon) {
@@ -1514,6 +1548,7 @@ export const HexCanvas = forwardRef<
     powerStationsByKey,
     garrisonsByKey,
     densByKey,
+    scrapStashesByKey,
     hordesByKey,
     docksByKey,
     scoutSkiffsByKey,

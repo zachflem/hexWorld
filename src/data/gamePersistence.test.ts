@@ -30,6 +30,7 @@ function minimalSnapshot(overrides: Partial<PersistableGameSnapshot> = {}): Pers
     storageUpgrades: {},
     noise: { value: 0 },
     dens: [],
+    scrapStashes: [],
     hordes: [],
     expeditions: [],
     gameStatus: { lost: false, won: false },

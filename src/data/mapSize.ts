@@ -73,9 +73,21 @@ export function densCountForMapSize(gridSize: number, referenceCount: number): n
   return DENS_COUNT_BY_MAP_SIZE[gridSize] ?? scaleToMapSize(referenceCount, gridSize);
 }
 
+const SCRAP_STASH_COUNT_BY_MAP_SIZE: Partial<Record<number, number>> = {
+  32: 8,
+  64: 14,
+  96: 20,
+  128: 28,
+};
+
+/** Midpoint scrap-stash count for a map size (before per-seed ±1 variance). */
+export function scrapStashCountForMapSize(gridSize: number, referenceCount: number): number {
+  return SCRAP_STASH_COUNT_BY_MAP_SIZE[gridSize] ?? scaleToMapSize(referenceCount, gridSize);
+}
+
 /**
- * World-gen tweaks for a chosen map size — grid bounds plus dens/lab distances
- * and count so smaller maps stay paced, not just cropped.
+ * World-gen tweaks for a chosen map size — grid bounds plus dens/lab/scrap
+ * distances and counts so smaller maps stay paced, not just cropped.
  */
 export function tweaksForMapSize(tweaks: Tweaks, gridSize: number): Tweaks {
   const scale = (n: number) => scaleToMapSize(n, gridSize);
@@ -91,6 +103,11 @@ export function tweaksForMapSize(tweaks: Tweaks, gridSize: number): Tweaks {
         ...tweaks.dens.level_cap_by_distance,
         distance_per_level_step: scale(tweaks.dens.level_cap_by_distance.distance_per_level_step),
       },
+    },
+    scrap_stashes: {
+      ...tweaks.scrap_stashes,
+      count: scrapStashCountForMapSize(gridSize, tweaks.scrap_stashes.count),
+      early_guarantee_max_distance: scale(tweaks.scrap_stashes.early_guarantee_max_distance),
     },
     lab: {
       ...tweaks.lab,

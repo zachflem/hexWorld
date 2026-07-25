@@ -1,7 +1,7 @@
 # Milestone 26 — Scrappers & Couriers (replace paths)
 
 **GitHub:** [issue #36](https://github.com/zachflem/hexWorld/issues/36) · [milestone M26](https://github.com/zachflem/hexWorld/milestone/25)  
-**Status:** Implementation in progress on `goblin` (#36 ACTIVE) — courier core + path auto-flow retired; **path tiles stripped** (code, assets, tweaks, docs); Scrap Yard / Scrapper + steel extraction removal still open 
+**Status:** Implementation in progress on `goblin` (#36 ACTIVE) — couriers + path strip done; **scrap stashes** world-gen/UI/samples live; Scrap Yard / Scrapper + steel extraction removal still open 
 **Design Q&A:** [ScrapperEconomy.md](ScrapperEconomy.md) (Q1–Q70)
 
 Replace **infrastructure path tiles** and **passive steel extraction** with two logistics roles:
@@ -126,7 +126,7 @@ Milestone 26 player model: **L1 manual / L2 courier / L3 production** (then futu
 
 ## Impl checklist (brief)
 
-- [ ] World-gen scrap stashes + discovery/UI (grey ring, remaining steel, banded hints if minor lift — Q54) + seeded `scrap-#` marker art (Q70)
+- [x] World-gen scrap stashes + discovery/UI (grey ring, remaining steel, banded hints if minor lift — Q54) + seeded `scrap-#` marker art (Q70)
 - [ ] Scrap Yard structure + Scrapper unit record, sprite, yard↔stash loop, Auto L3+
 - [ ] Yard stockpile + collect pin + **yard courier** to base
 - [ ] Resource L1–L3 upgrade track (food/wood/stone/dock); courier travel via `travel_seconds_per_cost`

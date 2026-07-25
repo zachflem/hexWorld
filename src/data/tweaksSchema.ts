@@ -389,6 +389,29 @@ export const tweaksSchema = z.object({
     }),
   }),
 
+  scrap_stashes: z.object({
+    _status: z.string(),
+    count: z.number(),
+    early_guarantee_max_distance: z.number(),
+    tile_level_max: z.number(),
+    art_variant_count: z.number(),
+    steel_pool_by_terrain: z.object({
+      shore: z.number(),
+      grassland: z.number(),
+      forest: z.number(),
+      mountain: z.number(),
+    }),
+    /** Extra pool fraction per tile_level above 1 (e.g. 0.25 → L2 = 1.25×, L5 = 2×). */
+    steel_pool_per_tile_level_pct: z.number(),
+    terrain_placement_weight: z.object({
+      shore: z.number(),
+      grassland: z.number(),
+      forest: z.number(),
+      mountain: z.number(),
+    }),
+    wandering_scout_sample_steel: z.number(),
+  }),
+
   outposts: z.object({
     starting_owned_radius: z.number(),
     reinforcement: z.object({

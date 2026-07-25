@@ -50,6 +50,13 @@ import { GARRISONS_DB_KEY, type GarrisonsRecord } from "./data/garrisons";
 import { SCOUTED_TILES_DB_KEY, type ScoutedTiles } from "./data/scoutedTiles";
 import { DENS_DB_KEY, createDens, resolveDen, type DenRecord, type DensRecord } from "./data/dens";
 import { DEN_ASSAULTS_DB_KEY, type DenAssaultRecord, type DenAssaultsRecord } from "./data/denAssaults";
+import {
+  SCRAP_STASHES_DB_KEY,
+  applyWanderingScoutScrapSamples,
+  createScrapStashes,
+  scrapStashBlocksHex,
+  type ScrapStashesRecord,
+} from "./data/scrapStashes";
 import { LAB_DB_KEY, createLab, type LabRecord } from "./data/lab";
 import { LAB_ASSAULTS_DB_KEY, type LabAssaultRecord, type LabAssaultsRecord } from "./data/labAssaults";
 import { GARRISON_RECALLS_DB_KEY, type GarrisonRecallRecord, type GarrisonRecallsRecord } from "./data/garrisonRecalls";
@@ -242,6 +249,7 @@ interface GameState {
   storageUpgrades: StorageUpgradesRecord;
   noise: NoiseRecord;
   dens: DensRecord;
+  scrapStashes: ScrapStashesRecord;
   hordes: HordesRecord;
   expeditions: ExpeditionsRecord;
   gameStatus: GameStatusRecord;
@@ -367,6 +375,7 @@ function buildGameState(
     storageUpgrades: StorageUpgradesRecord | undefined;
     noise: NoiseRecord | undefined;
     dens: DenRecord[] | undefined;
+    scrapStashes: ScrapStashesRecord | undefined;
     hordes: HordesRecord | undefined;
     expeditions: ExpeditionsRecord | undefined;
     gameStatus: GameStatusRecord | undefined;
@@ -383,6 +392,27 @@ function buildGameState(
   },
 ): GameState {
   const resolvedDens = (data.dens ?? []).map(resolveDen);
+  const gridSize = resolveWorldGridSize(data.world, tweaks);
+  // dens → lab → scrapStashes (same order as resetGame). Old saves without
+  // scrapStashes get a deterministic regenerate from the world seed.
+  const lab = data.lab ?? createLab(
+    data.world.seed,
+    gridSize,
+    data.territory.base,
+    resolvedDens,
+    tweaks,
+  );
+  const scrapStashes =
+    data.scrapStashes && data.scrapStashes.length > 0
+      ? data.scrapStashes
+      : createScrapStashes(
+          data.world.seed,
+          gridSize,
+          data.territory.base,
+          resolvedDens,
+          lab,
+          tweaks,
+        );
   const migrated = migrateLegacyTrainingQueues(data.barracksList ?? [], { ...initialUnits(), ...(data.units as LegacyUnitsRecord | undefined) });
   // One-shot migration from stockpile-power saves (Milestone 25 / #70): power
   // extraction tiles become L1 power stations, resources.power/storageLevels.power
@@ -434,6 +464,7 @@ function buildGameState(
     storageUpgrades: data.storageUpgrades ?? initialStorageUpgrades(),
     noise: data.noise ?? initialNoise(tweaks),
     dens: resolvedDens,
+    scrapStashes,
     hordes: data.hordes ?? [],
     expeditions: (data.expeditions ?? []).map((e) => normalizeExpedition(e)),
     gameStatus: { ...initialGameStatus(), ...data.gameStatus },
@@ -443,13 +474,7 @@ function buildGameState(
     denAssaults: (data.denAssaults ?? []).map((a) => ({ ...a, resolvedIndex: a.resolvedIndex ?? 0 })),
     outposts: data.outposts ?? [],
     garrisonRecalls: data.garrisonRecalls ?? [],
-    lab: data.lab ?? createLab(
-      data.world.seed,
-      resolveWorldGridSize(data.world, tweaks),
-      data.territory.base,
-      resolvedDens,
-      tweaks,
-    ),
+    lab,
     labAssaults: (data.labAssaults ?? []).map((a) => ({ ...a, resolvedIndex: a.resolvedIndex ?? 0 })),
     research: data.research ?? initialResearch(),
     tombstones: data.tombstones ?? [],
@@ -523,7 +548,8 @@ function isHexOccupied(game: GameState, coord: Axial): boolean {
     game.walls.some((t) => axialKey(t.coord) === key) ||
     game.barracksList.some((t) => axialKey(t.coord) === key) ||
     game.docks.some((t) => axialKey(t.coord) === key) ||
-    game.powerStations.some((t) => axialKey(t.coord) === key)
+    game.powerStations.some((t) => axialKey(t.coord) === key) ||
+    scrapStashBlocksHex(game.scrapStashes, coord)
   );
 }
 
@@ -623,6 +649,7 @@ export default function App() {
           storageUpgrades,
           noise,
           dens,
+          scrapStashes,
           hordes,
           expeditions,
           gameStatus,
@@ -658,6 +685,7 @@ export default function App() {
           get<StorageUpgradesRecord>(STORAGE_UPGRADES_DB_KEY),
           get<NoiseRecord>(NOISE_DB_KEY),
           get<DensRecord>(DENS_DB_KEY),
+          get<ScrapStashesRecord>(SCRAP_STASHES_DB_KEY),
           get<HordesRecord>(HORDES_DB_KEY),
           get<ExpeditionsRecord>(EXPEDITIONS_DB_KEY),
           get<GameStatusRecord>(GAME_STATUS_DB_KEY),
@@ -699,6 +727,7 @@ export default function App() {
             storageUpgrades,
             noise,
             dens,
+            scrapStashes,
             hordes,
             expeditions,
             gameStatus,
@@ -835,7 +864,7 @@ export default function App() {
         producedResourcesWithDocks.food,
         elapsedSeconds,
       );
-      const resources = { ...producedResourcesWithDocks, food: foodAfterUpkeep };
+      let resources = { ...producedResourcesWithDocks, food: foodAfterUpkeep };
       const noise: NoiseRecord = {
         value: accrueNoise(
           current.tweaks,
@@ -1046,6 +1075,20 @@ export default function App() {
           cluesCollected: labWorking.cluesCollected,
         },
       );
+      const scrapSample = applyWanderingScoutScrapSamples(
+        current.tweaks,
+        current.game.scrapStashes,
+        wanderingScoutsAfterBuild,
+        wanderingScouts,
+      );
+      let scrapStashes = scrapSample.scrapStashes;
+      if (scrapSample.steelGained > 0) {
+        const steelCap = storageCapacity(current.tweaks, current.game.storageLevels.steel);
+        resources = {
+          ...resources,
+          steel: Math.min(steelCap, resources.steel + scrapSample.steelGained),
+        };
+      }
       if (wanderingClueAwarded) {
         labWorking = {
           ...labWorking,
@@ -1820,6 +1863,7 @@ export default function App() {
         set(WANDERING_SCOUTS_DB_KEY, wanderingScouts),
         set(SCOUTED_TILES_DB_KEY, scoutedTilesAfterCapture),
         set(DENS_DB_KEY, densAfterAssaults),
+        set(SCRAP_STASHES_DB_KEY, scrapStashes),
         set(DEN_ASSAULTS_DB_KEY, nextDenAssaults),
         set(OUTPOSTS_DB_KEY, outpostsAfterSieges),
         set(GARRISON_RECALLS_DB_KEY, pendingGarrisonRecalls),
@@ -1856,6 +1900,7 @@ export default function App() {
                 wanderingScouts,
                 scoutedTiles: scoutedTilesAfterCapture,
                 dens: densAfterAssaults,
+                scrapStashes,
                 denAssaults: nextDenAssaults,
                 outposts: outpostsAfterSieges,
                 garrisonRecalls: pendingGarrisonRecalls,
@@ -1931,6 +1976,7 @@ export default function App() {
     const outposts: OutpostsRecord = [];
     const garrisonRecalls: GarrisonRecallsRecord = [];
     const lab = createLab(world.seed, gridSize, territory.base, dens, mapTweaks);
+    const scrapStashes = createScrapStashes(world.seed, gridSize, territory.base, dens, lab, mapTweaks);
     const labAssaults: LabAssaultsRecord = [];
     const research = initialResearch();
     const tombstones: TombstonesRecord = [];
@@ -1955,6 +2001,7 @@ export default function App() {
       set(STORAGE_UPGRADES_DB_KEY, storageUpgrades),
       set(NOISE_DB_KEY, noise),
       set(DENS_DB_KEY, dens),
+      set(SCRAP_STASHES_DB_KEY, scrapStashes),
       set(HORDES_DB_KEY, hordes),
       set(EXPEDITIONS_DB_KEY, expeditions),
       set(GAME_STATUS_DB_KEY, gameStatus),
@@ -1997,6 +2044,7 @@ export default function App() {
           storageUpgrades,
           noise,
           dens,
+          scrapStashes,
           hordes,
           expeditions,
           gameStatus,
@@ -2123,6 +2171,7 @@ export default function App() {
       storageUpgrades: stored.storageUpgrades as StorageUpgradesRecord | undefined,
       noise: stored.noise as NoiseRecord | undefined,
       dens: stored.dens as DensRecord | undefined,
+      scrapStashes: stored.scrapStashes as ScrapStashesRecord | undefined,
       hordes: stored.hordes as HordesRecord | undefined,
       expeditions: stored.expeditions as ExpeditionsRecord | undefined,
       gameStatus: stored.gameStatus as GameStatusRecord | undefined,
@@ -4514,6 +4563,7 @@ export default function App() {
       storageUpgrades={boot.game.storageUpgrades}
       noise={boot.game.noise}
       dens={boot.game.dens}
+      scrapStashes={boot.game.scrapStashes}
       denAssaults={boot.game.denAssaults}
       outposts={boot.game.outposts}
       lab={boot.game.lab}

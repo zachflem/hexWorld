@@ -152,6 +152,8 @@ import type { StorageLevels } from "../data/storageLevels";
 import type { StorageUpgradesRecord } from "../data/storageUpgrades";
 import type { NoiseRecord } from "../data/noise";
 import type { DenRecord, DensRecord } from "../data/dens";
+import type { ScrapStashRecord, ScrapStashesRecord } from "../data/scrapStashes";
+import { isActiveScrapStash } from "../data/scrapStashes";
 import type { DenAssaultsRecord } from "../data/denAssaults";
 import type { TombstoneRecord, TombstonesRecord } from "../data/tombstones";
 import type { LabRecord } from "../data/lab";
@@ -324,6 +326,14 @@ function powerStationTierIconName(level: number): string {
   return "power-large";
 }
 
+/** Banded richness copy for stash intel (Q51/Q52) — no exact tile level shown. */
+function scrapRichnessHint(tileLevel: number, maxLevel: number): string {
+  const t = maxLevel <= 1 ? 1 : tileLevel / maxLevel;
+  if (t >= 0.8) return "This scrap heap looks rich.";
+  if (t >= 0.5) return "A decent pile of salvage.";
+  return "A sparse scrap dump.";
+}
+
 /** The hover tooltip's card — icon + type name, a status line, then whatever stat rows apply to this structure kind. Deliberately terser than the sheet Info tab (smaller font/padding) since this follows the cursor rather than sitting in a fixed dialog slot. */
 function HoverPanel({ icon, title, status, children }: { icon: ReactNode; title: string; status: string; children?: ReactNode }) {
   return (
@@ -368,6 +378,7 @@ export function GameScreen({
   storageUpgrades,
   noise,
   dens,
+  scrapStashes,
   denAssaults,
   outposts,
   garrisonRecalls,
@@ -451,6 +462,7 @@ export function GameScreen({
   storageUpgrades: StorageUpgradesRecord;
   noise: NoiseRecord;
   dens: DensRecord;
+  scrapStashes: ScrapStashesRecord;
   denAssaults: DenAssaultsRecord;
   outposts: OutpostsRecord;
   garrisonRecalls: GarrisonRecallsRecord;
@@ -1518,6 +1530,10 @@ export function GameScreen({
   const selectedDock = selected ? dockAt(selected) : null;
   const selectedIsBase = selected ? axialEquals(selected, territory.base) : false;
   const selectedDen: DenRecord | null = selected ? (dens.find((d) => axialEquals(d.coord, selected)) ?? null) : null;
+  const selectedScrapStash: ScrapStashRecord | null =
+    selected && (isOwned(selected) || isScouted(selected))
+      ? (scrapStashes.find((s) => isActiveScrapStash(s) && axialEquals(s.coord, selected)) ?? null)
+      : null;
   const selectedOutpost: OutpostRecord | null = selected ? outpostAt(selected) : null;
   const selectedTombstone: TombstoneRecord | null = selected
     ? (tombstones.find((t) => axialEquals(t.coord, selected)) ?? null)
@@ -1538,6 +1554,7 @@ export function GameScreen({
     !selectedBarracks &&
     !selectedDock &&
     !selectedDen &&
+    !selectedScrapStash &&
     !selectedOutpost &&
     !selectedIsLab;
   const selectedCourierAutomated =
@@ -3054,6 +3071,17 @@ export function GameScreen({
     if (selectedPowerStateLabel) {
       rows.push(<div key="power-state">{selectedPowerStateLabel}</div>);
     }
+    if (selectedScrapStash) {
+      rows.push(
+        <div key="scrap-steel">
+          Steel remaining: {Math.floor(selectedScrapStash.remainingSteel)}
+        </div>,
+        <div key="scrap-hint">
+          {scrapRichnessHint(selectedScrapStash.tileLevel, tweaks.scrap_stashes.tile_level_max)}
+        </div>,
+        <div key="scrap-note">Build a Scrap Yard and send a Scrapper to haul steel here.</div>,
+      );
+    }
     if (selectedTombstone) {
       const lost =
         selectedTombstone.militiaLost +
@@ -3080,6 +3108,7 @@ export function GameScreen({
     if (selectedIsBase) return `Base — L${base.level}`;
     if (selectedOutpost) return `Outpost — L${selectedOutpost.reinforcementLevel}`;
     if (selectedDen) return `Den — L${selectedDen.level}`;
+    if (selectedScrapStash) return "Scrap stash";
     if (selectedIsLab) return "Research lab";
     if (selectedDock) return `Dock — L${dockLevel(selectedDock)}`;
     if (selectedBarracks) return `Barracks — L${selectedBarracks.level}`;
@@ -3142,6 +3171,19 @@ export function GameScreen({
       return (
         <HoverPanel icon={<Swords size={22} />} title={`Den — L${den.level}`} status={status}>
           <span>Defense: {denDefense(tweaks, den.level).toFixed(1)}</span>
+        </HoverPanel>
+      );
+    }
+
+    const scrapStash =
+      isOwned(coord) || isScouted(coord)
+        ? scrapStashes.find((s) => isActiveScrapStash(s) && axialEquals(s.coord, coord))
+        : undefined;
+    if (scrapStash) {
+      return (
+        <HoverPanel icon={<Archive size={22} />} title="Scrap stash" status="Salvage site">
+          <span>Steel remaining: {Math.floor(scrapStash.remainingSteel)}</span>
+          <span>{scrapRichnessHint(scrapStash.tileLevel, tweaks.scrap_stashes.tile_level_max)}</span>
         </HoverPanel>
       );
     }
@@ -3593,6 +3635,7 @@ export function GameScreen({
           scoutedTiles={scoutedTiles}
           lab={lab}
           dens={dens}
+          scrapStashes={scrapStashes}
           outposts={outposts}
           hordes={hordes}
           expeditions={expeditions}

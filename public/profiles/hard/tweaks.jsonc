@@ -708,6 +708,37 @@
     }
   },
 
+
+  // --------------------------------------------------------------------------
+  // SCRAP STASHES (Milestone 26 / #36 — world-gen steel sites for Scrappers)
+  // --------------------------------------------------------------------------
+  "scrap_stashes": {
+    "_status": "first pass, untested — finite steel pools on map hexes; Scrappers haul to Scrap Yard. Count scales with map size in mapSize.ts (32→8 … 128→28) then ±1 from seed.",
+    "count": 28,
+    "early_guarantee_max_distance": 10,
+    "_early_guarantee_note": "At least one stash within this axial distance of base (scaled with map size) so the steel loop is reachable early (ScrapperEconomy Q48).",
+    "tile_level_max": 5,
+    "art_variant_count": 3,
+    "_art_variant_note": "resources/scrap-1.png … scrap-N.png (Q70). Seeded per stash at world-gen.",
+    "steel_pool_by_terrain": {
+      "grassland": 40,
+      "shore": 70,
+      "forest": 90,
+      "mountain": 120
+    },
+    "steel_pool_per_tile_level_pct": 0.25,
+    "_pool_note": "pool = round(steel_pool_by_terrain[terrain] * (1 + steel_pool_per_tile_level_pct * (tileLevel-1))). Tile level is hidden world-gen richness (Q49).",
+    "terrain_placement_weight": {
+      "grassland": 1,
+      "shore": 2,
+      "forest": 3,
+      "mountain": 3
+    },
+    "_placement_note": "Weighted land picks; water excluded. Favors mountain/forest/shore, rare on grassland (Q18).",
+    "wandering_scout_sample_steel": 2,
+    "_sample_note": "Steel granted each time a wandering scout visits an active stash hex (Q7)."
+  },
+
   // --------------------------------------------------------------------------
   // HIDDEN LAB — PLACEMENT + GUARDIAN (Milestone 15)
   // --------------------------------------------------------------------------

@@ -27,7 +27,7 @@ export interface LabRecord {
 
 export const LAB_DB_KEY = "lab";
 
-/** seed salt for placeFeatures — keep clear of dens / future scrap (#36) salts. */
+/** seed salt for placeFeatures — keep clear of dens / scrap (#36) salts. */
 export const LAB_PLACEMENT_SALT = 9_999_999;
 
 /**

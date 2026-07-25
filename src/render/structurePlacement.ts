@@ -178,3 +178,14 @@ export function drawPlacedResourceIcon(
     resourceGroundFraction(resource),
   );
 }
+
+/** Scrap-stash map pin — same placement family as steel resource markers (Q70). */
+export function drawPlacedScrapIcon(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  centerX: number,
+  centerY: number,
+  hexSize: number,
+): void {
+  drawPlacedResourceIcon(ctx, img, centerX, centerY, hexSize, "steel");
+}

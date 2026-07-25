@@ -56,6 +56,12 @@ export function getResourceTexture(type: ResourceType): HTMLImageElement | null 
   return loadCategory("resources", type, `${type}.png`);
 }
 
+/** Scrap-stash marker — `resources/scrap-#.png` (Milestone 26 / Q70). */
+export function getScrapTexture(variant: number): HTMLImageElement | null {
+  const n = Math.max(1, Math.floor(variant));
+  return loadCategory("resources", `scrap-${n}`, `scrap-${n}.png`);
+}
+
 /**
  * Fixed-structure marker icon (base, tower, barracks, dock, den, outpost,
  * wall tiers, ...) — a small overlay icon (like resource markers), not

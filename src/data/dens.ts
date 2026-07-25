@@ -27,7 +27,7 @@ export type DensRecord = DenRecord[];
 
 export const DENS_DB_KEY = "dens";
 
-/** seed salt for placeFeatures — keep clear of lab / future scrap (#36) salts. */
+/** seed salt for placeFeatures — keep clear of lab / scrap (#36) salts. */
 export const DENS_PLACEMENT_SALT = 1_000;
 /** Separate salt for the ±1 den-count roll (must not collide with placement indices). */
 export const DENS_COUNT_SALT = 1_001;
