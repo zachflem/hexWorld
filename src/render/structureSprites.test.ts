@@ -5,6 +5,7 @@ import {
   structureLevelCandidates,
   extractionTierCandidates,
   dockSpriteCandidates,
+  powerStationSpriteCandidates,
   structureAssetUrlCandidates,
 } from "./structureSprites";
 
@@ -35,8 +36,8 @@ describe("structureSprites", () => {
       "extraction-mid",
       "extraction",
     ]);
-    expect(extractionTierCandidates("power", "large")).toEqual([
-      "power-large",
+    expect(extractionTierCandidates("steel", "large")).toEqual([
+      "steel-large",
       "extraction-large",
       "extraction",
     ]);
@@ -45,6 +46,27 @@ describe("structureSprites", () => {
   it("lists dock-boat before dock when a boat is present", () => {
     expect(dockSpriteCandidates(true)).toEqual(["dock-boat", "dock"]);
     expect(dockSpriteCandidates(false)).toEqual(["dock"]);
+  });
+
+  it("lists power station stems, falling back to legacy power extraction tier sprites", () => {
+    expect(powerStationSpriteCandidates(1)).toEqual([
+      "power-station-1",
+      "power-station",
+      "power-small",
+      "power-small",
+    ]);
+    expect(powerStationSpriteCandidates(2)).toEqual([
+      "power-station-2",
+      "power-station",
+      "power-mid",
+      "power-small",
+    ]);
+    expect(powerStationSpriteCandidates(3)).toEqual([
+      "power-station-3",
+      "power-station",
+      "power-large",
+      "power-small",
+    ]);
   });
 
   it("flattens name candidates across profile→default URLs", () => {

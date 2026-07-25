@@ -58,7 +58,6 @@ export const tweaksSchema = z.object({
         wood: z.number(),
         stone: z.number(),
         steel: z.number(),
-        power: z.number(),
       })
       .catchall(z.string()),
   }),
@@ -76,13 +75,11 @@ export const tweaksSchema = z.object({
     wood: extractionResourceSchema,
     stone: extractionResourceSchema,
     steel: extractionResourceSchema,
-    power: extractionResourceSchema,
     terrain_yield_multiplier: z.object({
       food: terrainYieldMultiplierSchema,
       wood: terrainYieldMultiplierSchema,
       stone: terrainYieldMultiplierSchema,
       steel: terrainYieldMultiplierSchema,
-      power: terrainYieldMultiplierSchema,
       _status: z.string(),
     }),
     tech_progression: z.object({
@@ -90,6 +87,31 @@ export const tweaksSchema = z.object({
       mid_to_large: z.array(z.string()),
       _note: z.string(),
     }),
+  }),
+
+  /** Power stations — capacity + AoE network (Milestone 25 / #70). First pass, untested. */
+  power: z.object({
+    max_level: z.number(),
+    capacity_base: z.number(),
+    capacity_per_level: z.number(),
+    aoe_base_tiles: z.number(),
+    aoe_per_level: z.number(),
+    cutoff_factor: z.number(),
+    build_cost_base: resourceCostMap,
+    upgrade_cost_base: resourceCostMap,
+    build_time_minutes: z.number(),
+    upgrade_time_minutes_base: z.number(),
+    draw_base: z.object({
+      extraction: z.number(),
+      path: z.number(),
+      tower: z.number(),
+      wall: z.number(),
+      barracks: z.number(),
+      dock: z.number(),
+    }),
+    noise_build: z.number(),
+    noise_upgrade: z.number(),
+    passive_noise_floor_per_level: z.number(),
   }),
 
   transition_tiles: z.object({
@@ -347,7 +369,6 @@ export const tweaksSchema = z.object({
         wood: z.number(),
         stone: z.number(),
         steel: z.number(),
-        power: z.number(),
       })
       .catchall(z.string()),
     extraction_tier_noise_multiplier: z.number(),

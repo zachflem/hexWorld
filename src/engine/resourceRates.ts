@@ -8,31 +8,33 @@ import type { UnitsRecord } from "../data/units";
 import type { Tweaks } from "../data/tweaksSchema";
 import { axialKey } from "./hexCoords";
 import { isStructureActive } from "./formulas";
-import { findResourceTileConnection, throughputMultiplierForChain, transportRateMultiplier } from "./paths";
+import { findResourceTileConnection, PATH_TIER_LEVEL, throughputMultiplierForChain, transportRateMultiplier } from "./paths";
 import { storageCapacity } from "./storage";
 import { totalUpkeepPerSecond } from "./units";
-import { yieldPerSecond } from "./tick";
+import { logisticsPathTiles, yieldPerSecond } from "./tick";
 import { dockYieldPerSecond } from "./docks";
+import { extractionTierLevel } from "./tiers";
+import { powerPerformanceFactor, type PowerNetworkSnapshot } from "./power";
+
+function pathPowerMultiplier(
+  pathTiles: PathTile[],
+  chain: Axial[],
+  powerNetwork: PowerNetworkSnapshot,
+): number {
+  if (chain.length === 0) return 1;
+  const byKey = new Map(pathTiles.map((tile) => [axialKey(tile.coord), tile]));
+  let min = 1;
+  for (const coord of chain) {
+    const tile = byKey.get(axialKey(coord));
+    if (!tile) continue;
+    min = Math.min(min, powerPerformanceFactor(powerNetwork, PATH_TIER_LEVEL[tile.tier], tile.coord));
+  }
+  return min;
+}
 
 /**
  * Live per-resource net rate (units/sec, may be negative) for the HUD's
- * `+84`/`-12` delta chips — mirrors `accrueResources`/`accrueDockResources`
- * (engine/tick.ts, engine/docks.ts) exactly, rather than a naive per-tile
- * yield sum, so the displayed number matches what actually lands in the
- * shared pool: transport-tier and mountain-throughput losses apply, a
- * disconnected tile contributes nothing (only the connected-per-hub search
- * order those functions use decides which hub "claims" a tile), a resource
- * already at storage cap contributes nothing further, and standing-unit food
- * upkeep is subtracted.
- *
- * `transportRateMultiplier` is NOT "delivered rate as a multiple of
- * production" — for a goat track (0.5x) it is, but stone_road (2x) and
- * highway (1000x) instead represent transport *capacity* far exceeding
- * production, so `accrueResources` caps actual transfer at
- * `Math.min(tile.stockpile, transportable, roomAtHub)`. In true steady
- * state a hub can never receive more per second than a tile *produces* per
- * second — transport can only ever be the bottleneck, never a multiplier
- * above 1x — so each tile's contribution is clamped at its own raw yield.
+ * `+84`/`-12` delta chips — mirrors `accrueResources`/`accrueDockResources`.
  */
 export function computeResourceRates(
   tweaks: Tweaks,
@@ -44,8 +46,10 @@ export function computeResourceRates(
   storageLevels: StorageLevels,
   units: UnitsRecord,
   seed: number,
+  powerNetwork: PowerNetworkSnapshot,
 ): ResourceAmounts {
-  const grossInflow: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0, power: 0 };
+  const grossInflow: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0 };
+  const usablePaths = logisticsPathTiles(pathTiles, powerNetwork);
 
   const claimed = new Set<string>();
   for (const hubCoord of hubCoords) {
@@ -54,12 +58,17 @@ export function computeResourceRates(
       const key = axialKey(tile.coord);
       if (claimed.has(key)) continue;
 
-      const connection = findResourceTileConnection(extractionTiles, pathTiles, hubCoord, tile.coord);
+      const connection = findResourceTileConnection(extractionTiles, usablePaths, hubCoord, tile.coord);
       if (!connection) continue;
       claimed.add(key);
 
-      const rate = yieldPerSecond(tweaks, tile, seed);
-      const throughput = throughputMultiplierForChain(tweaks, seed, connection.chain);
+      const powerMul = powerPerformanceFactor(powerNetwork, extractionTierLevel(tile.tier), tile.coord);
+      if (powerMul <= 0) continue;
+
+      const rate = yieldPerSecond(tweaks, tile, seed) * powerMul;
+      const throughput =
+        throughputMultiplierForChain(tweaks, seed, connection.chain) *
+        pathPowerMultiplier(pathTiles, connection.chain, powerNetwork);
       const transportCapacity = rate * transportRateMultiplier(tweaks, connection.tier) * throughput;
       grossInflow[tile.resource] += Math.min(rate, transportCapacity);
     }
@@ -67,10 +76,11 @@ export function computeResourceRates(
 
   for (const dock of docks) {
     if (dock.buildStartedAt != null) continue;
+    // Docks are L1-equivalent — always powered if built.
     grossInflow.food += dockYieldPerSecond(tweaks, dock);
   }
 
-  const netRates: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0, power: 0 };
+  const netRates: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0 };
   for (const type of Object.keys(grossInflow) as ResourceType[]) {
     const cap = storageCapacity(tweaks, storageLevels[type]);
     netRates[type] = resources[type] >= cap ? 0 : grossInflow[type];

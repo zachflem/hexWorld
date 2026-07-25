@@ -5,13 +5,20 @@ import { isBuildableLand, isTransitionTile, terrainAt } from "../engine/terrain"
 import { dockBuildCost, dockBuildDurationMs, dockYieldPerSecond } from "../engine/docks";
 import { isStructureActive, repairCost, scaledCostMap, structureRepairDurationMs } from "../engine/formulas";
 import { yieldPerSecond } from "../engine/tick";
-import { extractionTileBuildDurationMs, nextTier, tierUpgradeCost, tierUpgradeDurationMs } from "../engine/tiers";
+import {
+  extractionTierLevel,
+  extractionTileBuildDurationMs,
+  nextTier,
+  tierUpgradeCost,
+  tierUpgradeDurationMs,
+} from "../engine/tiers";
 import { storageCapacity, storageUpgradeCost, storageUpgradeDurationMs } from "../engine/storage";
 import {
   findResourceTileConnection,
   nextPathTier,
   pathBuildCost,
   pathBuildDurationMs,
+  PATH_TIER_LEVEL,
   pathUpgradeCost,
   pathUpgradeDurationMs,
 } from "../engine/paths";
@@ -25,8 +32,21 @@ import {
   towerUpgradeDurationMs,
 } from "../engine/towers";
 import {
+  computePowerNetwork,
+  nextPowerStationLevel,
+  powerStateLabel,
+  powerStationAoeRadius,
+  powerStationBuildCost,
+  powerStationBuildDurationMs,
+  powerStationCapacity,
+  powerStationUpgradeCost,
+  powerStationUpgradeDurationMs,
+  structurePowerState,
+} from "../engine/power";
+import {
   maxWallDurability,
   nextWallTier,
+  WALL_TIER_LEVEL,
   wallBuildCost,
   wallBuildDurationMs,
   wallRepairCost,
@@ -80,6 +100,7 @@ import {
   extractionFloorContribution,
   noiseCap,
   pathFloorContribution,
+  powerStationFloorContribution,
   towerFloorContribution,
   wallFloorContribution,
 } from "../engine/noiseMeter";
@@ -103,7 +124,7 @@ import {
 } from "../engine/outposts";
 import { availableCrossBowSnipers, availableJunkyardKnights, availableMilitia, garrisonAt } from "../engine/garrisons";
 import type { Player } from "../data/player";
-import type { ResourceAmounts, ResourceType } from "../data/resources";
+import { RESOURCE_ORDER, type ResourceAmounts, type ResourceType } from "../data/resources";
 import { assetUrlCandidates, resolveAssetPath } from "../render/assetPaths";
 import {
   dockSpriteCandidates,
@@ -115,6 +136,7 @@ import type { TerritoryRecord } from "../data/territory";
 import type { BaseRecord } from "../data/base";
 import type { ExtractionTile } from "../data/extractionTiles";
 import type { PathTile } from "../data/pathTiles";
+import type { PowerStation } from "../data/powerStations";
 import type { Tower } from "../data/towers";
 import type { Wall } from "../data/walls";
 import type { Barracks, TrainingUnitType } from "../data/barracks";
@@ -156,6 +178,7 @@ import {
   type LabAssaultOption,
   type PathBuildOption,
   type PathUpgradeOption,
+  type PowerStationUpgradeOption,
   type RelocationOption,
   type RepairOption,
   type SimpleCostOption,
@@ -215,9 +238,8 @@ import {
   Target,
   Trash2,
   Wrench,
+  Zap,
 } from "lucide-react";
-
-const RESOURCE_ORDER: ResourceType[] = ["food", "wood", "stone", "steel", "power"];
 
 /**
  * Reuses the same painted sprites HexCanvas draws on the map — ring-hex actions
@@ -282,6 +304,13 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Power stations ship small/mid/large art (public/profiles assets/structures) rather than per-level sprites like tower/barracks — bucket the 1-4 level range onto those three stems. */
+function powerStationTierIconName(level: number): string {
+  if (level <= 1) return "power-small";
+  if (level === 2) return "power-mid";
+  return "power-large";
+}
+
 /** The hover tooltip's card — icon + type name, a status line, then whatever stat rows apply to this structure kind. Deliberately terser than the sheet Info tab (smaller font/padding) since this follows the cursor rather than sitting in a fixed dialog slot. */
 function HoverPanel({ icon, title, status, children }: { icon: ReactNode; title: string; status: string; children?: ReactNode }) {
   return (
@@ -319,6 +348,7 @@ export function GameScreen({
   towers,
   walls,
   barracksList,
+  powerStations,
   units,
   garrisons,
   scoutedTiles,
@@ -352,6 +382,8 @@ export function GameScreen({
   onUpgradePath,
   onBuildTower,
   onUpgradeTower,
+  onBuildPowerStation,
+  onUpgradePowerStation,
   onBuildWall,
   onUpgradeWall,
   onRepairWall,
@@ -397,6 +429,7 @@ export function GameScreen({
   towers: Tower[];
   walls: Wall[];
   barracksList: Barracks[];
+  powerStations: PowerStation[];
   units: UnitsRecord;
   garrisons: GarrisonsRecord;
   scoutedTiles: ScoutedTiles;
@@ -432,6 +465,8 @@ export function GameScreen({
   onUpgradePath: (coord: Axial) => Promise<BuildResult>;
   onBuildTower: (coord: Axial) => Promise<BuildResult>;
   onUpgradeTower: (coord: Axial) => Promise<BuildResult>;
+  onBuildPowerStation: (coord: Axial) => Promise<BuildResult>;
+  onUpgradePowerStation: (coord: Axial) => Promise<BuildResult>;
   onBuildWall: (coord: Axial) => Promise<BuildResult>;
   onUpgradeWall: (coord: Axial) => Promise<BuildResult>;
   onRepairWall: (coord: Axial) => Promise<BuildResult>;
@@ -541,6 +576,9 @@ export function GameScreen({
   const towerAt = (coord: Axial): Tower | null =>
     towers.find((t) => axialKey(t.coord) === axialKey(coord)) ?? null;
 
+  const powerStationAt = (coord: Axial): PowerStation | null =>
+    powerStations.find((s) => axialKey(s.coord) === axialKey(coord)) ?? null;
+
   const wallAt = (coord: Axial): Wall | null => walls.find((w) => axialKey(w.coord) === axialKey(coord)) ?? null;
 
   const barracksAt = (coord: Axial): Barracks | null =>
@@ -649,6 +687,24 @@ export function GameScreen({
       cost,
       affordable: affordable(cost),
       durationMinutes: towerUpgradeDurationMs(tweaks, targetLevel) / 60_000,
+    };
+  }
+
+  function powerStationBuildOptionFor(): RepairOption {
+    const cost = powerStationBuildCost(tweaks, powerStations.length + 1);
+    return { cost, affordable: affordable(cost), durationMinutes: powerStationBuildDurationMs(tweaks) / 60_000 };
+  }
+
+  function powerStationUpgradeOptionFor(s: PowerStation): PowerStationUpgradeOption | null {
+    if (s.damaged || isLandStructureAtTaskCap(s, research)) return null;
+    const targetLevel = nextPowerStationLevel(s.level);
+    if (!targetLevel) return null;
+    const cost = powerStationUpgradeCost(tweaks, targetLevel);
+    return {
+      targetLevel,
+      cost,
+      affordable: affordable(cost),
+      durationMinutes: powerStationUpgradeDurationMs(tweaks, targetLevel) / 60_000,
     };
   }
 
@@ -1116,6 +1172,18 @@ export function GameScreen({
     applyActionResult(result);
   }
 
+  async function handleBuildPowerStation() {
+    if (!selected) return;
+    const result = await onBuildPowerStation(selected);
+    applyActionResult(result);
+  }
+
+  async function handleUpgradePowerStation() {
+    if (!selected) return;
+    const result = await onUpgradePowerStation(selected);
+    applyActionResult(result);
+  }
+
   async function handleBuildWall() {
     if (!selected) return;
     const result = await onBuildWall(selected);
@@ -1381,6 +1449,7 @@ export function GameScreen({
   const selectedTile = selected ? tileAt(selected) : null;
   const selectedPath = selected ? pathAt(selected) : null;
   const selectedTower = selected ? towerAt(selected) : null;
+  const selectedPowerStation = selected ? powerStationAt(selected) : null;
   const selectedWall = selected ? wallAt(selected) : null;
   const selectedBarracks = selected ? barracksAt(selected) : null;
   const militiaQueueStatus = trainQueueStatusFor(selectedBarracks, "militia");
@@ -1405,6 +1474,7 @@ export function GameScreen({
     !selectedTile &&
     !selectedPath &&
     !selectedTower &&
+    !selectedPowerStation &&
     !selectedWall &&
     !selectedBarracks &&
     !selectedDock &&
@@ -1433,15 +1503,54 @@ export function GameScreen({
       ? pathFloorContribution(tweaks, selectedPath)
       : selectedTower
         ? towerFloorContribution(tweaks, selectedTower)
-        : selectedWall
-          ? wallFloorContribution(tweaks, selectedWall)
-          : null;
-  const selectedStructure = selectedTile ?? selectedPath ?? selectedTower ?? selectedWall ?? selectedBarracks;
+        : selectedPowerStation
+          ? powerStationFloorContribution(tweaks, selectedPowerStation)
+          : selectedWall
+            ? wallFloorContribution(tweaks, selectedWall)
+            : null;
+  const selectedStructure =
+    selectedTile ?? selectedPath ?? selectedTower ?? selectedPowerStation ?? selectedWall ?? selectedBarracks;
   const selectedGarrison = selected ? garrisonAt(garrisons, selected) : null;
+  /** Recomputed once per render from the current structure lists — feeds both the resource-rate throughput calc below and every selected/hovered structure's power-state display (structurePowerState/powerStateLabel). */
+  const powerNetwork = useMemo(
+    () => computePowerNetwork(tweaks, powerStations, extractionTiles, pathTiles, towers, walls, barracksList, docks),
+    [tweaks, powerStations, extractionTiles, pathTiles, towers, walls, barracksList, docks],
+  );
+  /** Null when the structure is L1/exempt or fully powered — see powerStateLabel. */
+  function powerStateLabelFor(level: number, coord: Axial): string | null {
+    return powerStateLabel(structurePowerState(powerNetwork, level, coord));
+  }
+  /**
+   * "No power" / brownout label for whichever L2+ consumer (extraction,
+   * path, tower, wall, barracks) is currently selected — power stations
+   * themselves are the source, not a consumer, so they're excluded here.
+   */
+  const selectedPowerStateLabel = selectedTile
+    ? powerStateLabelFor(extractionTierLevel(selectedTile.tier), selectedTile.coord)
+    : selectedPath
+      ? powerStateLabelFor(PATH_TIER_LEVEL[selectedPath.tier], selectedPath.coord)
+      : selectedTower
+        ? powerStateLabelFor(selectedTower.level, selectedTower.coord)
+        : selectedWall
+          ? powerStateLabelFor(WALL_TIER_LEVEL[selectedWall.tier], selectedWall.coord)
+          : selectedBarracks
+            ? powerStateLabelFor(selectedBarracks.level, selectedBarracks.coord)
+            : null;
   const resourceRates = useMemo(() => {
     const hubCoords: Axial[] = [territory.base, ...outposts.map((o) => o.coord)];
-    return computeResourceRates(tweaks, extractionTiles, pathTiles, docks, hubCoords, resources, storageLevels, units, world.seed);
-  }, [tweaks, extractionTiles, pathTiles, docks, territory.base, outposts, resources, storageLevels, units, world.seed]);
+    return computeResourceRates(
+      tweaks,
+      extractionTiles,
+      pathTiles,
+      docks,
+      hubCoords,
+      resources,
+      storageLevels,
+      units,
+      world.seed,
+      powerNetwork,
+    );
+  }, [tweaks, extractionTiles, pathTiles, docks, territory.base, outposts, resources, storageLevels, units, world.seed, powerNetwork]);
   const collectableTiles = useMemo(() => {
     const stockpileCap = tweaks.storage.capacity_base_per_resource;
     const fromExtraction = extractionTiles
@@ -1493,6 +1602,10 @@ export function GameScreen({
       if (t.buildStartedAt != null) continue;
       if (towerUpgradeOptionFor(t)?.affordable) set.add(axialKey(t.coord));
     }
+    for (const s of powerStations) {
+      if (s.buildStartedAt != null) continue;
+      if (powerStationUpgradeOptionFor(s)?.affordable) set.add(axialKey(s.coord));
+    }
     for (const b of barracksList) {
       if (b.buildStartedAt != null) continue;
       if (barracksUpgradeOptionFor(b)?.affordable) set.add(axialKey(b.coord));
@@ -1538,6 +1651,7 @@ export function GameScreen({
       anyExtractionAffordable ||
       canAfford(pathBuildCost(tweaks)) ||
       canAfford(towerBuildCost(tweaks, towers.length + 1)) ||
+      canAfford(powerStationBuildCost(tweaks, powerStations.length + 1)) ||
       canAfford(wallBuildCost(tweaks, walls.length + 1)) ||
       canAfford(barracksBuildCost(tweaks, barracksList.length + 1));
 
@@ -1547,6 +1661,7 @@ export function GameScreen({
     for (const t of extractionTiles) occupiedKeys.add(axialKey(t.coord));
     for (const p of pathTiles) occupiedKeys.add(axialKey(p.coord));
     for (const t of towers) occupiedKeys.add(axialKey(t.coord));
+    for (const s of powerStations) occupiedKeys.add(axialKey(s.coord));
     for (const w of walls) occupiedKeys.add(axialKey(w.coord));
     for (const b of barracksList) occupiedKeys.add(axialKey(b.coord));
     for (const d of docks) occupiedKeys.add(axialKey(d.coord));
@@ -1560,7 +1675,21 @@ export function GameScreen({
       eligible.add(key);
     }
     return eligible;
-  }, [buildModeActive, resources, extractionTiles, pathTiles, towers, walls, barracksList, docks, territory.owned, territory.base, world.seed, tweaks]);
+  }, [
+    buildModeActive,
+    resources,
+    extractionTiles,
+    pathTiles,
+    towers,
+    powerStations,
+    walls,
+    barracksList,
+    docks,
+    territory.owned,
+    territory.base,
+    world.seed,
+    tweaks,
+  ]);
 
   /**
    * Repositions the hover tooltip by calling its imperative handle directly —
@@ -1922,6 +2051,36 @@ export function GameScreen({
         }
         return actions;
       }
+    } else if (selectedPowerStation) {
+      if (selectedPowerStation.damaged && canRepairHordeDamagedAt(selected)) {
+        const repair = repairOptionFor(selectedStructure);
+        if (repair) {
+          actions.push({
+            key: "power-station-repair",
+            icon: <Wrench size={18} />,
+            title: "Repair power station",
+            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            disabled: !repair.affordable || selectedHordeOccupied,
+            onClick: handleRepairStructure,
+          });
+        }
+        return actions;
+      }
+      if (isOwned(selected)) {
+        const upgrade = powerStationUpgradeOptionFor(selectedPowerStation);
+        if (upgrade) {
+          actions.push({
+            key: "power-station-upgrade",
+            icon: structureIcon(powerStationTierIconName(upgrade.targetLevel), 45, <Zap size={18} />),
+            title: `Upgrade to L${upgrade.targetLevel}`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m`,
+            disabled: !upgrade.affordable,
+            upgradeAvailable: upgrade.affordable,
+            onClick: handleUpgradePowerStation,
+          });
+        }
+        return actions;
+      }
     } else if (selectedWall) {
       if (selectedWall.damaged && canRepairHordeDamagedAt(selected)) {
         const repair = repairOptionFor(selectedStructure);
@@ -2145,6 +2304,15 @@ export function GameScreen({
         detail: `${formatCost(path.cost)}, ${path.durationMinutes}m`,
         disabled: !path.affordable,
         onClick: handleBuildPath,
+      });
+      const powerStation = powerStationBuildOptionFor();
+      civilSubActions.push({
+        key: "build-power-station",
+        icon: structureIcon(powerStationTierIconName(1), 45, <Zap size={18} />),
+        title: "Build power station",
+        detail: `${formatCost(powerStation.cost)}, ${powerStation.durationMinutes}m`,
+        disabled: !powerStation.affordable,
+        onClick: handleBuildPowerStation,
       });
 
       const militarySubActions: SheetAction[] = [];
@@ -2392,6 +2560,46 @@ export function GameScreen({
           coord: tower.coord,
           durationMs,
           remainingMs: remainingMs(tower.damageRepair.startedAt, durationMs, now),
+        });
+      }
+    }
+
+    for (const station of powerStations) {
+      const key = axialKey(station.coord);
+      if (station.buildStartedAt) {
+        const durationMs = powerStationBuildDurationMs(tweaks);
+        rows.push({
+          key: `power-station-build-${key}`,
+          kind: "build",
+          icon: buildIcon,
+          label: "Building power station",
+          coord: station.coord,
+          durationMs,
+          remainingMs: remainingMs(station.buildStartedAt, durationMs, now),
+        });
+      }
+      if (station.upgrade) {
+        const durationMs = powerStationUpgradeDurationMs(tweaks, station.upgrade.targetLevel);
+        rows.push({
+          key: `power-station-upgrade-${key}`,
+          kind: "upgrade",
+          icon: upgradeIcon,
+          label: `Upgrading power station to L${station.upgrade.targetLevel}`,
+          coord: station.coord,
+          durationMs,
+          remainingMs: remainingMs(station.upgrade.startedAt, durationMs, now),
+        });
+      }
+      if (station.damageRepair) {
+        const durationMs = structureRepairDurationMs(tweaks);
+        rows.push({
+          key: `power-station-repair-${key}`,
+          kind: "repair",
+          icon: repairIcon,
+          label: "Repairing power station",
+          coord: station.coord,
+          durationMs,
+          remainingMs: remainingMs(station.damageRepair.startedAt, durationMs, now),
         });
       }
     }
@@ -2749,6 +2957,21 @@ export function GameScreen({
         </div>,
       );
     }
+    if (selectedPowerStation) {
+      rows.push(
+        <div key="power-station-stats">
+          Capacity {powerStationCapacity(tweaks, selectedPowerStation.level).toFixed(0)}, AoE{" "}
+          {powerStationAoeRadius(tweaks, selectedPowerStation.level)} tiles
+        </div>,
+        <div key="power-station-network">
+          Network draw {powerNetwork.totalDraw.toFixed(0)}/{powerNetwork.totalCapacity.toFixed(0)} (
+          {Math.round(powerNetwork.factor * 100)}%)
+        </div>,
+      );
+    }
+    if (selectedPowerStateLabel) {
+      rows.push(<div key="power-state">{selectedPowerStateLabel}</div>);
+    }
     if (selectedTombstone) {
       rows.push(<div key="tombstone">Tombstone — fades in {formatDuration(Math.max(0, selectedTombstone.expiresAt - now))}</div>);
     }
@@ -2766,6 +2989,7 @@ export function GameScreen({
     if (selectedDock) return "Dock";
     if (selectedBarracks) return `Barracks — L${selectedBarracks.level}`;
     if (selectedTower) return `Tower — L${selectedTower.level}`;
+    if (selectedPowerStation) return `Power station — L${selectedPowerStation.level}`;
     if (selectedWall) return `Wall — ${selectedWall.tier}`;
     if (selectedPath) return `Path — ${selectedPath.tier}`;
     if (selectedTile) return `${selectedTile.resource} — ${selectedTile.tier}`;
@@ -2862,6 +3086,9 @@ export function GameScreen({
           )}
           <span>{connected ? "Connected — auto-flows to base" : "Not connected — manual collection"}</span>
           <span>Stockpile: {Math.floor(tile.stockpile)}</span>
+          {powerStateLabelFor(extractionTierLevel(tile.tier), tile.coord) && (
+            <span>{powerStateLabelFor(extractionTierLevel(tile.tier), tile.coord)}</span>
+          )}
         </HoverPanel>
       );
     }
@@ -2880,6 +3107,9 @@ export function GameScreen({
       return (
         <HoverPanel icon={structureIcon(PATH_TIER_ICON_NAMES[path.tier], 28)} title={`Path — ${path.tier}`} status={status}>
           <span>Noise floor: +{pathFloorContribution(tweaks, path).toFixed(1)}db</span>
+          {powerStateLabelFor(PATH_TIER_LEVEL[path.tier], path.coord) && (
+            <span>{powerStateLabelFor(PATH_TIER_LEVEL[path.tier], path.coord)}</span>
+          )}
         </HoverPanel>
       );
     }
@@ -2904,6 +3134,35 @@ export function GameScreen({
             </>
           )}
           <span>Noise floor: +{towerFloorContribution(tweaks, tower).toFixed(1)}db</span>
+          {powerStateLabelFor(tower.level, tower.coord) && <span>{powerStateLabelFor(tower.level, tower.coord)}</span>}
+        </HoverPanel>
+      );
+    }
+
+    const powerStation = powerStationAt(coord);
+    if (powerStation) {
+      const status = powerStation.buildStartedAt
+        ? "Under construction"
+        : powerStation.damaged
+          ? powerStation.damageRepair
+            ? "Repairing…"
+            : "Damaged"
+          : powerStation.upgrade
+            ? `Upgrading to L${powerStation.upgrade.targetLevel}…`
+            : "Operational";
+      return (
+        <HoverPanel
+          icon={structureIcon(powerStationTierIconName(powerStation.level), 28, <Zap size={22} />)}
+          title={`Power station — L${powerStation.level}`}
+          status={status}
+        >
+          {isStructureActive(powerStation) && (
+            <>
+              <span>Capacity: {powerStationCapacity(tweaks, powerStation.level).toFixed(0)}</span>
+              <span>AoE: {powerStationAoeRadius(tweaks, powerStation.level)} tiles</span>
+            </>
+          )}
+          <span>Noise floor: +{powerStationFloorContribution(tweaks, powerStation).toFixed(1)}db</span>
         </HoverPanel>
       );
     }
@@ -2928,6 +3187,9 @@ export function GameScreen({
             Durability: {Math.floor(wall.durability)}/{maxHp}
           </span>
           <span>Noise floor: +{wallFloorContribution(tweaks, wall).toFixed(1)}db</span>
+          {powerStateLabelFor(WALL_TIER_LEVEL[wall.tier], wall.coord) && (
+            <span>{powerStateLabelFor(WALL_TIER_LEVEL[wall.tier], wall.coord)}</span>
+          )}
         </HoverPanel>
       );
     }
@@ -2948,7 +3210,9 @@ export function GameScreen({
           icon={structureIcon(structureLevelCandidates("barracks", barracks.level), 28)}
           title={`Barracks — L${barracks.level}`}
           status={status}
-        />
+        >
+          {powerStateLabelFor(barracks.level, barracks.coord) && <span>{powerStateLabelFor(barracks.level, barracks.coord)}</span>}
+        </HoverPanel>
       );
     }
 
@@ -3047,6 +3311,7 @@ export function GameScreen({
       (!!selectedTile && hasAnyStructureTask(selectedTile)) ||
       (!!selectedPath && hasAnyStructureTask(selectedPath)) ||
       (!!selectedTower && hasAnyStructureTask(selectedTower)) ||
+      (!!selectedPowerStation && hasAnyStructureTask(selectedPowerStation)) ||
       (!!selectedWall && hasAnyStructureTask(selectedWall)) ||
       (!!selectedBarracks && hasAnyStructureTask(selectedBarracks)) ||
       (!!selectedDock && countDockTasks(selectedDock) > 0);
@@ -3092,6 +3357,7 @@ export function GameScreen({
           towers={towers}
           walls={walls}
           barracksList={barracksList}
+          powerStations={powerStations}
           garrisons={garrisons}
           scoutedTiles={scoutedTiles}
           dens={dens}

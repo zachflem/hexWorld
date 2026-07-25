@@ -44,6 +44,8 @@ import { NOISE_DB_KEY, initialNoise, type NoiseRecord } from "./data/noise";
 import { TOWERS_DB_KEY, type Tower } from "./data/towers";
 import { WALLS_DB_KEY, type Wall } from "./data/walls";
 import { BARRACKS_DB_KEY, type Barracks, type TrainingUnitType } from "./data/barracks";
+import { POWER_STATIONS_DB_KEY, type PowerStation } from "./data/powerStations";
+import { migratePowerEconomy } from "./data/migratePowerEconomy";
 import { UNITS_DB_KEY, initialUnits, type LegacyUnitsRecord, type UnitsRecord } from "./data/units";
 import { GARRISONS_DB_KEY, type GarrisonsRecord } from "./data/garrisons";
 import { SCOUTED_TILES_DB_KEY, type ScoutedTiles } from "./data/scoutedTiles";
@@ -160,6 +162,14 @@ import { advanceScoutSkiffs } from "./engine/scoutSkiffs";
 import { advanceWanderingScouts } from "./engine/wanderingScouts";
 import { nextTowerLevel, towerBuildCost, towerBuildDurationMs, towerUpgradeCost, towerUpgradeDurationMs } from "./engine/towers";
 import {
+  computePowerNetwork,
+  nextPowerStationLevel,
+  powerStationBuildCost,
+  powerStationBuildDurationMs,
+  powerStationUpgradeCost,
+  powerStationUpgradeDurationMs,
+} from "./engine/power";
+import {
   maxWallDurability,
   nextWallTier,
   wallBuildCost,
@@ -206,6 +216,7 @@ interface GameState {
   towers: Tower[];
   walls: Wall[];
   barracksList: Barracks[];
+  powerStations: PowerStation[];
   units: UnitsRecord;
   garrisons: GarrisonsRecord;
   scoutedTiles: ScoutedTiles;
@@ -316,6 +327,7 @@ function buildGameState(
     towers: Tower[] | undefined;
     walls: Wall[] | undefined;
     barracksList: Barracks[] | undefined;
+    powerStations: PowerStation[] | undefined;
     units: UnitsRecord | undefined;
     garrisons: GarrisonsRecord | undefined;
     scoutedTiles: ScoutedTiles | undefined;
@@ -340,11 +352,28 @@ function buildGameState(
 ): GameState {
   const resolvedDens = (data.dens ?? []).map(resolveDen);
   const migrated = migrateLegacyTrainingQueues(data.barracksList ?? [], { ...initialUnits(), ...(data.units as LegacyUnitsRecord | undefined) });
-  const extractionTiles = data.extractionTiles ?? [];
-  const pathTiles = data.pathTiles ?? [];
-  const towers = data.towers ?? [];
-  const walls = data.walls ?? [];
-  const barracksList = migrated.barracksList;
+  // One-shot migration from stockpile-power saves (Milestone 25 / #70): power
+  // extraction tiles become L1 power stations, resources.power/storageLevels.power
+  // are dropped, and power keys are stripped from every other structure's
+  // totalInvested/buildCost — idempotent, so already-migrated saves pass through.
+  const migratedPower = migratePowerEconomy({
+    resources: data.resources,
+    storageLevels: data.storageLevels,
+    extractionTiles: data.extractionTiles ?? [],
+    powerStations: data.powerStations ?? [],
+    pathTiles: data.pathTiles ?? [],
+    towers: data.towers ?? [],
+    walls: data.walls ?? [],
+    barracksList: migrated.barracksList,
+    docks: data.docks ?? [],
+  });
+  const extractionTiles = migratedPower.extractionTiles;
+  const pathTiles = (migratedPower.pathTiles ?? []) as PathTile[];
+  const towers = (migratedPower.towers ?? []) as Tower[];
+  const walls = (migratedPower.walls ?? []) as Wall[];
+  const barracksList = (migratedPower.barracksList ?? []) as Barracks[];
+  const docks = (migratedPower.docks ?? []) as DocksRecord;
+  const powerStations = migratedPower.powerStations;
   // One-shot heal for saves that lost fog when hordes stripped ownership:
   // any damaged structure implies the tile was held/known — keep it scouted.
   const scoutedTiles = preserveCapturedTilesAsScouted(data.scoutedTiles ?? [], [
@@ -353,6 +382,7 @@ function buildGameState(
     ...towers,
     ...walls,
     ...barracksList,
+    ...powerStations,
   ]
     .filter((s) => s.damaged)
     .map((s) => s.coord));
@@ -361,24 +391,25 @@ function buildGameState(
     world: normalizeWorldRecord(data.world),
     territory: data.territory,
     base: resolveBase(tweaks, data.base),
-    resources: data.resources,
+    resources: migratedPower.resources,
     clock: { ...data.clock, virtualNow: data.clock.virtualNow ?? data.clock.lastTickAt },
     extractionTiles,
     pathTiles,
     towers,
     walls,
     barracksList,
+    powerStations,
     units: migrated.units,
     garrisons: data.garrisons ?? [],
     scoutedTiles,
-    storageLevels: data.storageLevels,
+    storageLevels: migratedPower.storageLevels,
     storageUpgrades: data.storageUpgrades ?? initialStorageUpgrades(),
     noise: data.noise ?? initialNoise(tweaks),
     dens: resolvedDens,
     hordes: data.hordes ?? [],
     expeditions: (data.expeditions ?? []).map((e) => ({ ...e, resolvedIndex: e.resolvedIndex ?? 0 })),
     gameStatus: { ...initialGameStatus(), ...data.gameStatus },
-    docks: data.docks ?? [],
+    docks,
     scoutSkiffs: data.scoutSkiffs ?? [],
     wanderingScouts: data.wanderingScouts ?? [],
     denAssaults: (data.denAssaults ?? []).map((a) => ({ ...a, resolvedIndex: a.resolvedIndex ?? 0 })),
@@ -464,7 +495,8 @@ function isHexOccupied(game: GameState, coord: Axial): boolean {
     game.towers.some((t) => axialKey(t.coord) === key) ||
     game.walls.some((t) => axialKey(t.coord) === key) ||
     game.barracksList.some((t) => axialKey(t.coord) === key) ||
-    game.docks.some((t) => axialKey(t.coord) === key)
+    game.docks.some((t) => axialKey(t.coord) === key) ||
+    game.powerStations.some((t) => axialKey(t.coord) === key)
   );
 }
 
@@ -555,6 +587,7 @@ export default function App() {
           towers,
           walls,
           barracksList,
+          powerStations,
           units,
           garrisons,
           scoutedTiles,
@@ -590,6 +623,7 @@ export default function App() {
           get<Tower[]>(TOWERS_DB_KEY),
           get<Wall[]>(WALLS_DB_KEY),
           get<Barracks[]>(BARRACKS_DB_KEY),
+          get<PowerStation[]>(POWER_STATIONS_DB_KEY),
           get<UnitsRecord>(UNITS_DB_KEY),
           get<GarrisonsRecord>(GARRISONS_DB_KEY),
           get<ScoutedTiles>(SCOUTED_TILES_DB_KEY),
@@ -631,6 +665,7 @@ export default function App() {
             towers,
             walls,
             barracksList,
+            powerStations,
             units,
             garrisons,
             scoutedTiles,
@@ -707,6 +742,20 @@ export default function App() {
       // so claim order only matters for picking which connection's
       // tier/throughput applies, not who "gets" the resources.
       const economyHubCoords: Axial[] = [current.game.territory.base, ...current.game.outposts.map((o) => o.coord)];
+      // Computed once per tick from this tick's starting structure arrays —
+      // every consumer below (accrual, noise, training, hordes) reads the
+      // same snapshot, since the network itself only actually shifts at the
+      // structure-resolution timers a few lines down, not mid-tick.
+      const powerNetwork = computePowerNetwork(
+        current.tweaks,
+        current.game.powerStations,
+        current.game.extractionTiles,
+        current.game.pathTiles,
+        current.game.towers,
+        current.game.walls,
+        current.game.barracksList,
+        current.game.docks,
+      );
       const { resources: producedResources, tiles: extractionTilesAfterYield } = accrueResources(
         current.tweaks,
         current.game.extractionTiles,
@@ -716,6 +765,7 @@ export default function App() {
         current.game.resources,
         current.game.storageLevels,
         economyHubCoords,
+        powerNetwork,
       );
       // Later stages (hold-period damage, horde overrun/reversion, fresh
       // conversions) build on top of this array, not current.game.outposts
@@ -748,6 +798,8 @@ export default function App() {
           current.game.noise.value,
           elapsedSeconds,
           current.game.base.level,
+          current.game.powerStations,
+          powerNetwork,
         ),
       };
       const clock: ClockRecord = { lastTickAt: now, virtualNow };
@@ -815,6 +867,15 @@ export default function App() {
         )
         .map((t) => resolveDamageRepair(t, current.tweaks, virtualNow))
         .map((t) => resolveConstruction(t, towerBuildDurationMs(current.tweaks), virtualNow));
+      const powerStations = current.game.powerStations
+        .map((s) =>
+          s.upgrade &&
+          isTimerComplete(s.upgrade.startedAt, powerStationUpgradeDurationMs(current.tweaks, s.upgrade.targetLevel), virtualNow)
+            ? { ...s, level: s.upgrade.targetLevel, upgrade: null }
+            : s,
+        )
+        .map((s) => resolveDamageRepair(s, current.tweaks, virtualNow))
+        .map((s) => resolveConstruction(s, powerStationBuildDurationMs(current.tweaks), virtualNow));
       let barracksList = current.game.barracksList
         .map((b) =>
           b.upgrade &&
@@ -963,7 +1024,7 @@ export default function App() {
 
       // Per-barracks training queues — one slot each, speed scales with that
       // barracks's level (engine/barracks.ts:advanceBarracksTraining).
-      const trainingResult = advanceBarracksTraining(current.tweaks, barracksList, unitsAfterUpkeep, virtualNow);
+      const trainingResult = advanceBarracksTraining(current.tweaks, barracksList, unitsAfterUpkeep, virtualNow, powerNetwork);
       barracksList = trainingResult.barracksList;
       const units = trainingResult.units;
 
@@ -1009,6 +1070,7 @@ export default function App() {
         current.game.garrisons,
         hordeHubs,
         elapsedSeconds,
+        powerNetwork,
       );
       const baseOverrun = overrunHubKeys.includes(axialKey(territoryAfterRelocation.base));
       const baseDamageTaken = hubDamage[axialKey(territoryAfterRelocation.base)] ?? 0;
@@ -1060,6 +1122,7 @@ export default function App() {
       const towersAfterCapture = markCapturedStructuresDamaged(towers, capturedTiles);
       const wallsAfterCapture = markCapturedStructuresDamaged(walls, capturedTiles);
       const barracksListAfterCapture = markCapturedStructuresDamaged(barracksList, capturedTiles);
+      const powerStationsAfterCapture = markCapturedStructuresDamaged(powerStations, capturedTiles);
       // Ownership drop must not re-fog known ground — keep captured tiles in
       // scoutedTiles so reclaim/repair stays possible without rediscovery.
       const scoutedTilesAfterCapture = preserveCapturedTilesAsScouted(scoutedTiles, capturedTiles);
@@ -1549,6 +1612,7 @@ export default function App() {
         set(TOWERS_DB_KEY, towersAfterCapture),
         set(WALLS_DB_KEY, wallsAfterCapture),
         set(BARRACKS_DB_KEY, barracksListAfterCapture),
+        set(POWER_STATIONS_DB_KEY, powerStationsAfterCapture),
         set(UNITS_DB_KEY, unitsAfterExpeditions),
         set(GARRISONS_DB_KEY, garrisonsAfterSieges),
         set(NOISE_DB_KEY, noiseAfterAutoAttack),
@@ -1585,6 +1649,7 @@ export default function App() {
                 towers: towersAfterCapture,
                 walls: wallsAfterCapture,
                 barracksList: barracksListAfterCapture,
+                powerStations: powerStationsAfterCapture,
                 units: unitsAfterExpeditions,
                 garrisons: garrisonsAfterSieges,
                 noise: noiseAfterAutoAttack,
@@ -1650,6 +1715,7 @@ export default function App() {
     const towers: Tower[] = [];
     const walls: Wall[] = [];
     const barracksList: Barracks[] = [];
+    const powerStations: PowerStation[] = [];
     const units = initialUnits();
     const garrisons: GarrisonsRecord = [];
     const scoutedTiles: ScoutedTiles = [];
@@ -1684,6 +1750,7 @@ export default function App() {
       set(TOWERS_DB_KEY, towers),
       set(WALLS_DB_KEY, walls),
       set(BARRACKS_DB_KEY, barracksList),
+      set(POWER_STATIONS_DB_KEY, powerStations),
       set(UNITS_DB_KEY, units),
       set(GARRISONS_DB_KEY, garrisons),
       set(SCOUTED_TILES_DB_KEY, scoutedTiles),
@@ -1726,6 +1793,7 @@ export default function App() {
           towers,
           walls,
           barracksList,
+          powerStations,
           units,
           garrisons,
           scoutedTiles,
@@ -1852,6 +1920,7 @@ export default function App() {
       towers: stored.towers as Tower[] | undefined,
       walls: stored.walls as Wall[] | undefined,
       barracksList: stored.barracksList as Barracks[] | undefined,
+      powerStations: stored.powerStations as PowerStation[] | undefined,
       units: stored.units as UnitsRecord | undefined,
       garrisons: stored.garrisons as GarrisonsRecord | undefined,
       scoutedTiles: stored.scoutedTiles as ScoutedTiles | undefined,
@@ -1978,6 +2047,7 @@ export default function App() {
       game.walls,
       game.barracksList,
       game.docks,
+      game.powerStations,
     );
     if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
       return { ok: false, reason: "Build slot cap reached" };
@@ -2191,6 +2261,7 @@ export default function App() {
       game.walls,
       game.barracksList,
       game.docks,
+      game.powerStations,
     );
     if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
       return { ok: false, reason: "Build slot cap reached" };
@@ -2405,6 +2476,7 @@ export default function App() {
       game.walls,
       game.barracksList,
       game.docks,
+      game.powerStations,
     );
     if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
       return { ok: false, reason: "Build slot cap reached" };
@@ -2511,6 +2583,7 @@ export default function App() {
       game.walls,
       game.barracksList,
       game.docks,
+      game.powerStations,
     );
     if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
       return { ok: false, reason: "Build slot cap reached" };
@@ -2590,6 +2663,109 @@ export default function App() {
     return { ok: true };
   }
 
+  async function handleBuildPowerStation(coord: Axial): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+
+    const ownedKeys = new Set(game.territory.owned.map(axialKey));
+    if (!ownedKeys.has(axialKey(coord))) return { ok: false, reason: "Tile not owned" };
+    if (axialKey(coord) === axialKey(game.territory.base)) {
+      return { ok: false, reason: "Cannot build on the base tile" };
+    }
+    if (!isBuildableLand(game.world.seed, coord)) {
+      return { ok: false, reason: "Cannot build on water" };
+    }
+    if (isHexOccupied(game, coord)) {
+      return { ok: false, reason: "Tile already has a structure" };
+    }
+    const structureCount = totalStructureCount(
+      tweaks,
+      game.extractionTiles,
+      game.pathTiles,
+      game.towers,
+      game.walls,
+      game.barracksList,
+      game.docks,
+      game.powerStations,
+    );
+    if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
+      return { ok: false, reason: "Build slot cap reached" };
+    }
+
+    const cost = powerStationBuildCost(tweaks, game.powerStations.length + 1);
+    for (const [key, amount] of Object.entries(cost)) {
+      if (game.resources[key as keyof ResourceAmounts] < amount) {
+        return { ok: false, reason: `Not enough ${key}` };
+      }
+    }
+
+    const resources = { ...game.resources };
+    for (const [key, amount] of Object.entries(cost)) {
+      resources[key as keyof ResourceAmounts] -= amount;
+    }
+    const powerStations = [
+      ...game.powerStations,
+      {
+        coord,
+        level: 1,
+        totalInvested: cost,
+        upgrade: null,
+        buildCost: cost,
+        damaged: false,
+        damageRepair: null,
+        buildStartedAt: game.clock.virtualNow,
+      },
+    ];
+    const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "build_power_station", game.base.level) };
+
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(POWER_STATIONS_DB_KEY, powerStations), set(NOISE_DB_KEY, noise)]);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, powerStations, noise } } : prev,
+    );
+    return { ok: true };
+  }
+
+  async function handleUpgradePowerStation(coord: Axial): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+
+    const station = game.powerStations.find((s) => axialKey(s.coord) === axialKey(coord));
+    if (!station) return { ok: false, reason: "No power station here" };
+
+    if (isLandStructureAtTaskCap(station, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+
+    const target = nextPowerStationLevel(station.level);
+    if (!target) return { ok: false, reason: "Already at max level" };
+
+    const cost = powerStationUpgradeCost(tweaks, target);
+    for (const [key, amount] of Object.entries(cost)) {
+      if (game.resources[key as keyof ResourceAmounts] < (amount ?? 0)) {
+        return { ok: false, reason: `Not enough ${key}` };
+      }
+    }
+
+    const resources = { ...game.resources };
+    for (const [key, amount] of Object.entries(cost)) {
+      resources[key as keyof ResourceAmounts] -= amount ?? 0;
+    }
+    const powerStations = game.powerStations.map((s) =>
+      axialKey(s.coord) === axialKey(coord)
+        ? {
+            ...s,
+            totalInvested: addToInvestment(s.totalInvested, cost),
+            upgrade: { targetLevel: target, startedAt: game.clock.virtualNow },
+          }
+        : s,
+    );
+    const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "upgrade_extraction_tile", game.base.level) };
+
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(POWER_STATIONS_DB_KEY, powerStations), set(NOISE_DB_KEY, noise)]);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, powerStations, noise } } : prev,
+    );
+    return { ok: true };
+  }
+
   async function handleBuildWall(coord: Axial): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
@@ -2613,6 +2789,7 @@ export default function App() {
       game.walls,
       game.barracksList,
       game.docks,
+      game.powerStations,
     );
     if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
       return { ok: false, reason: "Build slot cap reached" };
@@ -2746,7 +2923,8 @@ export default function App() {
     const wall = game.walls.find((t) => axialKey(t.coord) === key);
     const barracks = game.barracksList.find((t) => axialKey(t.coord) === key);
     const dock = game.docks.find((t) => axialKey(t.coord) === key);
-    const structure = extractionTile ?? pathTile ?? tower ?? wall ?? barracks ?? dock;
+    const powerStation = game.powerStations.find((t) => axialKey(t.coord) === key);
+    const structure = extractionTile ?? pathTile ?? tower ?? wall ?? barracks ?? dock ?? powerStation;
     if (!structure) return { ok: false, reason: "Nothing to demolish here" };
 
     if (extractionTile && hasAnyStructureTask(extractionTile)) {
@@ -2757,6 +2935,7 @@ export default function App() {
     if (wall && hasAnyStructureTask(wall)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
     if (barracks && hasAnyStructureTask(barracks)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
     if (dock && countDockTasks(dock) > 0) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (powerStation && hasAnyStructureTask(powerStation)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const refund = demolishRefund(tweaks, structure.totalInvested);
     const resources = { ...game.resources };
@@ -2781,6 +2960,9 @@ export default function App() {
     const scoutSkiffs = dock
       ? game.scoutSkiffs.filter((s) => axialKey(s.homeDockCoord) !== key)
       : game.scoutSkiffs;
+    const powerStations = powerStation
+      ? game.powerStations.filter((t) => axialKey(t.coord) !== key)
+      : game.powerStations;
 
     await Promise.all([
       set(RESOURCES_DB_KEY, resources),
@@ -2791,10 +2973,25 @@ export default function App() {
       set(BARRACKS_DB_KEY, barracksList),
       set(DOCKS_DB_KEY, docks),
       set(SCOUT_SKIFFS_DB_KEY, scoutSkiffs),
+      set(POWER_STATIONS_DB_KEY, powerStations),
     ]);
     setBoot((prev) =>
       prev.status === "ready" && prev.game
-        ? { ...prev, game: { ...prev.game, resources, extractionTiles, pathTiles, towers, walls, barracksList, docks, scoutSkiffs } }
+        ? {
+            ...prev,
+            game: {
+              ...prev.game,
+              resources,
+              extractionTiles,
+              pathTiles,
+              towers,
+              walls,
+              barracksList,
+              docks,
+              scoutSkiffs,
+              powerStations,
+            },
+          }
         : prev,
     );
     return { ok: true };
@@ -2834,7 +3031,8 @@ export default function App() {
     const tower = game.towers.find((t) => axialKey(t.coord) === key);
     const wall = game.walls.find((t) => axialKey(t.coord) === key);
     const barracks = game.barracksList.find((t) => axialKey(t.coord) === key);
-    const structure = extractionTile ?? pathTile ?? tower ?? wall ?? barracks;
+    const powerStation = game.powerStations.find((t) => axialKey(t.coord) === key);
+    const structure = extractionTile ?? pathTile ?? tower ?? wall ?? barracks ?? powerStation;
     if (!structure) return { ok: false, reason: "Nothing to repair here" };
     if (!structure.damaged) return { ok: false, reason: "Not damaged" };
     if (isHordeRepairBlocked(structure)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
@@ -2876,6 +3074,7 @@ export default function App() {
     const towers = tower ? repair(game.towers) : game.towers;
     const walls = wall ? repair(game.walls) : game.walls;
     const barracksList = barracks ? repair(game.barracksList) : game.barracksList;
+    const powerStations = powerStation ? repair(game.powerStations) : game.powerStations;
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "repair_wall", game.base.level) };
     const territory =
       ownedKeys.has(key)
@@ -2890,6 +3089,7 @@ export default function App() {
       set(WALLS_DB_KEY, walls),
       set(BARRACKS_DB_KEY, barracksList),
       set(NOISE_DB_KEY, noise),
+      set(POWER_STATIONS_DB_KEY, powerStations),
       ...(ownedKeys.has(key) ? [] : [set(TERRITORY_DB_KEY, territory)]),
     ]);
     setBoot((prev) =>
@@ -2904,6 +3104,7 @@ export default function App() {
               towers,
               walls,
               barracksList,
+              powerStations,
               noise,
               territory,
             },
@@ -2936,6 +3137,7 @@ export default function App() {
       game.walls,
       game.barracksList,
       game.docks,
+      game.powerStations,
     );
     if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
       return { ok: false, reason: "Build slot cap reached" };
@@ -3986,6 +4188,7 @@ export default function App() {
       towers={boot.game.towers}
       walls={boot.game.walls}
       barracksList={boot.game.barracksList}
+      powerStations={boot.game.powerStations}
       units={boot.game.units}
       garrisons={boot.game.garrisons}
       scoutedTiles={boot.game.scoutedTiles}
@@ -4019,6 +4222,8 @@ export default function App() {
       onUpgradePath={handleUpgradePath}
       onBuildTower={handleBuildTower}
       onUpgradeTower={handleUpgradeTower}
+      onBuildPowerStation={handleBuildPowerStation}
+      onUpgradePowerStation={handleUpgradePowerStation}
       onBuildWall={handleBuildWall}
       onUpgradeWall={handleUpgradeWall}
       onRepairWall={handleRepairWall}

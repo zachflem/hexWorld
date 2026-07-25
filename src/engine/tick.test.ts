@@ -10,6 +10,7 @@ import type { ExtractionTile } from "../data/extractionTiles";
 import type { PathTile } from "../data/pathTiles";
 import type { ResourceAmounts } from "../data/resources";
 import type { StorageLevels } from "../data/storageLevels";
+import type { PowerNetworkSnapshot } from "./power";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -42,9 +43,24 @@ function pathTile(overrides: Partial<PathTile> = {}): PathTile {
   };
 }
 
-const ALL_L1_STORAGE: StorageLevels = { food: 1, wood: 1, stone: 1, steel: 1, power: 1 };
-const NO_RESOURCES: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0, power: 0 };
+const ALL_L1_STORAGE: StorageLevels = { food: 1, wood: 1, stone: 1, steel: 1 };
+const NO_RESOURCES: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0 };
 const BASE: Axial = { q: 0, r: 0 };
+
+/** Every tile always reads as powered, regardless of coord — these tests aren't about power. */
+class AlwaysPoweredSet extends Set<string> {
+  override has(): boolean {
+    return true;
+  }
+}
+
+const UNLIMITED_POWER: PowerNetworkSnapshot = {
+  poweredTiles: new AlwaysPoweredSet(),
+  totalCapacity: 1e9,
+  totalDraw: 0,
+  factor: 1,
+  cutoff: 0.25,
+};
 
 // `terrain`, if given, additionally requires that exact TerrainType — used by
 // the terrain_yield_multiplier tests below. Omitted everywhere else (matches
@@ -151,7 +167,7 @@ describe("accrueResources", () => {
     const coord = findCoord(seed, false, axialSpiral(BASE, 30));
     const tiles: ExtractionTile[] = [extractionTile({ coord, resource: "food", tier: "small" })];
 
-    const result = accrueResources(tweaks, tiles, [], 10, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE]);
+    const result = accrueResources(tweaks, tiles, [], 10, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE], UNLIMITED_POWER);
 
     expect(result.resources.food).toBe(0);
     expect(result.tiles[0].stockpile).toBeCloseTo(foodYieldAt(tweaks, seed, coord) * 10);
@@ -166,7 +182,7 @@ describe("accrueResources", () => {
     ];
     const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "highway" })]; // would otherwise drain instantly
 
-    const result = accrueResources(tweaks, tiles, pathTiles, 10, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE]);
+    const result = accrueResources(tweaks, tiles, pathTiles, 10, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE], UNLIMITED_POWER);
 
     expect(result.tiles[0].stockpile).toBe(50); // untouched — no new yield, no drain
     expect(result.resources.food).toBe(0);
@@ -180,7 +196,7 @@ describe("accrueResources", () => {
       extractionTile({ coord, resource: "food", tier: "small", stockpile: 0, buildStartedAt: 0 }),
     ];
 
-    const result = accrueResources(tweaks, tiles, [], 60, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE]);
+    const result = accrueResources(tweaks, tiles, [], 60, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE], UNLIMITED_POWER);
 
     expect(result.tiles[0].stockpile).toBe(0);
     expect(result.resources.food).toBe(0);
@@ -192,7 +208,7 @@ describe("accrueResources", () => {
     const coord = findCoord(seed, false, axialSpiral(BASE, 30));
     const tiles: ExtractionTile[] = [extractionTile({ coord, resource: "food", tier: "small" })];
 
-    const result = accrueResources(tweaks, tiles, [], 100_000, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE]);
+    const result = accrueResources(tweaks, tiles, [], 100_000, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE], UNLIMITED_POWER);
 
     expect(result.tiles[0].stockpile).toBe(tweaks.storage.capacity_base_per_resource);
   });
@@ -209,7 +225,7 @@ describe("accrueResources", () => {
     // goat_track rate multiplier is 0.5x yield, so 0.5x transport, over 1 second.
     const rate = foodYieldAt(tweaks, seed, tileCoord);
     const transported = rate * 0.5;
-    const result = accrueResources(tweaks, tiles, pathTiles, 1, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE]);
+    const result = accrueResources(tweaks, tiles, pathTiles, 1, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE], UNLIMITED_POWER);
 
     expect(result.resources.food).toBeCloseTo(transported);
     expect(result.tiles[0].stockpile).toBeCloseTo(50 + rate - transported);
@@ -224,7 +240,7 @@ describe("accrueResources", () => {
     ];
     const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "highway" })];
 
-    const result = accrueResources(tweaks, tiles, pathTiles, 1, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE]);
+    const result = accrueResources(tweaks, tiles, pathTiles, 1, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE], UNLIMITED_POWER);
 
     expect(result.tiles[0].stockpile).toBeCloseTo(0);
     expect(result.resources.food).toBeCloseTo(50 + foodYieldAt(tweaks, seed, tileCoord));
@@ -241,7 +257,7 @@ describe("accrueResources", () => {
     const pathTiles: PathTile[] = [pathTile({ coord: pathCoord, tier: "highway" })];
     const resources: ResourceAmounts = { ...NO_RESOURCES, food: cap - 10 };
 
-    const result = accrueResources(tweaks, tiles, pathTiles, 1, seed, resources, ALL_L1_STORAGE, [BASE]);
+    const result = accrueResources(tweaks, tiles, pathTiles, 1, seed, resources, ALL_L1_STORAGE, [BASE], UNLIMITED_POWER);
 
     // Tile stockpile was already at its own cap, so the tick's production is wasted;
     // only 10 units fit in the pool (cap-10 -> cap), so only 10 drain out of the stockpile.
@@ -255,7 +271,7 @@ describe("accrueResources", () => {
     const coord = findCoord(seed, false, axialSpiral(BASE, 30));
     const tiles: ExtractionTile[] = [extractionTile({ coord, resource: "food", tier: "small", stockpile: 12 })];
 
-    const result = accrueResources(tweaks, tiles, [], 0, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE]);
+    const result = accrueResources(tweaks, tiles, [], 0, seed, NO_RESOURCES, ALL_L1_STORAGE, [BASE], UNLIMITED_POWER);
 
     expect(result.resources).toBe(NO_RESOURCES);
     expect(result.tiles).toEqual(tiles);
@@ -276,10 +292,17 @@ describe("accrueResources", () => {
     const outpostCoord = axialNeighbors(tileCoord).find((n) => !axialEquals(n, pathCoord) && !axialEquals(n, BASE));
     if (!outpostCoord) throw new Error("expected a free neighbor of tileCoord");
 
-    const result = accrueResources(tweaks, tiles, pathTiles, 1, seed, NO_RESOURCES, ALL_L1_STORAGE, [
-      BASE,
-      outpostCoord,
-    ]);
+    const result = accrueResources(
+      tweaks,
+      tiles,
+      pathTiles,
+      1,
+      seed,
+      NO_RESOURCES,
+      ALL_L1_STORAGE,
+      [BASE, outpostCoord],
+      UNLIMITED_POWER,
+    );
 
     expect(result.resources.food).toBeCloseTo(50 + foodYieldAt(tweaks, seed, tileCoord)); // claimed once (highway, near-instant), not doubled
   });
@@ -296,10 +319,17 @@ describe("accrueResources", () => {
     // outpost, sited right where the base would need to be, can claim it.
     const farAway: Axial = { q: 500, r: 500 };
 
-    const result = accrueResources(tweaks, tiles, pathTiles, 1, seed, NO_RESOURCES, ALL_L1_STORAGE, [
-      farAway,
-      BASE,
-    ]);
+    const result = accrueResources(
+      tweaks,
+      tiles,
+      pathTiles,
+      1,
+      seed,
+      NO_RESOURCES,
+      ALL_L1_STORAGE,
+      [farAway, BASE],
+      UNLIMITED_POWER,
+    );
 
     expect(result.resources.food).toBeCloseTo(50 + foodYieldAt(tweaks, seed, tileCoord)); // base still connects via pathCoord/tileCoord as before
   });

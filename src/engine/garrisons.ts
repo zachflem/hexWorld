@@ -8,6 +8,8 @@ import type { Wall } from "../data/walls";
 import type { Tweaks } from "../data/tweaksSchema";
 import { isStructureActive } from "./formulas";
 import { axialDistance, axialKey, type Axial } from "./hexCoords";
+import { powerPerformanceFactor, type PowerNetworkSnapshot } from "./power";
+import { WALL_TIER_LEVEL } from "./walls";
 
 /** Total militia currently committed to any in-transit expedition (src/data/expeditions.ts) — mirrors garrisonedMilitiaTotal's shape for the other place committed militia are "reserved." */
 function expeditionMilitiaTotal(expeditions: ExpeditionsRecord): number {
@@ -220,10 +222,19 @@ export function garrisonAttackPower(tweaks: Tweaks, garrison: Garrison): number 
   );
 }
 
-/** tweaks.walls.garrison_range_bonus_tiles if an active wall (engine/formulas.ts:isStructureActive) sits at `coord`, else 0 — shared by isHordeReachableFromGarrison and engine/hordes.ts:sniperDamagePerSecond. */
-export function garrisonWallRangeBonus(tweaks: Tweaks, walls: Wall[], coord: Axial): number {
+/** tweaks.walls.garrison_range_bonus_tiles if an active powered wall sits at `coord`, else 0 — shared by isHordeReachableFromGarrison and engine/hordes.ts:sniperDamagePerSecond. Offline L2+ walls contribute 0. */
+export function garrisonWallRangeBonus(
+  tweaks: Tweaks,
+  walls: Wall[],
+  coord: Axial,
+  powerNetwork?: PowerNetworkSnapshot,
+): number {
   const wall = walls.find((w) => isStructureActive(w) && axialKey(w.coord) === axialKey(coord));
-  return wall ? tweaks.walls.garrison_range_bonus_tiles : 0;
+  if (!wall) return 0;
+  if (powerNetwork && powerPerformanceFactor(powerNetwork, WALL_TIER_LEVEL[wall.tier], wall.coord) <= 0) {
+    return 0;
+  }
+  return tweaks.walls.garrison_range_bonus_tiles;
 }
 
 /** A garrison can only strike a horde standing on its own tile or a directly adjacent one — extended by garrisonWallRangeBonus when the garrison is stationed on an active wall. */

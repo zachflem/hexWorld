@@ -16,8 +16,10 @@ import { sniperDamagePerSecond, towerDamagePerSecond, towersInRange } from "../e
 import { garrisonAt, garrisonWallRangeBonus } from "../engine/garrisons";
 import { maxWallDurability } from "../engine/walls";
 import { outpostReinforcementHp } from "../engine/outposts";
+import { powerStationAoeRadius } from "../engine/power";
 import type { ExtractionTile } from "../data/extractionTiles";
 import type { PathTier, PathTile } from "../data/pathTiles";
+import type { PowerStation } from "../data/powerStations";
 import type { ResourceType } from "../data/resources";
 import type { Tower } from "../data/towers";
 import type { Wall, WallTier } from "../data/walls";
@@ -50,6 +52,8 @@ import { drawPlacedResourceIcon, drawPlacedStructureIcon } from "./structurePlac
 import {
   dockSpriteCandidates,
   extractionTierCandidates,
+  powerStationSpriteCandidates,
+  powerStationVariantStem,
   structureLevelCandidates,
   structureLevelName,
 } from "./structureSprites";
@@ -102,8 +106,10 @@ const RESOURCE_MARKER_COLORS: Record<ResourceType, string> = {
   wood: "#8a5a2b",
   stone: "#c9c9c9",
   steel: "#7fa8c9",
-  power: "#f2f2f2",
 };
+
+const POWER_STATION_COLOR = "#f2f2f2";
+const POWER_AOE_TINT_SELECTED = "rgba(255, 220, 80, 0.18)";
 
 const PATH_TIER_COLORS: Record<PathTier, string> = {
   goat_track: "#a67c52",
@@ -188,6 +194,7 @@ export const HexCanvas = forwardRef<
     towers: Tower[];
     walls: Wall[];
     barracksList: Barracks[];
+    powerStations: PowerStation[];
     garrisons: GarrisonsRecord;
     scoutedTiles: Axial[];
     dens: DenRecord[];
@@ -263,6 +270,7 @@ export const HexCanvas = forwardRef<
     towers,
     walls,
     barracksList,
+    powerStations,
     garrisons,
     scoutedTiles,
     dens,
@@ -315,6 +323,11 @@ export const HexCanvas = forwardRef<
     for (const b of barracksList) map.set(axialKey(b.coord), b);
     return map;
   }, [barracksList]);
+  const powerStationsByKey = useMemo(() => {
+    const map = new Map<string, PowerStation>();
+    for (const station of powerStations) map.set(axialKey(station.coord), station);
+    return map;
+  }, [powerStations]);
   const garrisonsByKey = useMemo(() => {
     const map = new Map<string, number>();
     for (const g of garrisons) map.set(axialKey(g.coord), g.militiaCount + g.junkyardKnightCount + g.crossBowSniperCount);
@@ -411,6 +424,15 @@ export const HexCanvas = forwardRef<
     }
     return set;
   }, [selected, towersByKey, tweaks]);
+  const selectedPowerAoeKeys = useMemo(() => {
+    const selectedStation = selected && powerStationsByKey.get(axialKey(selected));
+    if (!selectedStation) return null;
+    const set = new Set<string>();
+    for (const coord of axialSpiral(selectedStation.coord, powerStationAoeRadius(tweaks, selectedStation.level))) {
+      set.add(axialKey(coord));
+    }
+    return set;
+  }, [selected, powerStationsByKey, tweaks]);
   // Same on-demand-only shading as selectedTowerRangeKeys, for the selected
   // tile's garrison. Radius depends on what's actually stationed there: a
   // garrison with cross-bow snipers reaches units.cross_bow_sniper.range_tiles
@@ -828,6 +850,10 @@ export const HexCanvas = forwardRef<
             ctx.fillStyle = TOWER_RANGE_TINT_SELECTED;
             ctx.fill();
           }
+          if (selectedPowerAoeKeys?.has(coordKey)) {
+            ctx.fillStyle = POWER_AOE_TINT_SELECTED;
+            ctx.fill();
+          }
           if (selectedGarrisonRangeKeys?.has(coordKey)) {
             ctx.fillStyle = GARRISON_RANGE_TINT_SELECTED;
             ctx.fill();
@@ -877,6 +903,7 @@ export const HexCanvas = forwardRef<
             const tower = towersByKey.get(axialKey(coord));
             const wall = wallsByKey.get(axialKey(coord));
             const barracks = barracksByKey.get(axialKey(coord));
+            const powerStation = powerStationsByKey.get(axialKey(coord));
             const tile = tilesByKey.get(axialKey(coord));
             const den = densByKey.get(axialKey(coord));
             const outpost = outpostsByKey.get(axialKey(coord));
@@ -955,6 +982,33 @@ export const HexCanvas = forwardRef<
                 ctx.stroke();
               }
               drawLevelBadge(screenCenter, tower.level, upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined);
+            } else if (powerStation) {
+              const stationIcon = powerStation.buildStartedAt
+                ? getStructureIconTexture("construction")
+                : getStructureIconTextureCandidates(powerStationSpriteCandidates(powerStation.level));
+              if (stationIcon) {
+                drawPlacedStructureIcon(
+                  ctx,
+                  stationIcon,
+                  screenCenter.x,
+                  screenCenter.y,
+                  size,
+                  powerStation.buildStartedAt ? "construction" : "powerStation",
+                  powerStation.buildStartedAt ? null : powerStationVariantStem(powerStation.level),
+                );
+              } else {
+                ctx.beginPath();
+                ctx.arc(screenCenter.x, screenCenter.y, size * 0.4, 0, Math.PI * 2);
+                ctx.fillStyle = POWER_STATION_COLOR;
+                ctx.fill();
+                ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+                ctx.stroke();
+              }
+              drawLevelBadge(
+                screenCenter,
+                powerStation.level,
+                upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
+              );
             } else if (barracks) {
               const barracksIcon = barracks.buildStartedAt
                 ? getStructureIconTexture("construction")
@@ -1341,6 +1395,7 @@ export const HexCanvas = forwardRef<
     towersByKey,
     wallsByKey,
     barracksByKey,
+    powerStationsByKey,
     garrisonsByKey,
     densByKey,
     hordesByKey,
@@ -1348,6 +1403,7 @@ export const HexCanvas = forwardRef<
     scoutSkiffsByKey,
     wanderingScoutsByKey,
     selectedTowerRangeKeys,
+    selectedPowerAoeKeys,
     selectedGarrisonRangeKeys,
     activeTowerKeys,
     hordeCombatByKey,

@@ -1,9 +1,8 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import type { ResourceAmounts, ResourceType } from "../../data/resources";
+import { RESOURCE_ORDER, type ResourceAmounts, type ResourceType } from "../../data/resources";
 import { resolveAssetPath } from "../../render/assetPaths";
 import { Panel } from "../primitives/Panel";
 
-const RESOURCE_ORDER: ResourceType[] = ["food", "wood", "stone", "steel", "power"];
 /** Natural (unscaled) icon size — the whole HUD scales down on narrow viewports. */
 const ICON_SIZE = 32;
 

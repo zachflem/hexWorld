@@ -10,6 +10,7 @@ import { PATH_TILES_DB_KEY } from "./pathTiles";
 import { TOWERS_DB_KEY } from "./towers";
 import { WALLS_DB_KEY } from "./walls";
 import { BARRACKS_DB_KEY } from "./barracks";
+import { POWER_STATIONS_DB_KEY } from "./powerStations";
 import { UNITS_DB_KEY } from "./units";
 import { GARRISONS_DB_KEY } from "./garrisons";
 import { SCOUTED_TILES_DB_KEY } from "./scoutedTiles";
@@ -34,7 +35,9 @@ import { PROFILE_SLUG_DB_KEY } from "./profile";
 import { DEFAULT_PROFILE_SLUG } from "./profileRegistry";
 
 export const SAVE_FILE_FORMAT = "hexworld-save" as const;
-export const SAVE_FILE_VERSION = 1 as const;
+/** v2: power stations replace stockpile power (Milestone 25 / #70). v1 imports still accepted + migrated on load. */
+export const SAVE_FILE_VERSION = 2 as const;
+export const SAVE_FILE_VERSIONS_ACCEPTED = new Set([1, 2]);
 
 const GAME_DB_KEYS = [
   PLAYER_DB_KEY,
@@ -48,6 +51,7 @@ const GAME_DB_KEYS = [
   TOWERS_DB_KEY,
   WALLS_DB_KEY,
   BARRACKS_DB_KEY,
+  POWER_STATIONS_DB_KEY,
   UNITS_DB_KEY,
   GARRISONS_DB_KEY,
   SCOUTED_TILES_DB_KEY,
@@ -99,6 +103,7 @@ export type PersistableGameSnapshot = {
   towers: unknown;
   walls: unknown;
   barracksList: unknown;
+  powerStations: unknown;
   units: unknown;
   garrisons: unknown;
   scoutedTiles: unknown;
@@ -137,6 +142,7 @@ export type StoredGameKeys = {
   towers: unknown;
   walls: unknown;
   barracksList: unknown;
+  powerStations: unknown;
   units: unknown;
   garrisons: unknown;
   scoutedTiles: unknown;
@@ -188,6 +194,7 @@ export function snapshotToKeys(game: PersistableGameSnapshot, profileSlug: strin
     [TOWERS_DB_KEY]: game.towers,
     [WALLS_DB_KEY]: game.walls,
     [BARRACKS_DB_KEY]: game.barracksList,
+    [POWER_STATIONS_DB_KEY]: game.powerStations,
     [UNITS_DB_KEY]: game.units,
     [GARRISONS_DB_KEY]: game.garrisons,
     [SCOUTED_TILES_DB_KEY]: game.scoutedTiles,
@@ -248,6 +255,7 @@ export function keysToStoredGame(keys: SaveFileV1["keys"], profileSlugFallback?:
     towers: keys[TOWERS_DB_KEY],
     walls: keys[WALLS_DB_KEY],
     barracksList: keys[BARRACKS_DB_KEY],
+    powerStations: keys[POWER_STATIONS_DB_KEY],
     units: keys[UNITS_DB_KEY],
     garrisons: keys[GARRISONS_DB_KEY],
     scoutedTiles: keys[SCOUTED_TILES_DB_KEY],
@@ -286,7 +294,7 @@ export function parseSaveFile(raw: unknown): ParseSaveResult {
     return { ok: false, reason: `Unrecognized save format (expected "${SAVE_FILE_FORMAT}").` };
   }
 
-  if (obj.version !== SAVE_FILE_VERSION) {
+  if (typeof obj.version !== "number" || !SAVE_FILE_VERSIONS_ACCEPTED.has(obj.version)) {
     return {
       ok: false,
       reason: `Unsupported save version (got ${String(obj.version)}, need ${SAVE_FILE_VERSION}).`,

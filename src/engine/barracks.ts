@@ -4,6 +4,7 @@ import type { UnitsRecord } from "../data/units";
 import type { ResourceType } from "../data/resources";
 import type { Tweaks } from "../data/tweaksSchema";
 import { formulaACost, formulaBCost, isStructureActive } from "./formulas";
+import { powerPerformanceFactor, type PowerNetworkSnapshot } from "./power";
 import {
   crossBowSniperTrainDurationMs,
   junkyardKnightTrainDurationMs,
@@ -34,7 +35,7 @@ const BARRACKS_UPGRADE_PROGRESSION_KEY: Record<number, keyof Tweaks["barracks"][
   4: "L3_to_L4",
 };
 
-/** Same reused-baseline resolution as towers/walls: steel/power have no base of their own, so reuse that resource's own extraction-tile upgrade base. */
+/** Same reused-baseline resolution as towers/walls: steel has no barracks base of its own, so reuse that resource's own extraction-tile upgrade base. */
 export function barracksUpgradeCost(tweaks: Tweaks, targetLevel: number): Partial<Record<ResourceType, number>> {
   const progressionKey = BARRACKS_UPGRADE_PROGRESSION_KEY[targetLevel];
   const chain = tweaks.barracks.upgrade_tech_progression[progressionKey];
@@ -115,13 +116,23 @@ export function advanceBarracksTraining(
   barracksList: Barracks[],
   units: UnitsRecord,
   virtualNow: number,
+  powerNetwork?: PowerNetworkSnapshot,
 ): { barracksList: Barracks[]; units: UnitsRecord } {
   let nextUnits = units;
   const nextBarracks = barracksList.map((barracks) => {
     const queue = barracks.trainingQueue;
     if (!queue || !isStructureActive(barracks)) return barracks;
 
-    const result = resolveTrainingQueue(queue, trainingUnitDurationMs(tweaks, queue.unitType, barracks.level), virtualNow);
+    const powerMul = powerNetwork
+      ? powerPerformanceFactor(powerNetwork, barracks.level, barracks.coord)
+      : 1;
+    if (powerMul <= 0) return barracks;
+
+    const result = resolveTrainingQueue(
+      queue,
+      trainingUnitDurationMs(tweaks, queue.unitType, barracks.level) / powerMul,
+      virtualNow,
+    );
     if (result.delivered > 0) {
       switch (queue.unitType) {
         case "militia":

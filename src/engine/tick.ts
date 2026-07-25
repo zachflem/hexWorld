@@ -5,10 +5,11 @@ import type { ResourceAmounts } from "../data/resources";
 import type { StorageLevels } from "../data/storageLevels";
 import type { Tweaks } from "../data/tweaksSchema";
 import { isTransitionTile, terrainAt } from "./terrain";
-import { tierYieldMultiplier } from "./tiers";
+import { extractionTierLevel, tierYieldMultiplier } from "./tiers";
 import { storageCapacity } from "./storage";
-import { findResourceTileConnection, throughputMultiplierForChain, transportRateMultiplier } from "./paths";
+import { findResourceTileConnection, PATH_TIER_LEVEL, throughputMultiplierForChain, transportRateMultiplier } from "./paths";
 import { isStructureActive } from "./formulas";
+import { powerPerformanceFactor, type PowerNetworkSnapshot } from "./power";
 
 /**
  * Resource units generated per real second by one extraction tile, given its
@@ -27,23 +28,38 @@ export function yieldPerSecond(tweaks: Tweaks, tile: ExtractionTile, seed: numbe
   return base * tierMultiplier * transitionMultiplier * terrainMultiplier;
 }
 
+function pathPowerMultiplier(
+  pathTiles: PathTile[],
+  chain: Axial[],
+  powerNetwork: PowerNetworkSnapshot,
+): number {
+  if (chain.length === 0) return 1;
+  const byKey = new Map(pathTiles.map((tile) => [axialKey(tile.coord), tile]));
+  let min = 1;
+  for (const coord of chain) {
+    const tile = byKey.get(axialKey(coord));
+    if (!tile) continue;
+    min = Math.min(min, powerPerformanceFactor(powerNetwork, PATH_TIER_LEVEL[tile.tier], tile.coord));
+  }
+  return min;
+}
+
+/** Paths that can carry logistics — active and not power-offline. */
+export function logisticsPathTiles(pathTiles: PathTile[], powerNetwork: PowerNetworkSnapshot): PathTile[] {
+  return pathTiles.filter(
+    (tile) =>
+      isStructureActive(tile) && powerPerformanceFactor(powerNetwork, PATH_TIER_LEVEL[tile.tier], tile.coord) > 0,
+  );
+}
+
 /**
  * Advances the whole economy by `elapsedSeconds`, in two stages per DESIGN.md §8:
  *  1. Each extraction tile produces yield into its own local stockpile,
  *     capped at storage.capacity_base_per_resource (flat, not storage-skill-scaled).
- *  2. Any not-yet-claimed tile path-connected to one of `hubCoords` (base
- *     first, then outposts — order matters) drains into the single shared
- *     `resources` pool, at a rate relative to the tile's own yield, capped at
- *     the shared (storage-skill-scaled) cap. A base and every outpost are
- *     just alternate entry points into the same stockpile — there's no
- *     per-hub storage anymore (engine/outposts.ts). A `claimed` set
- *     guarantees a tile only ever drains once per tick even if it happens to
- *     be connected to more than one hub. A tile connected to none of them
- *     just accumulates locally until manually collected (collectTile below).
- * A `damaged` tile (horde-captured, not yet reclaimed+repaired — DESIGN.md
- * §12) stops fully: no new yield, and no draining of whatever stockpile it
- * already had — everything freezes until it's repaired, matching the "not
- * usable until repaired" status shown in TilePopup.
+ *  2. Any not-yet-claimed tile path-connected to one of `hubCoords` drains
+ *     into the shared `resources` pool.
+ * Power (Milestone 25): L2+ tiles scale yield by powerPerformanceFactor; offline
+ * yield is 0. Offline path tiles do not carry chains; degraded paths slow drain.
  */
 export function accrueResources(
   tweaks: Tweaks,
@@ -54,14 +70,18 @@ export function accrueResources(
   resources: ResourceAmounts,
   storageLevels: StorageLevels,
   hubCoords: Axial[],
+  powerNetwork: PowerNetworkSnapshot,
 ): { resources: ResourceAmounts; tiles: ExtractionTile[] } {
   if (elapsedSeconds <= 0) return { resources, tiles };
 
   const tileStockpileCap = tweaks.storage.capacity_base_per_resource;
+  const usablePaths = logisticsPathTiles(pathTiles, powerNetwork);
 
   let workingTiles = tiles.map((tile) => {
     if (!isStructureActive(tile)) return tile;
-    const rate = yieldPerSecond(tweaks, tile, seed);
+    const powerMul = powerPerformanceFactor(powerNetwork, extractionTierLevel(tile.tier), tile.coord);
+    if (powerMul <= 0) return tile;
+    const rate = yieldPerSecond(tweaks, tile, seed) * powerMul;
     const stockpile = Math.min(tileStockpileCap, tile.stockpile + rate * elapsedSeconds);
     return { ...tile, stockpile };
   });
@@ -74,12 +94,17 @@ export function accrueResources(
       const key = axialKey(tile.coord);
       if (claimed.has(key)) return tile;
 
-      const connection = findResourceTileConnection(workingTiles, pathTiles, hubCoord, tile.coord);
+      const connection = findResourceTileConnection(workingTiles, usablePaths, hubCoord, tile.coord);
       if (!connection) return tile;
       claimed.add(key);
 
-      const rate = yieldPerSecond(tweaks, tile, seed);
-      const throughput = throughputMultiplierForChain(tweaks, seed, connection.chain);
+      const powerMul = powerPerformanceFactor(powerNetwork, extractionTierLevel(tile.tier), tile.coord);
+      if (powerMul <= 0) return tile;
+
+      const rate = yieldPerSecond(tweaks, tile, seed) * powerMul;
+      const throughput =
+        throughputMultiplierForChain(tweaks, seed, connection.chain) *
+        pathPowerMultiplier(pathTiles, connection.chain, powerNetwork);
       const transportable = rate * transportRateMultiplier(tweaks, connection.tier) * throughput * elapsedSeconds;
       const hubCap = storageCapacity(tweaks, storageLevels[tile.resource]);
       const roomAtHub = Math.max(0, hubCap - nextResources[tile.resource]);

@@ -14,7 +14,8 @@ export type StructurePlacementKey =
   | "wall"
   | "dock"
   | "construction"
-  | "extraction";
+  | "extraction"
+  | "powerStation";
 
 export type StructurePlacementTune = {
   /** Vertical nudge in hex-radius units (added to STRUCTURE_GROUND_FRACTION). Negative = up. */
@@ -37,6 +38,7 @@ export const STRUCTURE_PLACEMENT: Record<StructurePlacementKey, StructurePlaceme
   dock: { offset: 0.2, scale: 2.2 },
   construction: { offset: 0, scale: 1.8 },
   extraction: { offset: 0.1, scale: 2.2 },
+  powerStation: { offset: 0.1, scale: 1.6 },
 };
 
 /**
@@ -121,7 +123,6 @@ export const RESOURCE_VERTICAL_OFFSET: Record<ResourceType, number> = {
   wood: 0.1,
   stone: 0.1,
   steel: 0.1,
-  power: 0.1,
 };
 
 /** Per-resource icon width multiplier for the resource-marker fallback. */
@@ -130,7 +131,6 @@ export const RESOURCE_ICON_SCALE: Record<ResourceType, number> = {
   wood: 1.4,
   stone: 1.8,
   steel: 1.8,
-  power: 1.8,
 };
 
 export function resourceGroundFraction(resource: ResourceType): number {
