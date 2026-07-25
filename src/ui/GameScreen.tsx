@@ -169,7 +169,7 @@ import type { LabAssaultsRecord } from "../data/labAssaults";
 import type { GarrisonRecallsRecord } from "../data/garrisonRecalls";
 import type { OutpostRecord, OutpostsRecord } from "../data/outposts";
 import type { HordesRecord } from "../data/hordes";
-import type { ExpeditionsRecord } from "../data/expeditions";
+import type { Expedition, ExpeditionsRecord } from "../data/expeditions";
 import type { DockRecord, DocksRecord } from "../data/docks";
 import type { ScoutSkiffsRecord } from "../data/scoutSkiffs";
 import type { WanderingScoutsRecord } from "../data/wanderingScouts";
@@ -260,6 +260,7 @@ import {
   Swords,
   Target,
   Trash2,
+  Undo2,
   Wrench,
   Zap,
 } from "lucide-react";
@@ -430,6 +431,7 @@ export function GameScreen({
   onRelocateBase,
   onDispatchExpedition,
   onRecallExpedition,
+  onGarrisonExpedition,
   onRedeployExpedition,
   onReinforceExpedition,
   onAssaultDen,
@@ -523,6 +525,7 @@ export function GameScreen({
     crossBowSniperCommitted: number,
   ) => Promise<BuildResult>;
   onRecallExpedition: (expeditionId: string) => Promise<BuildResult>;
+  onGarrisonExpedition: (expeditionId: string) => Promise<BuildResult>;
   onRedeployExpedition: (expeditionId: string, target: Axial) => Promise<BuildResult>;
   onReinforceExpedition: (
     expeditionId: string,
@@ -573,8 +576,6 @@ export function GameScreen({
   const [selected, setSelected] = useState<Axial | null>(null);
   /** When set, next eligible tile selection redeploys this awaiting/marching expedition. */
   const [redeployExpeditionId, setRedeployExpeditionId] = useState<string | null>(null);
-  /** When set, tile sheet shows reinforce form for this awaitingOrders expedition. */
-  const [reinforceExpeditionId, setReinforceExpeditionId] = useState<string | null>(null);
   /** Desktop-mouse hover target (HexCanvas's onTileHover) — null on touch devices, which never report hover. Only changes when the hovered tile itself changes (deduped in HexCanvas), not on every mousemove pixel. */
   const [hoveredCoord, setHoveredCoord] = useState<Axial | null>(null);
   /** Which of the global hex cluster's panel slots is open, if any. Only one at a time. Dismissed via BottomSheet Close/backdrop. */
@@ -3516,6 +3517,126 @@ export function GameScreen({
     return null;
   }
 
+  /** Party sitting on a hex waiting for arrival orders (#73). */
+  function awaitingExpeditionAt(coord: Axial): Expedition | null {
+    return (
+      expeditions.find(
+        (e) =>
+          e.phase === "awaitingOrders" &&
+          axialEquals(e.path[e.path.length - 1] ?? e.target, coord),
+      ) ?? null
+    );
+  }
+
+  /** Reinforce form row for an awaiting host — shared by notification → tile and sheet Party orders. */
+  function reinforceSheetActionFor(host: Expedition): SheetAction | null {
+    const joinTile = host.path[host.path.length - 1] ?? host.target;
+    const route = findBestExpeditionRoute(
+      tweaks,
+      world.seed,
+      barracksList,
+      towers,
+      outposts,
+      territory,
+      scoutedTiles,
+      gridSize,
+      joinTile,
+    );
+    if (!route) return null;
+    const partySize = militiaToSend + junkyardKnightToSend + crossBowSniperToSend;
+    const provisionsCost = { food: reinforceProvisionsCost(tweaks, partySize, route.cost) };
+    const option: ExpeditionOption = {
+      distanceTiles: route.path.length - 1,
+      pathCost: route.cost,
+      provisionsCost,
+      affordable: affordable(provisionsCost),
+      etaMs: reinforceTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, research)),
+    };
+    return {
+      key: "arrival-send-help",
+      icon: <Swords size={18} />,
+      title: "Reinforce",
+      detail: `½ cost/time — ${formatCost(provisionsCost)}`,
+      disabled: !option.affordable,
+      formContent: dispatchFormContent(
+        option,
+        <span>Path known & cleared — half provisions and travel time.</span>,
+        "Send reinforcements",
+        () => {
+          void (async () => {
+            const result = await onReinforceExpedition(
+              host.id,
+              militiaToSend,
+              junkyardKnightToSend,
+              crossBowSniperToSend,
+            );
+            applyActionResult(result);
+          })();
+        },
+      ),
+    };
+  }
+
+  /**
+   * Arrival decision options on the destination tile sheet — same choices as the
+   * notification tray, for players who look at the map/tile first (#73).
+   */
+  function arrivalOrdersCategoryFor(coord: Axial): SheetAction | null {
+    const host = awaitingExpeditionAt(coord);
+    if (!host) return null;
+    const remaining = Math.max(0, (host.decisionDeadlineAt ?? now) - now);
+    const partySize =
+      host.militiaCommitted + host.junkyardKnightCommitted + host.crossBowSniperCommitted;
+    const reinforce = reinforceSheetActionFor(host);
+    const subActions: SheetAction[] = [
+      {
+        key: "arrival-redeploy",
+        icon: <Navigation size={18} />,
+        title: "Redeploy",
+        detail: "Pick a new destination — current party marches on",
+        onClick: () => {
+          setRedeployExpeditionId(host.id);
+          setActionError(null);
+          setSelected(null);
+        },
+      },
+    ];
+    if (reinforce) subActions.push(reinforce);
+    subActions.push(
+      {
+        key: "arrival-garrison",
+        icon: <Shield size={18} />,
+        title: "Garrison",
+        detail: `Station ${partySize} unit${partySize === 1 ? "" : "s"} here`,
+        onClick: () => {
+          void onGarrisonExpedition(host.id).then((result) => {
+            applyActionResult(result);
+            if (result.ok) setSelected(null);
+          });
+        },
+      },
+      {
+        key: "arrival-recall",
+        icon: <Undo2 size={18} />,
+        title: "Recall",
+        detail: "March home now",
+        onClick: () => {
+          void onRecallExpedition(host.id).then((result) => {
+            applyActionResult(result);
+            if (result.ok) setSelected(null);
+          });
+        },
+      },
+    );
+    return {
+      key: "arrival-orders",
+      icon: <Footprints size={18} />,
+      title: "Party orders",
+      detail: `Auto-recall ${formatDuration(remaining)}`,
+      subActions,
+    };
+  }
+
   /**
    * The full sheet action tree for the selected tile: structural actions
    * (above) plus the universal, structure-independent actions available on
@@ -3527,52 +3648,9 @@ export function GameScreen({
     if (!selected) return [];
     const actions = structuralActionsFor();
 
-    if (reinforceExpeditionId) {
-      const host = expeditions.find((e) => e.id === reinforceExpeditionId);
-      if (host?.phase === "awaitingOrders") {
-        const joinTile = host.path[host.path.length - 1]!;
-        const route = findBestExpeditionRoute(
-          tweaks,
-          world.seed,
-          barracksList,
-          towers,
-          outposts,
-          territory,
-          scoutedTiles,
-          gridSize,
-          joinTile,
-        );
-        if (route) {
-          const partySize = militiaToSend + junkyardKnightToSend + crossBowSniperToSend;
-          const provisionsCost = { food: reinforceProvisionsCost(tweaks, partySize, route.cost) };
-          const option: ExpeditionOption = {
-            distanceTiles: route.path.length - 1,
-            pathCost: route.cost,
-            provisionsCost,
-            affordable: affordable(provisionsCost),
-            etaMs: reinforceTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, research)),
-          };
-          actions.unshift({
-            key: "reinforce-expedition",
-            icon: <Swords size={18} />,
-            title: "Reinforce expedition",
-            detail: `½ cost/time — ${formatCost(provisionsCost)}`,
-            disabled: !option.affordable,
-            formContent: dispatchFormContent(option, <span>Path known & cleared — half provisions and travel time.</span>, "Send reinforcements", () => {
-              void (async () => {
-                const result = await onReinforceExpedition(
-                  reinforceExpeditionId,
-                  militiaToSend,
-                  junkyardKnightToSend,
-                  crossBowSniperToSend,
-                );
-                setReinforceExpeditionId(null);
-                applyActionResult(result);
-              })();
-            }),
-          });
-        }
-      }
+    const arrivalOrders = arrivalOrdersCategoryFor(selected);
+    if (arrivalOrders) {
+      actions.unshift(arrivalOrders);
     }
 
     const inProgressRows = countdownRows.filter(
@@ -3894,23 +3972,23 @@ export function GameScreen({
             }))}
           countdowns={countdownRows}
           now={now}
-          arrivalExpandedMs={tweaks.expeditions.arrival_notification_expanded_ms}
           onGoToTile={goToTile}
           onRecallExpedition={(id) => {
             void onRecallExpedition(id).then(applyActionResult);
           }}
+          onGarrisonExpedition={(id) => {
+            void onGarrisonExpedition(id).then(applyActionResult);
+          }}
           onBeginRedeploy={(id) => {
             setRedeployExpeditionId(id);
-            setReinforceExpeditionId(null);
             setActionError(null);
             setSelected(null);
           }}
           onBeginReinforce={(id) => {
-            setReinforceExpeditionId(id);
             setRedeployExpeditionId(null);
             const host = expeditions.find((e) => e.id === id);
             if (host) {
-              const tile = host.path[host.path.length - 1]!;
+              const tile = host.path[host.path.length - 1] ?? host.target;
               goToTile(tile);
             }
           }}

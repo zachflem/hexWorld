@@ -46,6 +46,7 @@ function TrayRow({
   actions,
   expandedMs,
   highlightPeek,
+  stayExpandedUntilDismiss,
 }: {
   rowKey: string;
   icon: ReactNode;
@@ -59,6 +60,8 @@ function TrayRow({
   actions?: { label: string; onClick: () => void }[];
   expandedMs?: number;
   highlightPeek?: boolean;
+  /** Arrival orders: stay open until Dismiss or the party auto-recalls. */
+  stayExpandedUntilDismiss?: boolean;
 }) {
   const labelNode =
     onLabelClick != null ? (
@@ -76,19 +79,25 @@ function TrayRow({
       panelStyle={{ padding: "0.4rem 0.65rem", fontSize: "0.8rem" }}
       expandedMs={expandedMs}
       highlightPeek={highlightPeek}
+      stayExpandedUntilDismiss={stayExpandedUntilDismiss}
     >
-      {labelNode}
-      {coord != null && onGoToTile != null ? (
+      {({ collapse }) => (
         <>
-          {" "}
-          <CoordLink coord={coord} onGoToTile={onGoToTile} />
+          {labelNode}
+          {coord != null && onGoToTile != null ? (
+            <>
+              {" "}
+              <CoordLink coord={coord} onGoToTile={onGoToTile} />
+            </>
+          ) : null}
+          {onRush && <TrayActionButton label="Rush" onClick={onRush} />}
+          {actions?.map((a) => (
+            <TrayActionButton key={a.label} label={a.label} onClick={a.onClick} />
+          ))}
+          {stayExpandedUntilDismiss ? <TrayActionButton label="Dismiss" onClick={collapse} /> : null}
+          <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.7)" }}>{formatDuration(remaining)}</span>
         </>
-      ) : null}
-      {onRush && <TrayActionButton label="Rush" onClick={onRush} />}
-      {actions?.map((a) => (
-        <TrayActionButton key={a.label} label={a.label} onClick={a.onClick} />
-      ))}
-      <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.7)" }}>{formatDuration(remaining)}</span>
+      )}
     </CollapsibleNotificationRow>
   );
 }
@@ -109,7 +118,7 @@ export type NotificationCountdownRow = {
 
 /**
  * Compact rows, one per active expedition/den-assault/lab-assault/garrison-recall.
- * Arrival decisions linger longer with a highlighted collapsed pill.
+ * Arrival decisions stay expanded until Dismiss or auto-recall; collapsed peek is highlighted.
  */
 export function NotificationTray({
   expeditions,
@@ -119,9 +128,9 @@ export function NotificationTray({
   siegedDens,
   countdowns,
   now,
-  arrivalExpandedMs,
   onGoToTile,
   onRecallExpedition,
+  onGarrisonExpedition,
   onBeginRedeploy,
   onBeginReinforce,
 }: {
@@ -132,9 +141,9 @@ export function NotificationTray({
   siegedDens: { coord: Axial; holdRemainingMs: number }[];
   countdowns: NotificationCountdownRow[];
   now: number;
-  arrivalExpandedMs?: number;
   onGoToTile?: (coord: Axial) => void;
   onRecallExpedition?: (expeditionId: string) => void;
+  onGarrisonExpedition?: (expeditionId: string) => void;
   onBeginRedeploy?: (expeditionId: string) => void;
   onBeginReinforce?: (expeditionId: string) => void;
 }) {
@@ -177,7 +186,7 @@ export function NotificationTray({
               coord={expedition.target}
               remaining={Math.max(0, deadline - now)}
               onGoToTile={onGoToTile}
-              expandedMs={arrivalExpandedMs}
+              stayExpandedUntilDismiss
               highlightPeek
               actions={[
                 ...(onBeginRedeploy
@@ -185,6 +194,9 @@ export function NotificationTray({
                   : []),
                 ...(onBeginReinforce
                   ? [{ label: "Reinforce", onClick: () => onBeginReinforce(expedition.id) }]
+                  : []),
+                ...(onGarrisonExpedition
+                  ? [{ label: "Garrison", onClick: () => onGarrisonExpedition(expedition.id) }]
                   : []),
                 ...(onRecallExpedition
                   ? [{ label: "Recall", onClick: () => onRecallExpedition(expedition.id) }]

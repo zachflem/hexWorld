@@ -1,9 +1,11 @@
 import type { Barracks } from "../data/barracks";
+import type { Expedition, ExpeditionsRecord } from "../data/expeditions";
+import type { GarrisonsRecord } from "../data/garrisons";
 import type { OutpostsRecord } from "../data/outposts";
 import type { TerritoryRecord } from "../data/territory";
 import type { Tower } from "../data/towers";
 import type { Tweaks } from "../data/tweaksSchema";
-import { garrisonAttackPower } from "./garrisons";
+import { garrisonAttackPower, mergeIntoGarrison } from "./garrisons";
 import { isStructureActive } from "./formulas";
 import { axialDistance, axialKey, type Axial } from "./hexCoords";
 import { findExpeditionPath } from "./pathfinding";
@@ -291,6 +293,30 @@ export interface HomeRecallPlan {
     joinExpeditionId: null;
   } | null;
   foodRefund: number;
+}
+
+/**
+ * Station an awaitingOrders party's committed units on their destination hex
+ * and drop the expedition. Callers validate ownership / land / hostiles first.
+ * No food refund — return provisions were prepaid at dispatch (same as arrival recall).
+ */
+export function stationExpeditionAsGarrison(
+  expedition: Expedition,
+  garrisons: GarrisonsRecord,
+  expeditions: ExpeditionsRecord,
+): { garrisons: GarrisonsRecord; expeditions: ExpeditionsRecord; coord: Axial } {
+  const coord = expedition.path[expedition.path.length - 1] ?? expedition.target;
+  return {
+    coord,
+    garrisons: mergeIntoGarrison(
+      garrisons,
+      coord,
+      expedition.militiaCommitted,
+      expedition.junkyardKnightCommitted,
+      expedition.crossBowSniperCommitted,
+    ),
+    expeditions: expeditions.filter((e) => e.id !== expedition.id),
+  };
 }
 
 /**

@@ -116,6 +116,7 @@ import {
   recallDurationMs,
   reinforceProvisionsCost,
   reinforceTravelDurationMs,
+  stationExpeditionAsGarrison,
   stepCorridorWalk,
   type TombstoneCause,
 } from "./engine/expeditions";
@@ -4099,6 +4100,62 @@ export default function App() {
     return { ok: true };
   }
 
+  /**
+   * Arrival order: station the awaiting party on their destination hex and end
+   * the expedition. Same land/ownership/horde/den guards as handleGarrisonUnits;
+   * units move from expedition commitment into the garrison pool (no UnitsRecord change).
+   */
+  async function handleGarrisonExpedition(expeditionId: string): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+    const expedition = game.expeditions.find((e) => e.id === expeditionId);
+    if (!expedition) return { ok: false, reason: "Expedition not found" };
+    if (expedition.phase !== "awaitingOrders") {
+      return { ok: false, reason: "Party is not waiting for orders" };
+    }
+
+    const normalized = normalizeExpedition(expedition);
+    const coord = normalized.path[normalized.path.length - 1] ?? normalized.target;
+    const ownedKeys = new Set(game.territory.owned.map(axialKey));
+    if (!ownedKeys.has(axialKey(coord))) return { ok: false, reason: "Tile not owned" };
+    if (!isBuildableLand(game.world.seed, coord)) return { ok: false, reason: "Cannot garrison on water" };
+
+    const hordeOccupiedKeys = new Set(game.hordes.map((h) => axialKey(h.path[h.pathIndex])));
+    if (hordeOccupiedKeys.has(axialKey(coord))) return { ok: false, reason: "A horde is still on this tile" };
+
+    const hostileDenHere = game.dens.some((d) => axialKey(d.coord) === axialKey(coord) && !d.siege);
+    if (hostileDenHere) return { ok: false, reason: "A hostile den occupies this tile — assault it first" };
+
+    const partySize =
+      normalized.militiaCommitted + normalized.junkyardKnightCommitted + normalized.crossBowSniperCommitted;
+    if (partySize <= 0) return { ok: false, reason: "No units to garrison" };
+
+    const stationed = stationExpeditionAsGarrison(normalized, game.garrisons, game.expeditions);
+    const noise: NoiseRecord = {
+      value: addActionNoise(tweaks, game.noise.value, "garrison_militia", game.base.level),
+    };
+
+    await Promise.all([
+      set(GARRISONS_DB_KEY, stationed.garrisons),
+      set(EXPEDITIONS_DB_KEY, stationed.expeditions),
+      set(NOISE_DB_KEY, noise),
+    ]);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game
+        ? {
+            ...prev,
+            game: {
+              ...prev.game,
+              garrisons: stationed.garrisons,
+              expeditions: stationed.expeditions,
+              noise,
+            },
+          }
+        : prev,
+    );
+    return { ok: true };
+  }
+
   /** From awaitingOrders (or mid-march via UI), start a new outbound leg from the party's current hex. */
   async function handleRedeployExpedition(
     expeditionId: string,
@@ -4659,6 +4716,7 @@ export default function App() {
       onRelocateBase={handleRelocateBase}
       onDispatchExpedition={handleDispatchExpedition}
       onRecallExpedition={handleRecallExpedition}
+      onGarrisonExpedition={handleGarrisonExpedition}
       onRedeployExpedition={handleRedeployExpedition}
       onReinforceExpedition={handleReinforceExpedition}
       onAssaultDen={handleAssaultDen}

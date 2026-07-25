@@ -149,6 +149,9 @@ function defaultTabKey(tabs: SheetTab[]): string | null {
   // open on what's already happening (#74).
   const inProgress = tabs.find((t) => t.key === "in-progress");
   if (inProgress) return inProgress.key;
+  // Party waiting for arrival orders — same urgency as a live job (#73).
+  const arrivalOrders = tabs.find((t) => t.key === "arrival-orders");
+  if (arrivalOrders) return arrivalOrders.key;
   // Prefer an affordable upgrade highlight when present; otherwise the first
   // tab (Upgrades if that group exists, else Build/Train/etc.).
   const withUpgrade = tabs.find((t) => t.upgradeAvailable);

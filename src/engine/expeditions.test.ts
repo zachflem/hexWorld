@@ -18,10 +18,13 @@ import {
   provisionsRefund,
   reinforceProvisionsCost,
   reinforceTravelDurationMs,
+  stationExpeditionAsGarrison,
   stepCorridorWalk,
 } from "./expeditions";
+import { garrisonAt } from "./garrisons";
 import { axialDistance, axialKey, axialNeighbors, axialSpiral, mapCenter, type Axial } from "./hexCoords";
 import { terrainAt } from "./terrain";
+import type { Expedition } from "../data/expeditions";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -435,5 +438,71 @@ describe("reinforce quotes", () => {
     const fullMs = expeditionTravelDurationMs(tweaks, 5, 1);
     expect(reinforceProvisionsCost(tweaks, 10, 5)).toBeCloseTo(fullFood * tweaks.expeditions.reinforce_cost_multiplier);
     expect(reinforceTravelDurationMs(tweaks, 5, 1)).toBeCloseTo(fullMs * tweaks.expeditions.reinforce_cost_multiplier);
+  });
+});
+
+describe("stationExpeditionAsGarrison", () => {
+  it("merges the party into a garrison at the destination and removes the expedition", () => {
+    const dest = { q: 3, r: -1 };
+    const expedition: Expedition = {
+      id: "exp-1",
+      target: dest,
+      origin: { q: 0, r: 0 },
+      path: [{ q: 0, r: 0 }, { q: 1, r: 0 }, dest],
+      militiaCommitted: 4,
+      junkyardKnightCommitted: 1,
+      crossBowSniperCommitted: 2,
+      departedAt: 0,
+      arriveAt: 1000,
+      resolvedIndex: 2,
+      phase: "awaitingOrders",
+      provisionsPaid: 40,
+      outboundTileCount: 2,
+      decisionDeadlineAt: 5000,
+      joinExpeditionId: null,
+    };
+    const other: Expedition = { ...expedition, id: "exp-2", militiaCommitted: 1, junkyardKnightCommitted: 0, crossBowSniperCommitted: 0 };
+    const result = stationExpeditionAsGarrison(expedition, [], [expedition, other]);
+    expect(result.expeditions.map((e) => e.id)).toEqual(["exp-2"]);
+    expect(axialKey(result.coord)).toBe(axialKey(dest));
+    expect(garrisonAt(result.garrisons, dest)).toEqual({
+      coord: dest,
+      militiaCount: 4,
+      junkyardKnightCount: 1,
+      crossBowSniperCount: 2,
+    });
+  });
+
+  it("stacks onto an existing garrison at the same hex", () => {
+    const dest = { q: 2, r: 2 };
+    const expedition: Expedition = {
+      id: "exp-1",
+      target: dest,
+      origin: { q: 0, r: 0 },
+      path: [dest],
+      militiaCommitted: 3,
+      junkyardKnightCommitted: 0,
+      crossBowSniperCommitted: 0,
+      departedAt: 0,
+      arriveAt: 1000,
+      resolvedIndex: 0,
+      phase: "awaitingOrders",
+      provisionsPaid: 10,
+      outboundTileCount: 0,
+      decisionDeadlineAt: null,
+      joinExpeditionId: null,
+    };
+    const result = stationExpeditionAsGarrison(
+      expedition,
+      [{ coord: dest, militiaCount: 2, junkyardKnightCount: 1, crossBowSniperCount: 0 }],
+      [expedition],
+    );
+    expect(result.garrisons).toHaveLength(1);
+    expect(garrisonAt(result.garrisons, dest)).toEqual({
+      coord: dest,
+      militiaCount: 5,
+      junkyardKnightCount: 1,
+      crossBowSniperCount: 0,
+    });
   });
 });

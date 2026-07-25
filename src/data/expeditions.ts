@@ -3,7 +3,7 @@ import type { Axial } from "../engine/hexCoords";
 /**
  * Lifecycle of a territory expedition (den/lab assaults use their own records).
  * - marching — outbound (or post-redeploy) corridor walk
- * - awaitingOrders — reached destination; player may redeploy / reinforce / recall
+ * - awaitingOrders — reached destination; player may redeploy / reinforce / garrison / recall
  * - recalling — marching home to origin
  * - reinforcing — inbound detachment joining an awaitingOrders expedition
  */
@@ -20,7 +20,7 @@ export type ExpeditionPhase = "marching" | "awaitingOrders" | "recalling" | "rei
  * `resolvedIndex` tile-by-tile: owned/scouted ground is free passage with
  * auto-claim on unowned scouted tiles; hordes are fought (win = clear, no
  * losses; lose = wipe + tombstone). On arrival the party waits for orders
- * (redeploy / reinforce / recall) instead of instantly dissolving.
+ * (redeploy / reinforce / garrison / recall) instead of instantly dissolving.
  */
 export interface Expedition {
   id: string;

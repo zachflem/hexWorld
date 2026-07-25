@@ -31,9 +31,18 @@ function NotificationIconSlot({ icon }: { icon: ReactNode }) {
  * Default (tray): expanded label/countdown for {@link NOTIFICATION_EXPANDED_MS},
  * then the text slides out while the icon stays as a compact peek. Tap to expand again.
  *
+ * `stayExpandedUntilDismiss`: stay expanded until the player hits Dismiss (or the row
+ * unmounts). Used for expedition arrival orders — collapses to the usual icon peek,
+ * still present until auto-recall removes the expedition.
+ *
  * `ephemeral` (toasts): stay expanded, then call `onEphemeralDismiss` — no icon peek.
  * Watchtower / clue / den notices should vanish, not linger like build timers.
  */
+export type CollapsibleNotificationApi = {
+  expanded: boolean;
+  collapse: () => void;
+};
+
 export function CollapsibleNotificationRow({
   rowKey,
   icon,
@@ -49,10 +58,12 @@ export function CollapsibleNotificationRow({
   onEphemeralDismiss,
   /** Emphasize the collapsed icon peek (arrival decisions). */
   highlightPeek = false,
+  /** Do not auto-collapse; caller should offer Dismiss via function children. */
+  stayExpandedUntilDismiss = false,
 }: {
   rowKey: string;
   icon: ReactNode;
-  children: ReactNode;
+  children: ReactNode | ((api: CollapsibleNotificationApi) => ReactNode);
   panelStyle?: CSSProperties;
   expandedMs?: number;
   /** Optional — e.g. one-off toasts dismiss after lingering collapsed. */
@@ -62,10 +73,13 @@ export function CollapsibleNotificationRow({
   ephemeral?: boolean;
   onEphemeralDismiss?: () => void;
   highlightPeek?: boolean;
+  stayExpandedUntilDismiss?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
 
   const expand = useCallback(() => setExpanded(true), []);
+  const collapse = useCallback(() => setExpanded(false), []);
+  const body = typeof children === "function" ? children({ expanded, collapse }) : children;
 
   useEffect(() => {
     if (ephemeral) {
@@ -73,10 +87,11 @@ export function CollapsibleNotificationRow({
       const dismissTimer = window.setTimeout(onEphemeralDismiss, expandedMs);
       return () => window.clearTimeout(dismissTimer);
     }
+    if (stayExpandedUntilDismiss) return;
     if (!expanded) return;
     const collapseTimer = window.setTimeout(() => setExpanded(false), expandedMs);
     return () => window.clearTimeout(collapseTimer);
-  }, [ephemeral, expanded, expandedMs, onEphemeralDismiss, rowKey]);
+  }, [ephemeral, expanded, expandedMs, onEphemeralDismiss, rowKey, stayExpandedUntilDismiss]);
 
   useEffect(() => {
     if (ephemeral || expanded || onPeekDismiss == null || peekDismissMs == null) return;
@@ -147,7 +162,7 @@ export function CollapsibleNotificationRow({
           lineHeight: wrapping ? 1.35 : undefined,
         }}
       >
-        {children}
+        {body}
       </div>
     </Panel>
   );

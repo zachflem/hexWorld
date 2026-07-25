@@ -353,8 +353,6 @@ export const tweaksSchema = z.object({
     reinforce_cost_multiplier: z.number(),
     /** How long the party waits at destination before auto-recall (virtual minutes). */
     arrival_decision_minutes: z.number(),
-    /** How long the arrival decision notification stays expanded (realtime ms). */
-    arrival_notification_expanded_ms: z.number(),
     _note: z.string(),
   }),
 
