@@ -1,8 +1,7 @@
 import type { DenRecord } from "./dens";
-import { axialKey, axialRing, isWithinMapBounds, type Axial } from "../engine/hexCoords";
-import { seededRandom } from "../engine/noise";
-import { terrainAt } from "../engine/terrain";
+import { axialKey, type Axial } from "../engine/hexCoords";
 import type { Tweaks } from "./tweaksSchema";
+import { placeFeatures } from "./featurePlacement";
 
 /** Coarse quadrant from a watchtower "distant signal" — guides wandering scouts, does not itself award a lab clue. */
 export type Compass4 = "north" | "east" | "south" | "west";
@@ -28,34 +27,33 @@ export interface LabRecord {
 
 export const LAB_DB_KEY = "lab";
 
+/** seed salt for placeFeatures — keep clear of dens / future scrap (#36) salts. */
+export const LAB_PLACEMENT_SALT = 9_999_999;
+
 /**
- * Deterministic single-tile placement — same spiral-candidate-then-pick
- * shape as data/dens.ts:createDens (seededRandom, no Math.random(), so the
- * same world seed always yields the same lab tile), starting the search at
- * lab.min_distance_from_base rather than dens' own (shorter) floor, and
- * excluding every den tile so the lab never doubles up with one. A distinct
- * seed offset (index 9_999_999 range) keeps this pick independent of
- * createDens's own seededRandom calls for the same seed.
+ * Deterministic single-tile lab placement via shared `placeFeatures` — farther
+ * than dens, never on a den tile, never water. Same seed → same lab.
  */
 export function createLab(seed: number, gridSize: number, base: Axial, dens: DenRecord[], tweaks: Tweaks): LabRecord {
   const { min_distance_from_base } = tweaks.lab;
-  const maxRadius = Math.floor(gridSize / 2);
   const denKeys = new Set(dens.map((d) => axialKey(d.coord)));
+  const maxRadius = Math.floor(gridSize / 2);
 
-  const candidates: Axial[] = [];
-  for (let radius = min_distance_from_base; radius <= maxRadius; radius++) {
-    for (const coord of axialRing(base, radius)) {
-      if (!isWithinMapBounds(coord, gridSize)) continue;
-      if (terrainAt(seed, coord) === "water") continue;
-      if (denKeys.has(axialKey(coord))) continue;
-      candidates.push(coord);
-    }
-    if (candidates.length >= 20) break;
-  }
+  const [coord] = placeFeatures({
+    seed,
+    gridSize,
+    salt: LAB_PLACEMENT_SALT,
+    count: 1,
+    minSeparation: 0,
+    anchors: [{ coords: [base], minDistance: min_distance_from_base }],
+    excludedKeys: denKeys,
+  });
 
   const fallback = { q: base.q + maxRadius, r: base.r };
-  const pickIndex = candidates.length > 0 ? Math.floor(seededRandom(seed, 9_999_999) * candidates.length) : 0;
-  const coord = candidates[pickIndex] ?? fallback;
-
-  return { coord, secured: false, cluesCollected: 0, watchtowerSignal: null };
+  return {
+    coord: coord ?? fallback,
+    secured: false,
+    cluesCollected: 0,
+    watchtowerSignal: null,
+  };
 }

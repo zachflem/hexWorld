@@ -29,7 +29,7 @@ A small group arrives in unfamiliar territory. They settle, and immediately clai
 
 ## 3. The World
 
-- **Grid:** procedurally seeded hex map — **48×48**, **96×96**, or **128×128** (chosen under onboarding advanced options; default 128). A seed value fully determines terrain, resources, **starting base location**, den placement, and lab location for that size — enables sharing/replaying seeds at the same map size.
+- **Grid:** procedurally seeded hex map — **32×32**, **64×64**, **96×96**, or **128×128** (chosen under onboarding advanced options; default **32**). A seed value fully determines terrain, resources, **starting base location**, den placement, and lab location for that size — enables sharing/replaying seeds at the same map size. Larger maps place more dens with wider spacing.
 - **Coordinate system:** tiles are stored/serialized as **axial coordinates (q, r)** — simple two-integer keys, natural for save files. Algorithms that need them (distance, range queries, horde pathing line-of-travel) convert to cube coordinates internally.
 - **Terrain types:** grassland, forest, mountain, shore, water — each restricts which structures can be built on it.
 - **Transition tiles:** procedurally occur where two terrain types border each other. Either terrain's structures can be built there, at half yield. The game never explains this — scouting one only returns a cryptic hint.
@@ -42,7 +42,7 @@ A small group arrives in unfamiliar territory. They settle, and immediately clai
 No login, no email, no account. On arrival, the player finds a short **field manual** — aged paper, in-world prose, not a terminal UI — and pages through it before play begins:
 
 1. **Cover** — title and hook.
-2. **Registration** — name, inline colour wheel, and (under **Show Advanced Options**, collapsed by default) **map size** (48×48 / 96×96 / 128×128 unless the profile sets `grid_size_locked`), difficulty profile, optional world seed (unless the profile sets `world_seed`), and recent seeds for replay. Profile tweaks take precedence for locked scenario fields.
+2. **Registration** — name, inline colour wheel, and (under **Show Advanced Options**, collapsed by default) **map size** (32×32 / 64×64 / 96×96 / 128×128 unless the profile sets `grid_size_locked`; default 32), difficulty profile, optional world seed (unless the profile sets `world_seed`), and recent seeds for replay. Profile tweaks take precedence for locked scenario fields.
 3. **Story pages** (four brief log entries) — settling the starting territory, how noise draws hordes, the rumoured hidden lab (securing it wins the run; clearing dens is valuable but not required), and a light in-fiction nudge before heading out.
 4. **Send-off** — closing line, then into the game.
 
@@ -64,7 +64,7 @@ Each resource has its own **storage cap**, upgraded independently via a tech-tre
 
 ## 6. Starting Territory
 
-The **base location** is chosen deterministically from the world seed near the geometric map center, scored to prefer a mixed starting footprint (forest / mountain / shore in the owned rings, not only open grassland). Harder local starts are allowed; the base is never on water, and the starting owned spiral stays in-bounds. Dens and lab placement remain relative to whatever base the seed selected.
+The **base location** is chosen deterministically from the world seed anywhere the starting owned spiral fits in-bounds — including toward corners and edges, not only near map center — scored to prefer a mixed starting footprint (forest / mountain / shore in the owned rings, not only open grassland). Harder local starts are allowed; the base is never on water. Dens and lab placement remain relative to whatever base the seed selected.
 
 The player owns their base tile plus the first two full rings around it (19 tiles total) **immediately, with no claiming action required** — this is their camp, not conquered ground. Starting resources are set so the player can build exactly one food, one wood, and one stone extraction tile right away, with a modest buffer left over.
 

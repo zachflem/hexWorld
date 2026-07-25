@@ -1,11 +1,12 @@
 import type { Tweaks } from "./tweaksSchema";
 import type { WorldRecord } from "./world";
 
-/** Onboarding map-size choices — must stay in sync with ROADMAP UX #10 / #P2. */
-export const MAP_SIZE_OPTIONS = [48, 96, 128] as const;
+/** Onboarding map-size choices — 32 default quick map through 128 epic. */
+export const MAP_SIZE_OPTIONS = [32, 64, 96, 128] as const;
 export type MapSizeOption = (typeof MAP_SIZE_OPTIONS)[number];
 
-export const DEFAULT_MAP_SIZE: MapSizeOption = 128;
+export const DEFAULT_MAP_SIZE: MapSizeOption = 32;
+/** Balance reference — dens count / distances in tweaks are authored for this size. */
 export const REFERENCE_MAP_SIZE = 128;
 
 export function isMapSizeOption(value: number): value is MapSizeOption {
@@ -50,14 +51,31 @@ export function resolveSeedForNewGame(
   return chosenFromOnboarding ?? randomSeed();
 }
 
-/** Linear scale from the 128×128 reference — used for den count, min distances, etc. */
+/** Linear scale from the 128×128 reference — used for den distances, separation, etc. */
 export function scaleToMapSize(value: number, gridSize: number, referenceSize = REFERENCE_MAP_SIZE): number {
   return Math.max(1, Math.round(value * (gridSize / referenceSize)));
 }
 
 /**
+ * Base den counts per onboarding map size (#68). `createDens` then rolls
+ * ±`DENS_COUNT_VARIANCE` from the seed so two 32×32 seeds can be 5–7 dens.
+ * Unknown sizes (legacy saves) fall back to linear scale from the 128 value.
+ */
+const DENS_COUNT_BY_MAP_SIZE: Partial<Record<number, number>> = {
+  32: 6,
+  64: 10,
+  96: 14,
+  128: 18,
+};
+
+/** Midpoint den count for a map size (before per-seed ±1 variance). */
+export function densCountForMapSize(gridSize: number, referenceCount: number): number {
+  return DENS_COUNT_BY_MAP_SIZE[gridSize] ?? scaleToMapSize(referenceCount, gridSize);
+}
+
+/**
  * World-gen tweaks for a chosen map size — grid bounds plus dens/lab distances
- * and count scaled so smaller maps stay paced, not just cropped.
+ * and count so smaller maps stay paced, not just cropped.
  */
 export function tweaksForMapSize(tweaks: Tweaks, gridSize: number): Tweaks {
   const scale = (n: number) => scaleToMapSize(n, gridSize);
@@ -66,7 +84,7 @@ export function tweaksForMapSize(tweaks: Tweaks, gridSize: number): Tweaks {
     game: { ...tweaks.game, grid_size: gridSize },
     dens: {
       ...tweaks.dens,
-      count: scale(tweaks.dens.count),
+      count: densCountForMapSize(gridSize, tweaks.dens.count),
       min_distance_from_base: scale(tweaks.dens.min_distance_from_base),
       max_relevant_distance: scale(tweaks.dens.max_relevant_distance),
       level_cap_by_distance: {

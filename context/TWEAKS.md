@@ -23,7 +23,7 @@ public/profiles/
 
 **How the app picks a profile:**
 - URL path on the game domain: `play.{domain}/{slug}` (e.g. `/hard`). Root `/` uses `default`.
-- Onboarding **Show Advanced Options** (collapsed by default): difficulty dropdown, map size (48/96/128), seed + recent seeds — unless the profile locks them (see **Game / world** below).
+- Onboarding **Show Advanced Options** (collapsed by default): difficulty dropdown, map size (32/64/96/128, default 32), seed + recent seeds — unless the profile locks them (see **Game / world** below).
 - `profileSlug` is persisted in IndexedDB with the save; continue/resume uses the saved profile.
 
 **Asset resolution** (`src/render/assetPaths.ts`): try `profiles/{active}/assets/…` → `profiles/default/assets/…` → flat-colour fallback.
@@ -49,13 +49,13 @@ Every profile file uses the **same schema** — difficulty is just different num
 
 | Key | Role |
 |-----|------|
-| `grid_size` | Reference width for balance tuning (128). Also the **forced** map size when `grid_size_locked` is true. |
+| `grid_size` | Default profile map width (32). Also the **forced** map size when `grid_size_locked` is true. Den/lab counts and distances still scale from a 128 reference in `mapSize.ts`. |
 | `grid_size_locked` | Optional. When `true`, onboarding map-size choice is ignored — use `grid_size` for authored scenarios. |
 | `world_seed` | Optional. When set, onboarding seed is ignored — fixed seed for authored scenarios. |
 | `tick_interval_seconds` | Engine tick interval. |
 | `resource_accumulation_precision_seconds` | Sub-tick accrual precision. |
 
-Player-chosen map size (when not locked) is stored on the save as `WorldRecord.gridSize`; den count and placement distances scale from the 128 reference via `src/data/mapSize.ts`.
+Player-chosen map size (when not locked) is stored on the save as `WorldRecord.gridSize`. Den **midpoint** counts are laddered (32→6, 64→10, 96→14, 128→18) via `densCountForMapSize`; each seed then rolls **±1** (`rollDensCount`) so a 32×32 map is 5–7 dens. Min distances and inter-den separation still scale from the 128 reference. Placement uses shared `src/data/featurePlacement.ts` (also intended for scrap stashes — #36).
 
 ---
 

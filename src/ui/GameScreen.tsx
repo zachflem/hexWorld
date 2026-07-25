@@ -142,7 +142,7 @@ import type { ScoutSkiffsRecord } from "../data/scoutSkiffs";
 import type { WanderingScoutsRecord } from "../data/wanderingScouts";
 import type { Tweaks } from "../data/tweaksSchema";
 import { resolveWorldGridSize } from "../data/mapSize";
-import type { WorldRecord } from "../data/world";
+import { generateSeed, type WorldRecord } from "../data/world";
 import type { BuildResult } from "../App";
 import {
   BASE_HEX_SIZE,
@@ -203,6 +203,7 @@ import {
   Archive,
   ArrowUpCircle,
   Binoculars,
+  Dices,
   EyeOff,
   Flag,
   FlaskConical,
@@ -3303,6 +3304,12 @@ export function GameScreen({
                   title: fogDisabled ? "Restore fog of war" : "Reveal map (dev — disable fog)",
                   active: fogDisabled,
                   onClick: () => setFogDisabled((v) => !v),
+                },
+                {
+                  key: "dev-new-seed",
+                  icon: <Dices size={20} />,
+                  title: "Dev — new game with a fresh random seed (same map size)",
+                  onClick: () => onStartNewSeed(generateSeed()),
                 },
               ]
             : []),

@@ -4,7 +4,16 @@ import stripJsonComments from "strip-json-comments";
 import { describe, expect, it } from "vitest";
 import { mapCenter } from "../engine/hexCoords";
 import { createDens } from "./dens";
-import { scaleToMapSize, tweaksForMapSize, resolveGridSizeForNewGame, resolveSeedForNewGame, isProfileGridSizeLocked, isProfileSeedLocked } from "./mapSize";
+import {
+  DEFAULT_MAP_SIZE,
+  MAP_SIZE_OPTIONS,
+  scaleToMapSize,
+  tweaksForMapSize,
+  resolveGridSizeForNewGame,
+  resolveSeedForNewGame,
+  isProfileGridSizeLocked,
+  isProfileSeedLocked,
+} from "./mapSize";
 import { tweaksSchema } from "./tweaksSchema";
 import { normalizeWorldRecord } from "./world";
 
@@ -13,38 +22,50 @@ function loadRealTweaks() {
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
+describe("map size options", () => {
+  it("offers 32/64/96/128 with default 32", () => {
+    expect([...MAP_SIZE_OPTIONS]).toEqual([32, 64, 96, 128]);
+    expect(DEFAULT_MAP_SIZE).toBe(32);
+  });
+});
+
 describe("scaleToMapSize", () => {
   it("scales linearly from the 128 reference", () => {
-    expect(scaleToMapSize(12, 128)).toBe(12);
-    expect(scaleToMapSize(12, 96)).toBe(9);
-    expect(scaleToMapSize(12, 48)).toBe(5);
-    expect(scaleToMapSize(14, 48)).toBe(5);
+    expect(scaleToMapSize(18, 128)).toBe(18);
+    expect(scaleToMapSize(14, 32)).toBe(4);
   });
 
   it("never returns below 1", () => {
-    expect(scaleToMapSize(1, 48)).toBe(1);
+    expect(scaleToMapSize(1, 32)).toBe(1);
   });
 });
 
 describe("tweaksForMapSize", () => {
-  it("sets grid_size and scales dens/lab distances", () => {
+  it("sets grid_size and uses the dens-count ladder", () => {
     const base = loadRealTweaks();
-    const scaled = tweaksForMapSize(base, 48);
-    expect(scaled.game.grid_size).toBe(48);
-    expect(scaled.dens.count).toBe(5);
+    const scaled = tweaksForMapSize(base, 32);
+    expect(scaled.game.grid_size).toBe(32);
+    expect(scaled.dens.count).toBe(6);
     expect(scaled.dens.min_distance_from_base).toBeLessThan(base.dens.min_distance_from_base);
     expect(scaled.lab.min_distance_from_base).toBeLessThan(base.lab.min_distance_from_base);
+  });
+
+  it("uses dens counts 6 / 10 / 14 / 18 for 32 / 64 / 96 / 128", () => {
+    const base = loadRealTweaks();
+    expect([32, 64, 96, 128].map((size) => tweaksForMapSize(base, size).dens.count)).toEqual([6, 10, 14, 18]);
   });
 });
 
 describe("createDens with scaled tweaks", () => {
-  it("places fewer dens on a 48×48 map", () => {
+  it("places fewer dens on a 32×32 map than on 128×128", () => {
     const tweaks = loadRealTweaks();
-    const base = mapCenter(48);
-    const scaled = tweaksForMapSize(tweaks, 48);
-    const dens = createDens(42, 48, base, scaled);
-    expect(dens.length).toBe(scaled.dens.count);
-    expect(dens.length).toBeLessThan(tweaks.dens.count);
+    const base32 = mapCenter(32);
+    const base128 = mapCenter(128);
+    const dens32 = createDens(42, 32, base32, tweaksForMapSize(tweaks, 32));
+    const dens128 = createDens(42, 128, base128, tweaksForMapSize(tweaks, 128));
+    expect(dens32.length).toBeLessThan(dens128.length);
+    expect(dens32.length).toBeGreaterThanOrEqual(5);
+    expect(dens32.length).toBeLessThanOrEqual(7);
   });
 });
 
@@ -60,10 +81,10 @@ describe("profile scenario overrides", () => {
   it("resolveGridSizeForNewGame prefers locked profile size", () => {
     const scenario = {
       ...base,
-      game: { ...base.game, grid_size: 48, grid_size_locked: true },
+      game: { ...base.game, grid_size: 64, grid_size_locked: true },
     };
     expect(isProfileGridSizeLocked(scenario)).toBe(true);
-    expect(resolveGridSizeForNewGame(scenario, 128)).toBe(48);
+    expect(resolveGridSizeForNewGame(scenario, 128)).toBe(64);
   });
 
   it("resolveGridSizeForNewGame uses onboarding when not locked", () => {

@@ -34,7 +34,7 @@
   // GAME / WORLD
   // --------------------------------------------------------------------------
   "game": {
-    "grid_size": 128,                 // reference map width; player picks 48/96/128 in onboarding unless grid_size_locked
+    "grid_size": 32,                  // default / reference authoring width; player picks 32/64/96/128 in onboarding unless grid_size_locked. Dens/lab distances scale from REFERENCE_MAP_SIZE 128 in mapSize.ts.
     // "grid_size_locked": true,       // scenario profiles: force grid_size, hide onboarding map-size picker
     // "world_seed": 12345,            // scenario profiles: force this seed, lock onboarding seed field
     "tick_interval_seconds": 10,      // server/client tick — resources & horde movement evaluated every 10s
@@ -609,7 +609,7 @@
   // --------------------------------------------------------------------------
   "dens": {
     "_status": "first pass, untested — placement + level only, pulled forward from Milestone 14 so Milestone 11 (horde spawning) has something real to spawn from and path against. Growth over time and the siege/assault/hold-period/outpost-conversion flow stay Milestone 14.",
-    "count": 12,
+    "count": 18,
     "min_distance_from_base": 14,
     "_min_distance_note": "Raised from 8 (2026-07-16 balance pass) — a fresh player's owned blob only reaches OWNED_RADIUS=2, so a den 8 out could send a horde across the remaining gap and into scored territory within a couple minutes of the very first spawn, well before a new player has a defense up. 14 buys real runway, and also softens proximity_factor for the nearest dens (clamp(1 - distance/max_relevant_distance) drops from 0.8 to 0.65 at min distance).",
     "max_level": 5,

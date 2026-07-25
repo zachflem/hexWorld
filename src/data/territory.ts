@@ -1,4 +1,4 @@
-import { axialRing, axialSpiral, isWithinMapBounds, mapCenter, type Axial } from "../engine/hexCoords";
+import { axialDistance, axialKey, axialRing, axialSpiral, isWithinMapBounds, mapCenter, type Axial } from "../engine/hexCoords";
 import { OWNED_RADIUS } from "../engine/fog";
 import { seededRandom } from "../engine/noise";
 import { terrainAt, type TerrainType } from "../engine/terrain";
@@ -12,12 +12,21 @@ export interface TerritoryRecord {
 
 export const TERRITORY_DB_KEY = "territory";
 
-/** Cap how far spawn can drift from map center so dens/lab still have runway. */
-const SPAWN_SEARCH_RADIUS_CAP = 24;
 /** Owned ring (19 tiles) must stay mostly dry land — shore-heavy starts stay playable. */
 const MIN_DRY_LAND_IN_OWNED = 15;
-/** Fixed index for seededRandom spawn tie-break (same style as dens/lab picks). */
+/** Fixed index for seededRandom spawn pick (same style as dens/lab salts). */
 const SPAWN_PICK_INDEX = 7_777_777;
+/**
+ * How far below the best biome score a candidate may sit and still compete.
+ * Wider slack → more geographic variety (corners/edges) while still preferring
+ * mixed biomes over pure grassland.
+ */
+const SPAWN_SCORE_SLACK = 15;
+/**
+ * Seeded samples across the full map (plus map center). Keeps spawn cheap on
+ * 128² while still reaching corners.
+ */
+const SPAWN_SAMPLE_COUNT = 120;
 
 /**
  * Geometric map center → nearest non-water tile. Used only as fallback when
@@ -87,22 +96,34 @@ function scoreSpawnCandidate(seed: number, base: Axial): number {
   return score;
 }
 
+/** Uniform seeded pick of a map tile (odd-r rectangle). */
+function sampleMapCoord(seed: number, gridSize: number, index: number): Axial {
+  const r = Math.floor(seededRandom(seed, index) * gridSize);
+  const col = Math.floor(seededRandom(seed, index + 10_000) * gridSize);
+  return { q: col - Math.floor(r / 2), r };
+}
+
 /**
- * Pick a base near map center that maximizes starting-biome mix (deterministic
- * from seed). Falls back to nearest non-water center tile if nothing scores.
+ * Pick a base from seeded full-map samples (including corners/edges), preferring
+ * competitive biome scores. Deterministic from seed.
  */
 function findBaseLocation(seed: number, gridSize: number): Axial {
   const center = mapCenter(gridSize);
-  const maxSearch = Math.min(SPAWN_SEARCH_RADIUS_CAP, Math.floor(gridSize / 4));
-
+  const seen = new Set<string>();
   const candidates: Axial[] = [];
-  for (let radius = 0; radius <= maxSearch; radius++) {
-    const ring = radius === 0 ? [center] : axialRing(center, radius);
-    for (const coord of ring) {
-      if (!isWithinMapBounds(coord, gridSize)) continue;
-      if (!isValidSpawnCandidate(seed, coord, gridSize)) continue;
-      candidates.push(coord);
-    }
+
+  const tryAdd = (coord: Axial) => {
+    const key = axialKey(coord);
+    if (seen.has(key)) return;
+    if (!isValidSpawnCandidate(seed, coord, gridSize)) return;
+    seen.add(key);
+    candidates.push(coord);
+  };
+
+  tryAdd(center);
+
+  for (let i = 0; i < SPAWN_SAMPLE_COUNT * 4 && candidates.length < SPAWN_SAMPLE_COUNT; i++) {
+    tryAdd(sampleMapCoord(seed, gridSize, SPAWN_PICK_INDEX + 1 + i * 2));
   }
 
   if (candidates.length === 0) {
@@ -110,14 +131,18 @@ function findBaseLocation(seed: number, gridSize: number): Axial {
   }
 
   let bestScore = -Infinity;
+  const scores = new Map<string, number>();
   for (const candidate of candidates) {
     const score = scoreSpawnCandidate(seed, candidate);
+    scores.set(axialKey(candidate), score);
     if (score > bestScore) bestScore = score;
   }
 
-  const top = candidates.filter((c) => scoreSpawnCandidate(seed, c) === bestScore);
-  const pickIndex = Math.floor(seededRandom(seed, SPAWN_PICK_INDEX) * top.length);
-  return top[Math.min(pickIndex, top.length - 1)];
+  const competitive = candidates.filter(
+    (c) => (scores.get(axialKey(c)) ?? -Infinity) >= bestScore - SPAWN_SCORE_SLACK,
+  );
+  const pickIndex = Math.floor(seededRandom(seed, SPAWN_PICK_INDEX) * competitive.length);
+  return competitive[Math.min(pickIndex, competitive.length - 1)]!;
 }
 
 /** Base + first two full rings (≤19 tiles), owned outright at game start — DESIGN.md §6. */
@@ -125,4 +150,9 @@ export function createStartingTerritory(seed: number, gridSize: number): Territo
   const base = findBaseLocation(seed, gridSize);
   const owned = ownedRing(base).filter((coord) => isWithinMapBounds(coord, gridSize));
   return { base, owned };
+}
+
+/** Axial distance from map center — used by tests / diagnostics for spawn spread. */
+export function spawnDistanceFromCenter(base: Axial, gridSize: number): number {
+  return axialDistance(base, mapCenter(gridSize));
 }

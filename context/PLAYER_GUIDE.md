@@ -11,7 +11,7 @@ This guide describes the game **as it currently plays**.
 When you first open the game (or choose **Start as a new player** after wiping progress), you'll page through a short **field manual** — cover, registration, a few story pages, then a send-off — before the map loads.
 
 On the registration page you'll enter a **name** and a **colour** (used to tint your base and territory outline on the map). Expand **Show Advanced Options** (collapsed by default) for:
-- **Map size** — 48×48 (quick run), 96×96, or 128×128 (default). Smaller maps have fewer dens and shorter distances; the same seed at different sizes is a different world. Custom difficulty profiles can **fix** map size (and seed) for authored scenarios — those fields show as read-only when locked.
+- **Map size** — 32×32 (default, quick run), 64×64, 96×96, or 128×128. Larger maps have more dens and wider spacing; the same seed at different sizes is a different world. Custom difficulty profiles can **fix** map size (and seed) for authored scenarios — those fields show as read-only when locked.
 - **Difficulty** — Standard (`default`) or Hard (`hard`); each profile changes balance numbers and may swap some sprites, with missing art falling back to Standard.
 - **Seed** — a number that fully determines the map layout, terrain, and everything on it. Leave it blank for a random map, or enter a specific number to replay a map you (or someone else) has seen before; the same seed always generates the exact same world.
 - **Recent seeds** — your last five seeds, for quick replay.
@@ -46,7 +46,7 @@ The top-left resource bar shows stockpile amounts; a small green/red **±** next
 
 ## The world
 
-- The map is a procedurally generated hex grid (**48×48**, **96×96**, or **128×128** — chosen in advanced registration; default 128), seeded from your world seed.
+- The map is a procedurally generated hex grid (**32×32**, **64×64**, **96×96**, or **128×128** — chosen in advanced registration; default 32), seeded from your world seed.
 - **Terrain types:** grassland, forest, mountain, shore, and water. Each restricts what you can build there.
 - **Transition tiles** occur where two terrain types border each other — either terrain's structures can be built there, but at **half yield**. The game won't tell you this outright; scouting one only gives a cryptic hint that "something's different" about it.
 - **Fog of war:** you start with full visibility of your own territory. Beyond that, visibility fades in rings — heavily shaded just past your border, barely visible past that, and fully hidden further out. Scouted tiles reveal themselves the same way owned tiles do, but stay visually distinct (it's knowledge, not ownership).

@@ -4,7 +4,7 @@ import stripJsonComments from "strip-json-comments";
 import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
 import type { ScoutSkiffRecord } from "../data/scoutSkiffs";
-import { axialKey, axialNeighbors, axialSpiral, type Axial } from "./hexCoords";
+import { axialKey, axialNeighbors, type Axial } from "./hexCoords";
 import { terrainAt } from "./terrain";
 import { advanceScoutSkiffs } from "./scoutSkiffs";
 
@@ -15,14 +15,17 @@ function loadRealTweaks() {
 
 const gridSize = 128;
 
-/** A water tile with at least one water neighbor, so a skiff spawned there can actually move. */
+/** A water tile with ≥2 water neighbors (open water), so a skiff can actually wander. */
 function findWaterCoord(seed: number): Axial {
-  for (const coord of axialSpiral({ q: 64, r: 64 }, 40)) {
-    if (terrainAt(seed, coord) === "water" && axialNeighbors(coord).some((n) => terrainAt(seed, n) === "water")) {
-      return coord;
+  for (let r = 0; r < gridSize; r++) {
+    for (let col = 0; col < gridSize; col++) {
+      const coord: Axial = { q: col - Math.floor(r / 2), r };
+      if (terrainAt(seed, coord) !== "water") continue;
+      const waterNeighbors = axialNeighbors(coord).filter((n) => terrainAt(seed, n) === "water");
+      if (waterNeighbors.length >= 2) return coord;
     }
   }
-  throw new Error("no suitable water coord found near map center for this seed");
+  throw new Error("no suitable open-water coord found for this seed");
 }
 
 function makeSkiff(coord: Axial, overrides: Partial<ScoutSkiffRecord> = {}): ScoutSkiffRecord {
