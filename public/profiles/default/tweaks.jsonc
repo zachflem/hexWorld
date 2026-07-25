@@ -347,8 +347,8 @@
       "cost": { "food": 300, "wood": 200 },
       "max_per_barracks": 1,
       "seconds_per_step": 5,
-      "build_time_minutes": 9,
-      "_note": "Land counterpart of the water-bound scout skiff (docks.scout_skiff) — built at a Barracks for a flat resource cost equal to 10× the old one-shot scout train_cost (300 food + 200 wood). No scout stockpile / retire gate (#76). Wanders randomly across connected land at one tile per seconds_per_step, revealing every tile it visits (engine/wanderingScouts.ts). Capped at max_per_barracks per barracks. build_time_minutes kept from the prior mid-tier timer; tune later if still too late."
+      "build_time_minutes": 5,
+      "_note": "Land counterpart of the water-bound scout skiff (docks.scout_skiff) — built at a Barracks for a flat resource cost equal to 10× the old one-shot scout train_cost (300 food + 200 wood). No scout stockpile / retire gate (#76). Wanders randomly across connected land at one tile per seconds_per_step, revealing every tile it visits (engine/wanderingScouts.ts). Capped at max_per_barracks per barracks. build_time_minutes lowered 9→5 (2026-07-25 pacing)."
     },
     "_desertion_note": "If food can't cover total upkeep for a tick's elapsed time, food is clamped at 0 and exactly one unit deserts (lowest-upkeep-priority standing unit first: militia, then junkyard knight, then cross-bow sniper) — a simple first-pass penalty, not proportional to the shortfall size.",
     "_upkeep_balance_note": "CORRECTION (2026-07-21 balance pass, playtesting feedback: food reserves sat permanently full). upkeep_food_per_min raised roughly 10x across standing unit types, then walked back to roughly 7x (militia 5->3.5, junkyard_knight 8->5.5, cross_bow_sniper 10->7). Stockpile scout upkeep removed with the unit (#76). First pass at these numbers, still subject to further tuning."

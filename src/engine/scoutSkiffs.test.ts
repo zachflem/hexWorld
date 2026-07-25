@@ -26,7 +26,16 @@ function findWaterCoord(seed: number): Axial {
 }
 
 function makeSkiff(coord: Axial, overrides: Partial<ScoutSkiffRecord> = {}): ScoutSkiffRecord {
-  return { id: "skiff-1", coord, homeDockCoord: coord, prevCoord: null, spawnedAt: 0, buildStartedAt: null, ...overrides };
+  return {
+    id: "skiff-1",
+    coord,
+    homeDockCoord: coord,
+    prevCoord: null,
+    spawnedAt: 0,
+    buildStartedAt: null,
+    stepProgressSeconds: 0,
+    ...overrides,
+  };
 }
 
 /** Runs `steps` single-step advances, threading skiff/scoutedTiles state through, and returns the recorded coord path (including the start). */
@@ -108,15 +117,36 @@ describe("advanceScoutSkiffs", () => {
     const seed = 5;
     const start = findWaterCoord(seed);
     const skiffs = [makeSkiff(start)];
+    const stepSec = tweaks.docks.scout_skiff.seconds_per_step;
 
     const zero = advanceScoutSkiffs(tweaks, skiffs, [], seed, gridSize, 0);
     expect(zero.skiffs).toBe(skiffs);
 
-    const subStep = advanceScoutSkiffs(tweaks, skiffs, [], seed, gridSize, tweaks.docks.scout_skiff.seconds_per_step - 1);
-    expect(subStep.skiffs).toBe(skiffs);
+    const subStep = advanceScoutSkiffs(tweaks, skiffs, [], seed, gridSize, stepSec - 1);
+    expect(axialKey(subStep.skiffs[0].coord)).toBe(axialKey(start));
+    expect(subStep.skiffs[0].stepProgressSeconds).toBe(stepSec - 1);
+    expect(subStep.scoutedTiles).toEqual([]);
 
     const noSkiffs = advanceScoutSkiffs(tweaks, [], [], seed, gridSize, 100);
     expect(noSkiffs.skiffs).toEqual([]);
+  });
+
+  it("accumulates live 1s ticks into a step (regression: floor(1/seconds_per_step) discarded progress)", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findWaterCoord(seed);
+    const stepSec = tweaks.docks.scout_skiff.seconds_per_step;
+    let skiffs = [makeSkiff(start)];
+
+    for (let i = 0; i < stepSec - 1; i++) {
+      const mid = advanceScoutSkiffs(tweaks, skiffs, [], seed, gridSize, 1);
+      skiffs = mid.skiffs;
+      expect(axialKey(skiffs[0].coord)).toBe(axialKey(start));
+    }
+
+    const result = advanceScoutSkiffs(tweaks, skiffs, [], seed, gridSize, 1);
+    expect(axialKey(result.skiffs[0].coord)).not.toBe(axialKey(start));
+    expect(result.skiffs[0].stepProgressSeconds).toBe(0);
   });
 
   it("does not move or scout a skiff still under construction (buildStartedAt set)", () => {

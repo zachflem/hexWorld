@@ -190,7 +190,7 @@ Added during playtesting — not in the original design pass, see `DESIGN.md` §
 - Noise: build 5 (`build_scout_skiff`).
 
 **Wandering Scout (land counterpart, built at a Barracks):**
-- Capped at `units.wandering_scout.max_per_barracks` (1) per barracks. Flat resource cost **300 food + 200 wood** (10× the retired one-shot scout `train_cost`) and a 9-minute build timer. Stockpile scouts / `scout_cost` retire gate removed (#76) so auto-exploration unlocks earlier.
+- Capped at `units.wandering_scout.max_per_barracks` (1) per barracks. Flat resource cost **300 food + 200 wood** (10× the retired one-shot scout `train_cost`) and a 5-minute build timer (lowered from 9, 2026-07-25 pacing). Stockpile scouts / `scout_cost` retire gate removed (#76) so auto-exploration unlocks earlier.
 - Same movement rule as the Scout Skiff (one tile per `seconds_per_step`, excludes its last tile when another option exists), except confined to non-water terrain instead of water. Doesn't move (or scout) until its build timer completes. Moves twice as fast as the Scout Skiff — `seconds_per_step` 5s vs skiff 10s.
 - Noise: build 8 (`build_wandering_scout`).
 
