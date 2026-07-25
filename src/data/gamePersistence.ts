@@ -18,6 +18,7 @@ import { STORAGE_UPGRADES_DB_KEY } from "./storageUpgrades";
 import { NOISE_DB_KEY } from "./noise";
 import { DENS_DB_KEY } from "./dens";
 import { SCRAP_STASHES_DB_KEY } from "./scrapStashes";
+import { SCRAP_YARDS_DB_KEY } from "./scrapYards";
 import { HORDES_DB_KEY } from "./hordes";
 import { EXPEDITIONS_DB_KEY } from "./expeditions";
 import { GAME_STATUS_DB_KEY } from "./gameStatus";
@@ -59,6 +60,7 @@ const GAME_DB_KEYS = [
   NOISE_DB_KEY,
   DENS_DB_KEY,
   SCRAP_STASHES_DB_KEY,
+  SCRAP_YARDS_DB_KEY,
   HORDES_DB_KEY,
   EXPEDITIONS_DB_KEY,
   GAME_STATUS_DB_KEY,
@@ -111,6 +113,7 @@ export type PersistableGameSnapshot = {
   noise: unknown;
   dens: unknown;
   scrapStashes: unknown;
+  scrapYards: unknown;
   hordes: unknown;
   expeditions: unknown;
   gameStatus: unknown;
@@ -150,6 +153,7 @@ export type StoredGameKeys = {
   noise: unknown;
   dens: unknown;
   scrapStashes: unknown;
+  scrapYards: unknown;
   hordes: unknown;
   expeditions: unknown;
   gameStatus: unknown;
@@ -202,6 +206,7 @@ export function snapshotToKeys(game: PersistableGameSnapshot, profileSlug: strin
     [NOISE_DB_KEY]: game.noise,
     [DENS_DB_KEY]: game.dens,
     [SCRAP_STASHES_DB_KEY]: game.scrapStashes,
+    [SCRAP_YARDS_DB_KEY]: game.scrapYards,
     [HORDES_DB_KEY]: game.hordes,
     [EXPEDITIONS_DB_KEY]: game.expeditions,
     [GAME_STATUS_DB_KEY]: game.gameStatus,
@@ -263,6 +268,7 @@ export function keysToStoredGame(keys: SaveFileV1["keys"], profileSlugFallback?:
     noise: keys[NOISE_DB_KEY],
     dens: keys[DENS_DB_KEY],
     scrapStashes: keys[SCRAP_STASHES_DB_KEY],
+    scrapYards: keys[SCRAP_YARDS_DB_KEY],
     hordes: keys[HORDES_DB_KEY],
     expeditions: keys[EXPEDITIONS_DB_KEY],
     gameStatus: keys[GAME_STATUS_DB_KEY],

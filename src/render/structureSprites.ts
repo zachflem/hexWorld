@@ -49,6 +49,18 @@ export function powerStationVariantStem(level: number): string {
   return "power-small";
 }
 
+/** Scrap Yard art — dedicated stems first, then steel extraction tiers as fallback. */
+export function scrapYardSpriteCandidates(level: number): string[] {
+  const tier = level >= 3 ? "large" : level === 2 ? "mid" : "small";
+  return [`scrap-yard-${level}`, "scrap-yard", `steel-${tier}`];
+}
+
+export function scrapYardVariantStem(level: number): string {
+  if (level >= 3) return "scrap-yard-3";
+  if (level === 2) return "scrap-yard-2";
+  return "scrap-yard-1";
+}
+
 /**
  * Flatten structure name candidates into profile→default URL order:
  * for ["tower-2", "tower"] on hard → hard/tower-2, default/tower-2, hard/tower, default/tower.

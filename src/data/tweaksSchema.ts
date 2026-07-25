@@ -101,6 +101,7 @@ export const tweaksSchema = z.object({
       wall: z.number(),
       barracks: z.number(),
       dock: z.number(),
+      scrap_yard: z.number(),
     }),
     noise_build: z.number(),
     noise_upgrade: z.number(),
@@ -410,6 +411,22 @@ export const tweaksSchema = z.object({
       mountain: z.number(),
     }),
     wandering_scout_sample_steel: z.number(),
+  }),
+
+  scrap_yards: z.object({
+    _status: z.string(),
+    build_cost_base: resourceCostMap,
+    build_cost_scaling: z.string(),
+    build_time_minutes: z.number(),
+    max_level: z.number(),
+    max_level_shipped: z.number(),
+    noise_passive_per_level: z.number(),
+    scrapper: z.object({
+      /** Index by yard level; [0] unused. */
+      capacity_by_level: z.array(z.number()),
+      speed_multiplier_by_level: z.array(z.number()),
+      auto_next_stash_min_level: z.number(),
+    }),
   }),
 
   outposts: z.object({

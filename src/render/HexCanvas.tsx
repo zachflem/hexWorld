@@ -22,6 +22,8 @@ import { outpostReinforcementHp } from "../engine/outposts";
 import { powerStationAoeRadius } from "../engine/power";
 import type { ExtractionTile } from "../data/extractionTiles";
 import type { PowerStation } from "../data/powerStations";
+import type { ScrapYardRecord } from "../data/scrapYards";
+import { scrapperWorldCoord } from "../engine/scrappers";
 import type { ResourceType } from "../data/resources";
 import type { Tower } from "../data/towers";
 import type { Wall, WallTier } from "../data/walls";
@@ -58,6 +60,8 @@ import {
   extractionTierCandidates,
   powerStationSpriteCandidates,
   powerStationVariantStem,
+  scrapYardSpriteCandidates,
+  scrapYardVariantStem,
   structureLevelCandidates,
   structureLevelName,
 } from "./structureSprites";
@@ -194,6 +198,7 @@ const RESOURCE_MARKER_COLORS: Record<ResourceType, string> = {
 };
 
 const POWER_STATION_COLOR = "#f2f2f2";
+const SCRAP_YARD_COLOR = "#8a8f98";
 const POWER_AOE_TINT_SELECTED = "rgba(255, 220, 80, 0.18)";
 
 /** getStructureIconTexture names for each wall tier's sprite (tiles/structures/wall-{small,medium,large}.png) — falls back to WALL_TIER_COLORS's flat dot until/unless a given sprite is missing. Exported so UI can reuse the same sprite for wall build/upgrade actions. */
@@ -280,6 +285,7 @@ export const HexCanvas = forwardRef<
     walls: Wall[];
     barracksList: Barracks[];
     powerStations: PowerStation[];
+    scrapYards: ScrapYardRecord[];
     garrisons: GarrisonsRecord;
     scoutedTiles: Axial[];
     /** Hidden lab + clue progress — drives the final-clue search-zone highlight. */
@@ -370,6 +376,7 @@ export const HexCanvas = forwardRef<
     walls,
     barracksList,
     powerStations,
+    scrapYards,
     garrisons,
     scoutedTiles,
     lab,
@@ -426,6 +433,11 @@ export const HexCanvas = forwardRef<
     for (const station of powerStations) map.set(axialKey(station.coord), station);
     return map;
   }, [powerStations]);
+  const scrapYardsByKey = useMemo(() => {
+    const map = new Map<string, ScrapYardRecord>();
+    for (const yard of scrapYards) map.set(axialKey(yard.coord), yard);
+    return map;
+  }, [scrapYards]);
   const garrisonsByKey = useMemo(() => {
     const map = new Map<string, number>();
     for (const g of garrisons) map.set(axialKey(g.coord), g.militiaCount + g.junkyardKnightCount + g.crossBowSniperCount);
@@ -495,6 +507,16 @@ export const HexCanvas = forwardRef<
     }
     return map;
   }, [expeditions, now]);
+  // In-flight Scrapper positions — same interpolation as expeditions.
+  const scrappersByKey = useMemo(() => {
+    const map = new Map<string, ScrapYardRecord>();
+    for (const yard of scrapYards) {
+      const trip = yard.scrapper;
+      if (!trip || trip.phase === "idle" || trip.path.length === 0) continue;
+      map.set(axialKey(scrapperWorldCoord(yard, now)), yard);
+    }
+    return map;
+  }, [scrapYards, now]);
   // Destination of an in-flight den assault (data/denAssaults.ts) — same
   // "where is this headed" corner badge as expeditionTargetKeys above.
   const denAssaultTargetKeys = useMemo(() => {
@@ -1048,6 +1070,7 @@ export const HexCanvas = forwardRef<
             const wall = wallsByKey.get(axialKey(coord));
             const barracks = barracksByKey.get(axialKey(coord));
             const powerStation = powerStationsByKey.get(axialKey(coord));
+            const scrapYard = scrapYardsByKey.get(axialKey(coord));
             const tile = tilesByKey.get(axialKey(coord));
             const den = densByKey.get(axialKey(coord));
             const outpost = outpostsByKey.get(axialKey(coord));
@@ -1150,6 +1173,33 @@ export const HexCanvas = forwardRef<
               drawLevelBadge(
                 screenCenter,
                 powerStation.level,
+                upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
+              );
+            } else if (scrapYard) {
+              const yardIcon = scrapYard.buildStartedAt
+                ? getStructureIconTexture("construction")
+                : getStructureIconTextureCandidates(scrapYardSpriteCandidates(scrapYard.level));
+              if (yardIcon) {
+                drawPlacedStructureIcon(
+                  ctx,
+                  yardIcon,
+                  screenCenter.x,
+                  screenCenter.y,
+                  size,
+                  scrapYard.buildStartedAt ? "construction" : "scrapYard",
+                  scrapYard.buildStartedAt ? null : scrapYardVariantStem(scrapYard.level),
+                );
+              } else {
+                ctx.beginPath();
+                ctx.arc(screenCenter.x, screenCenter.y, size * 0.4, 0, Math.PI * 2);
+                ctx.fillStyle = SCRAP_YARD_COLOR;
+                ctx.fill();
+                ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+                ctx.stroke();
+              }
+              drawLevelBadge(
+                screenCenter,
+                scrapYard.level,
                 upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
               );
             } else if (barracks) {
@@ -1284,7 +1334,7 @@ export const HexCanvas = forwardRef<
             // isn't working right now" reads at a glance, not just from the
             // tile popup's text. Docks are immune to horde capture, so
             // they're deliberately excluded here.
-            if (tower?.damaged || wall?.damaged || barracks?.damaged || tile?.damaged || powerStation?.damaged) {
+            if (tower?.damaged || wall?.damaged || barracks?.damaged || tile?.damaged || powerStation?.damaged || scrapYard?.damaged) {
               ctx.font = `${Math.max(10, size * 0.55)}px sans-serif`;
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
@@ -1323,6 +1373,25 @@ export const HexCanvas = forwardRef<
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
               ctx.fillText("🚶", screenCenter.x, screenCenter.y);
+            }
+          }
+
+          // In-flight Scrapper haul — cargo > 0 uses scrapper-2 (loaded), else
+          // scrapper-1 / level-based scrapper-N.
+          const scrapperYard = scrappersByKey.get(coordKey);
+          if (scrapperYard?.scrapper) {
+            const cargo = scrapperYard.scrapper.cargo;
+            const levelStem = `scrapper-${Math.max(1, Math.min(5, scrapperYard.level))}`;
+            const scrapperIcon =
+              getUnitIconTexture(cargo > 0 ? "scrapper-2" : "scrapper-1") ??
+              getUnitIconTexture(levelStem);
+            if (scrapperIcon) {
+              drawImageAtWidth(ctx, scrapperIcon, screenCenter.x, screenCenter.y, size);
+            } else {
+              ctx.font = `${Math.max(10, size * 0.55)}px sans-serif`;
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(cargo > 0 ? "🏗️" : "🛠️", screenCenter.x, screenCenter.y);
             }
           }
 
@@ -1546,6 +1615,7 @@ export const HexCanvas = forwardRef<
     wallsByKey,
     barracksByKey,
     powerStationsByKey,
+    scrapYardsByKey,
     garrisonsByKey,
     densByKey,
     scrapStashesByKey,
@@ -1553,6 +1623,7 @@ export const HexCanvas = forwardRef<
     docksByKey,
     scoutSkiffsByKey,
     wanderingScoutsByKey,
+    scrappersByKey,
     selectedTowerRangeKeys,
     selectedPowerAoeKeys,
     selectedGarrisonRangeKeys,

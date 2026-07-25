@@ -3,6 +3,7 @@ import type { DockRecord } from "../data/docks";
 import type { ExtractionTile } from "../data/extractionTiles";
 import { MAX_POWER_STATION_LEVEL, type PowerStation } from "../data/powerStations";
 import type { ResourceType } from "../data/resources";
+import type { ScrapYardRecord } from "../data/scrapYards";
 import type { Tower } from "../data/towers";
 import type { Tweaks } from "../data/tweaksSchema";
 import type { Wall } from "../data/walls";
@@ -11,7 +12,7 @@ import { axialKey, axialSpiral, type Axial } from "./hexCoords";
 import { extractionTierLevel } from "./tiers";
 import { WALL_TIER_LEVEL } from "./walls";
 
-export type PowerConsumerKind = "extraction" | "tower" | "wall" | "barracks" | "dock";
+export type PowerConsumerKind = "extraction" | "tower" | "wall" | "barracks" | "dock" | "scrap_yard";
 
 export type StructurePowerState = "exempt" | "full" | "degraded" | "offline";
 
@@ -101,6 +102,7 @@ export function totalPowerDraw(
   walls: Wall[],
   barracksList: Barracks[],
   _docks: DockRecord[],
+  scrapYards: ScrapYardRecord[] = [],
 ): number {
   let draw = 0;
 
@@ -126,7 +128,11 @@ export function totalPowerDraw(
     if (barracks.level < 2 || !powered.has(axialKey(barracks.coord))) continue;
     draw += consumerDraw(tweaks, "barracks", barracks.level);
   }
-  // Docks have no level/tier upgrades today — always L1 (exempt, no draw).
+  for (const yard of scrapYards) {
+    if (!isStructureActive(yard)) continue;
+    if (yard.level < 2 || !powered.has(axialKey(yard.coord))) continue;
+    draw += consumerDraw(tweaks, "scrap_yard", yard.level);
+  }
 
   return draw;
 }
@@ -144,10 +150,11 @@ export function computePowerNetwork(
   walls: Wall[],
   barracksList: Barracks[],
   docks: DockRecord[],
+  scrapYards: ScrapYardRecord[] = [],
 ): PowerNetworkSnapshot {
   const powered = poweredTiles(stations, tweaks);
   const capacity = totalPowerCapacity(stations, tweaks);
-  const draw = totalPowerDraw(tweaks, powered, extractionTiles, towers, walls, barracksList, docks);
+  const draw = totalPowerDraw(tweaks, powered, extractionTiles, towers, walls, barracksList, docks, scrapYards);
   const cutoff = tweaks.power.cutoff_factor;
   return {
     poweredTiles: powered,

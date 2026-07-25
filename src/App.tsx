@@ -57,6 +57,7 @@ import {
   scrapStashBlocksHex,
   type ScrapStashesRecord,
 } from "./data/scrapStashes";
+import { idleScrapperTrip, SCRAP_YARDS_DB_KEY, type ScrapYardsRecord } from "./data/scrapYards";
 import { LAB_DB_KEY, createLab, type LabRecord } from "./data/lab";
 import { LAB_ASSAULTS_DB_KEY, type LabAssaultRecord, type LabAssaultsRecord } from "./data/labAssaults";
 import { GARRISON_RECALLS_DB_KEY, type GarrisonRecallRecord, type GarrisonRecallsRecord } from "./data/garrisonRecalls";
@@ -180,6 +181,16 @@ import {
   dockUpgradeDurationMs,
   nextDockLevel,
 } from "./engine/docks";
+import {
+  advanceScrapYardCouriers,
+  collectScrapYard,
+  nextScrapYardLevel,
+  scrapYardBuildCost,
+  scrapYardBuildDurationMs,
+  scrapYardUpgradeCost,
+  scrapYardUpgradeDurationMs,
+} from "./engine/scrapYards";
+import { advanceScrappers, assignScrapperStash, recallScrapperToYard } from "./engine/scrappers";
 import { advanceScoutSkiffs } from "./engine/scoutSkiffs";
 import { advanceWanderingScouts } from "./engine/wanderingScouts";
 import { nextTowerLevel, towerBuildCost, towerBuildDurationMs, towerUpgradeCost, towerUpgradeDurationMs } from "./engine/towers";
@@ -250,6 +261,7 @@ interface GameState {
   noise: NoiseRecord;
   dens: DensRecord;
   scrapStashes: ScrapStashesRecord;
+  scrapYards: ScrapYardsRecord;
   hordes: HordesRecord;
   expeditions: ExpeditionsRecord;
   gameStatus: GameStatusRecord;
@@ -376,6 +388,7 @@ function buildGameState(
     noise: NoiseRecord | undefined;
     dens: DenRecord[] | undefined;
     scrapStashes: ScrapStashesRecord | undefined;
+    scrapYards: ScrapYardsRecord | undefined;
     hordes: HordesRecord | undefined;
     expeditions: ExpeditionsRecord | undefined;
     gameStatus: GameStatusRecord | undefined;
@@ -434,6 +447,12 @@ function buildGameState(
   const barracksList = (migratedPower.barracksList ?? []) as Barracks[];
   const docks = (migratedPower.docks ?? []) as DocksRecord;
   const powerStations = migratedPower.powerStations;
+  // Old yards may lack `scrapper`; ready yards get an idle trip (Q63).
+  const scrapYards = (data.scrapYards ?? []).map((y) => {
+    if (y.scrapper !== undefined && y.scrapper !== null) return y;
+    if (y.scrapperReady) return { ...y, scrapper: idleScrapperTrip() };
+    return { ...y, scrapper: null };
+  });
   // One-shot heal for saves that lost fog when hordes stripped ownership:
   // any damaged structure implies the tile was held/known — keep it scouted.
   const scoutedTiles = preserveCapturedTilesAsScouted(data.scoutedTiles ?? [], [
@@ -442,6 +461,7 @@ function buildGameState(
     ...walls,
     ...barracksList,
     ...powerStations,
+    ...scrapYards,
   ]
     .filter((s) => s.damaged)
     .map((s) => s.coord));
@@ -465,6 +485,7 @@ function buildGameState(
     noise: data.noise ?? initialNoise(tweaks),
     dens: resolvedDens,
     scrapStashes,
+    scrapYards,
     hordes: data.hordes ?? [],
     expeditions: (data.expeditions ?? []).map((e) => normalizeExpedition(e)),
     gameStatus: { ...initialGameStatus(), ...data.gameStatus },
@@ -539,7 +560,7 @@ function resolveConstruction<T extends { buildStartedAt?: number | null }>(
   return { ...structure, buildStartedAt: null };
 }
 
-/** Every owned tile can hold at most one structure of any kind (extraction, tower, wall, barracks, dock, or power station). */
+/** Every owned tile can hold at most one structure of any kind (extraction, tower, wall, barracks, dock, power station, or scrap yard). */
 function isHexOccupied(game: GameState, coord: Axial): boolean {
   const key = axialKey(coord);
   return (
@@ -549,6 +570,7 @@ function isHexOccupied(game: GameState, coord: Axial): boolean {
     game.barracksList.some((t) => axialKey(t.coord) === key) ||
     game.docks.some((t) => axialKey(t.coord) === key) ||
     game.powerStations.some((t) => axialKey(t.coord) === key) ||
+    game.scrapYards.some((t) => axialKey(t.coord) === key) ||
     scrapStashBlocksHex(game.scrapStashes, coord)
   );
 }
@@ -650,6 +672,7 @@ export default function App() {
           noise,
           dens,
           scrapStashes,
+          scrapYards,
           hordes,
           expeditions,
           gameStatus,
@@ -686,6 +709,7 @@ export default function App() {
           get<NoiseRecord>(NOISE_DB_KEY),
           get<DensRecord>(DENS_DB_KEY),
           get<ScrapStashesRecord>(SCRAP_STASHES_DB_KEY),
+          get<ScrapYardsRecord>(SCRAP_YARDS_DB_KEY),
           get<HordesRecord>(HORDES_DB_KEY),
           get<ExpeditionsRecord>(EXPEDITIONS_DB_KEY),
           get<GameStatusRecord>(GAME_STATUS_DB_KEY),
@@ -728,6 +752,7 @@ export default function App() {
             noise,
             dens,
             scrapStashes,
+            scrapYards,
             hordes,
             expeditions,
             gameStatus,
@@ -802,6 +827,7 @@ export default function App() {
         current.game.walls,
         current.game.barracksList,
         current.game.docks,
+        current.game.scrapYards,
       );
       {
         const { next, alerts } = reconcilePowerAlerts(
@@ -858,13 +884,26 @@ export default function App() {
         current.game.scoutedTiles,
         economyGridSize,
       );
+      const { resources: producedResourcesWithYards, scrapYards: scrapYardsAfterCourier } =
+        advanceScrapYardCouriers(
+          current.tweaks,
+          current.game.scrapYards,
+          producedResourcesWithDocks,
+          current.game.storageLevels,
+          virtualNow,
+          current.game.world.seed,
+          current.game.territory.base,
+          current.game.territory,
+          current.game.scoutedTiles,
+          economyGridSize,
+        );
       const { food: foodAfterUpkeep, units: unitsAfterUpkeep } = applyUpkeepTick(
         current.tweaks,
         current.game.units,
-        producedResourcesWithDocks.food,
+        producedResourcesWithYards.food,
         elapsedSeconds,
       );
-      let resources = { ...producedResourcesWithDocks, food: foodAfterUpkeep };
+      let resources = { ...producedResourcesWithYards, food: foodAfterUpkeep };
       const noise: NoiseRecord = {
         value: accrueNoise(
           current.tweaks,
@@ -876,6 +915,7 @@ export default function App() {
           current.game.base.level,
           current.game.powerStations,
           powerNetwork,
+          current.game.scrapYards,
         ),
       };
       const clock: ClockRecord = { lastTickAt: now, virtualNow };
@@ -944,6 +984,23 @@ export default function App() {
         )
         .map((s) => resolveDamageRepair(s, current.tweaks, virtualNow))
         .map((s) => resolveConstruction(s, powerStationBuildDurationMs(current.tweaks), virtualNow));
+      let scrapYards = scrapYardsAfterCourier
+        .map((y) =>
+          y.upgrade &&
+          isTimerComplete(
+            y.upgrade.startedAt,
+            scrapYardUpgradeDurationMs(current.tweaks, y.upgrade.targetLevel as 2 | 3),
+            virtualNow,
+          )
+            ? { ...y, level: y.upgrade.targetLevel, upgrade: null }
+            : y,
+        )
+        .map((y) => resolveDamageRepair(y, current.tweaks, virtualNow))
+        .map((y) => {
+          if (y.buildStartedAt == null) return y;
+          if (!isTimerComplete(y.buildStartedAt, scrapYardBuildDurationMs(current.tweaks), virtualNow)) return y;
+          return { ...y, buildStartedAt: null, scrapperReady: true, scrapper: idleScrapperTrip() };
+        });
       let barracksList = current.game.barracksList
         .map((b) =>
           b.upgrade &&
@@ -1060,7 +1117,7 @@ export default function App() {
 
       const {
         scouts: wanderingScouts,
-        scoutedTiles,
+        scoutedTiles: scoutedTilesAfterWander,
         clueAwarded: wanderingClueAwarded,
       } = advanceWanderingScouts(
         current.tweaks,
@@ -1100,6 +1157,22 @@ export default function App() {
           message: `New lab clue (${labWorking.cluesCollected}/${current.tweaks.lab_clues.total_clues}): ${clueText}`,
         });
       }
+
+      // Scrapper yard↔stash hauls (after yard construction + scrap samples).
+      const scrapperAdvance = advanceScrappers(
+        current.tweaks,
+        current.game.world.seed,
+        scrapYards,
+        scrapStashes,
+        territoryAfterRelocation,
+        scoutedTilesAfterWander,
+        economyGridSize,
+        virtualNow,
+      );
+      scrapYards = scrapperAdvance.scrapYards;
+      scrapStashes = scrapperAdvance.scrapStashes;
+      const territoryBeforeHordes = scrapperAdvance.territory;
+      const scoutedTiles = scrapperAdvance.scoutedTiles;
 
       // Storage-level upgrade timers — same virtual-clock-threshold pattern,
       // but keyed by resource (data/storageUpgrades.ts) rather than a single
@@ -1167,7 +1240,7 @@ export default function App() {
       const { hordes, territory, capturedTiles, overrunHubKeys, hubDamage } = advanceHordes(
         current.tweaks,
         hordesAfterSpawn,
-        territoryAfterRelocation,
+        territoryBeforeHordes,
         extractionTiles,
         towers,
         walls,
@@ -1177,6 +1250,7 @@ export default function App() {
         elapsedSeconds,
         current.game.world.seed,
         powerNetwork,
+        scrapYards,
       );
       const baseOverrun = overrunHubKeys.includes(axialKey(territoryAfterRelocation.base));
       const baseDamageTaken = hubDamage[axialKey(territoryAfterRelocation.base)] ?? 0;
@@ -1213,6 +1287,7 @@ export default function App() {
         towers,
         walls,
         barracksList,
+        scrapYards,
       );
       for (const event of hordeCaptureEvents) {
         pushToast({
@@ -1227,6 +1302,7 @@ export default function App() {
       const wallsAfterCapture = markCapturedStructuresDamaged(walls, capturedTiles);
       const barracksListAfterCapture = markCapturedStructuresDamaged(barracksList, capturedTiles);
       const powerStationsAfterCapture = markCapturedStructuresDamaged(powerStations, capturedTiles);
+      const scrapYardsAfterCapture = markCapturedStructuresDamaged(scrapYards, capturedTiles);
       // Ownership drop must not re-fog known ground — keep captured tiles in
       // scoutedTiles so reclaim/repair stays possible without rediscovery.
       const scoutedTilesAfterCapture = preserveCapturedTilesAsScouted(scoutedTiles, capturedTiles);
@@ -1849,6 +1925,7 @@ export default function App() {
         set(WALLS_DB_KEY, wallsAfterCapture),
         set(BARRACKS_DB_KEY, barracksListAfterCapture),
         set(POWER_STATIONS_DB_KEY, powerStationsAfterCapture),
+        set(SCRAP_YARDS_DB_KEY, scrapYardsAfterCapture),
         set(UNITS_DB_KEY, unitsAfterExpeditions),
         set(GARRISONS_DB_KEY, garrisonsAfterSieges),
         set(NOISE_DB_KEY, noiseAfterAutoAttack),
@@ -1886,6 +1963,7 @@ export default function App() {
                 walls: wallsAfterCapture,
                 barracksList: barracksListAfterCapture,
                 powerStations: powerStationsAfterCapture,
+                scrapYards: scrapYardsAfterCapture,
                 units: unitsAfterExpeditions,
                 garrisons: garrisonsAfterSieges,
                 noise: noiseAfterAutoAttack,
@@ -1977,6 +2055,7 @@ export default function App() {
     const garrisonRecalls: GarrisonRecallsRecord = [];
     const lab = createLab(world.seed, gridSize, territory.base, dens, mapTweaks);
     const scrapStashes = createScrapStashes(world.seed, gridSize, territory.base, dens, lab, mapTweaks);
+    const scrapYards: ScrapYardsRecord = [];
     const labAssaults: LabAssaultsRecord = [];
     const research = initialResearch();
     const tombstones: TombstonesRecord = [];
@@ -2002,6 +2081,7 @@ export default function App() {
       set(NOISE_DB_KEY, noise),
       set(DENS_DB_KEY, dens),
       set(SCRAP_STASHES_DB_KEY, scrapStashes),
+      set(SCRAP_YARDS_DB_KEY, scrapYards),
       set(HORDES_DB_KEY, hordes),
       set(EXPEDITIONS_DB_KEY, expeditions),
       set(GAME_STATUS_DB_KEY, gameStatus),
@@ -2045,6 +2125,7 @@ export default function App() {
           noise,
           dens,
           scrapStashes,
+          scrapYards,
           hordes,
           expeditions,
           gameStatus,
@@ -2172,6 +2253,7 @@ export default function App() {
       noise: stored.noise as NoiseRecord | undefined,
       dens: stored.dens as DensRecord | undefined,
       scrapStashes: stored.scrapStashes as ScrapStashesRecord | undefined,
+      scrapYards: stored.scrapYards as ScrapYardsRecord | undefined,
       hordes: stored.hordes as HordesRecord | undefined,
       expeditions: stored.expeditions as ExpeditionsRecord | undefined,
       gameStatus: stored.gameStatus as GameStatusRecord | undefined,
@@ -2291,6 +2373,7 @@ export default function App() {
       game.barracksList,
       game.docks,
       game.powerStations,
+      game.scrapYards,
     );
     if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
       return { ok: false, reason: "Build slot cap reached" };
@@ -2504,6 +2587,7 @@ export default function App() {
       game.barracksList,
       game.docks,
       game.powerStations,
+      game.scrapYards,
     );
     if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
       return { ok: false, reason: "Build slot cap reached" };
@@ -2729,6 +2813,7 @@ export default function App() {
       game.barracksList,
       game.docks,
       game.powerStations,
+      game.scrapYards,
     );
     if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
       return { ok: false, reason: "Build slot cap reached" };
@@ -2831,6 +2916,7 @@ export default function App() {
       game.barracksList,
       game.docks,
       game.powerStations,
+      game.scrapYards,
     );
     if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
       return { ok: false, reason: "Build slot cap reached" };
@@ -2910,6 +2996,199 @@ export default function App() {
     return { ok: true };
   }
 
+  async function handleBuildScrapYard(coord: Axial): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+
+    const ownedKeys = new Set(game.territory.owned.map(axialKey));
+    if (!ownedKeys.has(axialKey(coord))) return { ok: false, reason: "Tile not owned" };
+    if (axialKey(coord) === axialKey(game.territory.base)) {
+      return { ok: false, reason: "Cannot build on the base tile" };
+    }
+    if (!isBuildableLand(game.world.seed, coord)) {
+      return { ok: false, reason: "Cannot build on water" };
+    }
+    if (isHexOccupied(game, coord)) {
+      return { ok: false, reason: "Tile already has a structure" };
+    }
+    const structureCount = totalStructureCount(
+      tweaks,
+      game.extractionTiles,
+      game.towers,
+      game.walls,
+      game.barracksList,
+      game.docks,
+      game.powerStations,
+      game.scrapYards,
+    );
+    if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
+      return { ok: false, reason: "Build slot cap reached" };
+    }
+
+    const cost = scrapYardBuildCost(tweaks, game.scrapYards.length + 1);
+    for (const [key, amount] of Object.entries(cost)) {
+      if (game.resources[key as keyof ResourceAmounts] < amount) {
+        return { ok: false, reason: `Not enough ${key}` };
+      }
+    }
+
+    const resources = { ...game.resources };
+    for (const [key, amount] of Object.entries(cost)) {
+      resources[key as keyof ResourceAmounts] -= amount;
+    }
+    const scrapYards: ScrapYardsRecord = [
+      ...game.scrapYards,
+      {
+        coord,
+        level: 1,
+        stockpile: 0,
+        totalInvested: cost,
+        upgrade: null,
+        courier: null,
+        buildCost: cost,
+        damaged: false,
+        damageRepair: null,
+        buildStartedAt: game.clock.virtualNow,
+        scrapperReady: false,
+        scrapper: null,
+      },
+    ];
+    const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "build_scrap_yard", game.base.level) };
+
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(SCRAP_YARDS_DB_KEY, scrapYards), set(NOISE_DB_KEY, noise)]);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, scrapYards, noise } } : prev,
+    );
+    return { ok: true };
+  }
+
+  async function handleUpgradeScrapYard(coord: Axial): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+
+    const yard = game.scrapYards.find((s) => axialKey(s.coord) === axialKey(coord));
+    if (!yard) return { ok: false, reason: "No scrap yard here" };
+
+    if (isLandStructureAtTaskCap(yard, game.research)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+
+    const target = nextScrapYardLevel(yard.level);
+    if (!target) return { ok: false, reason: "Already at max level" };
+
+    const cost = scrapYardUpgradeCost(tweaks, target as 2 | 3);
+    for (const [key, amount] of Object.entries(cost)) {
+      if (game.resources[key as keyof ResourceAmounts] < (amount ?? 0)) {
+        return { ok: false, reason: `Not enough ${key}` };
+      }
+    }
+
+    const resources = { ...game.resources };
+    for (const [key, amount] of Object.entries(cost)) {
+      resources[key as keyof ResourceAmounts] -= amount ?? 0;
+    }
+    const scrapYards = game.scrapYards.map((s) =>
+      axialKey(s.coord) === axialKey(coord)
+        ? {
+            ...s,
+            totalInvested: addToInvestment(s.totalInvested, cost),
+            upgrade: { targetLevel: target, startedAt: game.clock.virtualNow },
+          }
+        : s,
+    );
+    const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "upgrade_extraction_tile", game.base.level) };
+
+    await Promise.all([set(RESOURCES_DB_KEY, resources), set(SCRAP_YARDS_DB_KEY, scrapYards), set(NOISE_DB_KEY, noise)]);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, scrapYards, noise } } : prev,
+    );
+    return { ok: true };
+  }
+
+  async function handleCollectScrapYard(coord: Axial): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+
+    const yard = game.scrapYards.find((t) => axialKey(t.coord) === axialKey(coord));
+    if (!yard) return { ok: false, reason: "No scrap yard here" };
+    if (yard.stockpile <= 0) return { ok: false, reason: "Nothing to collect" };
+
+    const { resources, yard: collected } = collectScrapYard(tweaks, yard, game.resources, game.storageLevels);
+    const scrapYards = game.scrapYards.map((t) =>
+      axialKey(t.coord) === axialKey(coord) ? collected : t,
+    );
+    const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "manual_resource_collection", game.base.level) };
+
+    await Promise.all([
+      set(RESOURCES_DB_KEY, resources),
+      set(SCRAP_YARDS_DB_KEY, scrapYards),
+      set(NOISE_DB_KEY, noise),
+    ]);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game
+        ? { ...prev, game: { ...prev.game, resources, scrapYards, noise } }
+        : prev,
+    );
+    return { ok: true };
+  }
+
+  async function handleAssignScrapperStash(yardCoord: Axial, stashId: string): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+
+    const yard = game.scrapYards.find((y) => axialKey(y.coord) === axialKey(yardCoord));
+    if (!yard) return { ok: false, reason: "No scrap yard here" };
+    const stash = game.scrapStashes.find((s) => s.id === stashId);
+    if (!stash) return { ok: false, reason: "Scrap stash not found" };
+
+    const updated = assignScrapperStash(
+      tweaks,
+      game.world.seed,
+      yard,
+      stash,
+      game.territory,
+      game.scoutedTiles,
+      resolveWorldGridSize(game.world, tweaks),
+      game.clock.virtualNow,
+    );
+    if (!updated) return { ok: false, reason: "Cannot send Scrapper to that stash" };
+
+    const scrapYards = game.scrapYards.map((y) =>
+      axialKey(y.coord) === axialKey(yardCoord) ? updated : y,
+    );
+    await set(SCRAP_YARDS_DB_KEY, scrapYards);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, scrapYards } } : prev,
+    );
+    return { ok: true };
+  }
+
+  async function handleRecallScrapper(yardCoord: Axial): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+
+    const yard = game.scrapYards.find((y) => axialKey(y.coord) === axialKey(yardCoord));
+    if (!yard) return { ok: false, reason: "No scrap yard here" };
+
+    const updated = recallScrapperToYard(
+      tweaks,
+      game.world.seed,
+      yard,
+      game.territory,
+      game.scoutedTiles,
+      resolveWorldGridSize(game.world, tweaks),
+      game.clock.virtualNow,
+    );
+    if (!updated) return { ok: false, reason: "Scrapper cannot be recalled" };
+
+    const scrapYards = game.scrapYards.map((y) =>
+      axialKey(y.coord) === axialKey(yardCoord) ? updated : y,
+    );
+    await set(SCRAP_YARDS_DB_KEY, scrapYards);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, scrapYards } } : prev,
+    );
+    return { ok: true };
+  }
+
   async function handleBuildWall(coord: Axial): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
@@ -2933,6 +3212,7 @@ export default function App() {
       game.barracksList,
       game.docks,
       game.powerStations,
+      game.scrapYards,
     );
     if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
       return { ok: false, reason: "Build slot cap reached" };
@@ -3066,7 +3346,8 @@ export default function App() {
     const barracks = game.barracksList.find((t) => axialKey(t.coord) === key);
     const dock = game.docks.find((t) => axialKey(t.coord) === key);
     const powerStation = game.powerStations.find((t) => axialKey(t.coord) === key);
-    const structure = extractionTile ?? tower ?? wall ?? barracks ?? dock ?? powerStation;
+    const scrapYard = game.scrapYards.find((t) => axialKey(t.coord) === key);
+    const structure = extractionTile ?? tower ?? wall ?? barracks ?? dock ?? powerStation ?? scrapYard;
     if (!structure) return { ok: false, reason: "Nothing to demolish here" };
 
     if (extractionTile && hasAnyStructureTask(extractionTile)) {
@@ -3077,6 +3358,7 @@ export default function App() {
     if (barracks && hasAnyStructureTask(barracks)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
     if (dock && countDockTasks(dock) > 0) return { ok: false, reason: STRUCTURE_BUSY_REASON };
     if (powerStation && hasAnyStructureTask(powerStation)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
+    if (scrapYard && hasAnyStructureTask(scrapYard)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
 
     const refund = demolishRefund(tweaks, structure.totalInvested);
     const resources = { ...game.resources };
@@ -3103,6 +3385,9 @@ export default function App() {
     const powerStations = powerStation
       ? game.powerStations.filter((t) => axialKey(t.coord) !== key)
       : game.powerStations;
+    const scrapYards = scrapYard
+      ? game.scrapYards.filter((t) => axialKey(t.coord) !== key)
+      : game.scrapYards;
 
     await Promise.all([
       set(RESOURCES_DB_KEY, resources),
@@ -3113,6 +3398,7 @@ export default function App() {
       set(DOCKS_DB_KEY, docks),
       set(SCOUT_SKIFFS_DB_KEY, scoutSkiffs),
       set(POWER_STATIONS_DB_KEY, powerStations),
+      set(SCRAP_YARDS_DB_KEY, scrapYards),
     ]);
     setBoot((prev) =>
       prev.status === "ready" && prev.game
@@ -3128,6 +3414,7 @@ export default function App() {
               docks,
               scoutSkiffs,
               powerStations,
+              scrapYards,
             },
           }
         : prev,
@@ -3169,7 +3456,8 @@ export default function App() {
     const wall = game.walls.find((t) => axialKey(t.coord) === key);
     const barracks = game.barracksList.find((t) => axialKey(t.coord) === key);
     const powerStation = game.powerStations.find((t) => axialKey(t.coord) === key);
-    const structure = extractionTile ?? tower ?? wall ?? barracks ?? powerStation;
+    const scrapYard = game.scrapYards.find((t) => axialKey(t.coord) === key);
+    const structure = extractionTile ?? tower ?? wall ?? barracks ?? powerStation ?? scrapYard;
     if (!structure) return { ok: false, reason: "Nothing to repair here" };
     if (!structure.damaged) return { ok: false, reason: "Not damaged" };
     if (isHordeRepairBlocked(structure)) return { ok: false, reason: STRUCTURE_BUSY_REASON };
@@ -3211,6 +3499,7 @@ export default function App() {
     const walls = wall ? repair(game.walls) : game.walls;
     const barracksList = barracks ? repair(game.barracksList) : game.barracksList;
     const powerStations = powerStation ? repair(game.powerStations) : game.powerStations;
+    const scrapYards = scrapYard ? repair(game.scrapYards) : game.scrapYards;
     const noise: NoiseRecord = { value: addActionNoise(tweaks, game.noise.value, "repair_wall", game.base.level) };
     const territory =
       ownedKeys.has(key)
@@ -3225,6 +3514,7 @@ export default function App() {
       set(BARRACKS_DB_KEY, barracksList),
       set(NOISE_DB_KEY, noise),
       set(POWER_STATIONS_DB_KEY, powerStations),
+      set(SCRAP_YARDS_DB_KEY, scrapYards),
       ...(ownedKeys.has(key) ? [] : [set(TERRITORY_DB_KEY, territory)]),
     ]);
     setBoot((prev) =>
@@ -3239,6 +3529,7 @@ export default function App() {
               walls,
               barracksList,
               powerStations,
+              scrapYards,
               noise,
               territory,
             },
@@ -3271,6 +3562,7 @@ export default function App() {
       game.barracksList,
       game.docks,
       game.powerStations,
+      game.scrapYards,
     );
     if (structureCount >= buildSlotCap(tweaks, game.base.level)) {
       return { ok: false, reason: "Build slot cap reached" };
@@ -4556,6 +4848,7 @@ export default function App() {
       walls={boot.game.walls}
       barracksList={boot.game.barracksList}
       powerStations={boot.game.powerStations}
+      scrapYards={boot.game.scrapYards}
       units={boot.game.units}
       garrisons={boot.game.garrisons}
       scoutedTiles={boot.game.scoutedTiles}
@@ -4591,6 +4884,11 @@ export default function App() {
       onUpgradeTower={handleUpgradeTower}
       onBuildPowerStation={handleBuildPowerStation}
       onUpgradePowerStation={handleUpgradePowerStation}
+      onBuildScrapYard={handleBuildScrapYard}
+      onUpgradeScrapYard={handleUpgradeScrapYard}
+      onCollectScrapYard={handleCollectScrapYard}
+      onAssignScrapperStash={handleAssignScrapperStash}
+      onRecallScrapper={handleRecallScrapper}
       onBuildWall={handleBuildWall}
       onUpgradeWall={handleUpgradeWall}
       onRepairWall={handleRepairWall}

@@ -174,6 +174,8 @@
       "wall": 1,
       "barracks": 4,
       "dock": 2
+    ,
+      "scrap_yard": 2
     },
     "noise_build": 8,
     "noise_upgrade": 6,
@@ -547,6 +549,7 @@
     "one_time_action_noise": {
             "repair_wall": 15,
       "build_extraction_tile": 20,
+      "build_scrap_yard": 20,
       "build_tower": 25,
       "build_power_station": 8,
       "build_wall": 20,
@@ -737,6 +740,28 @@
     "_placement_note": "Weighted land picks; water excluded. Favors mountain/forest/shore, rare on grassland (Q18).",
     "wandering_scout_sample_steel": 2,
     "_sample_note": "Steel granted each time a wandering scout visits an active stash hex (Q7)."
+  },
+
+
+  // --------------------------------------------------------------------------
+  // SCRAP YARDS (Milestone 26 / #36 — steel hub; replaces steel extraction builds)
+  // --------------------------------------------------------------------------
+  "scrap_yards": {
+    "_status": "first pass, untested — L1–L3 reuse steel extraction small/mid/large cost/time baselines (ScrapperEconomy Q56). Yard courier last-mile always on (Q69). Scrapper movement ships separately.",
+    "build_cost_base": { "wood": 400, "stone": 300 },
+    "build_cost_scaling": "FORMULA_A",
+    "build_time_minutes": 1,
+    "max_level": 5,
+    "max_level_shipped": 3,
+    "noise_passive_per_level": 4,
+    "_noise_note": "Ambient floor contribution = noise_passive_per_level * yard.level when active. Lower than a working steel extractor — yard is a hub, not a forge."
+,
+    "scrapper": {
+      "_status": "first pass, untested — capacity/speed by yard level (index 0 unused). Auto at L3 (Q58).",
+      "capacity_by_level": [0, 8, 14, 20, 28, 36],
+      "speed_multiplier_by_level": [0, 0.7, 1.0, 1.25, 1.5, 1.5],
+      "auto_next_stash_min_level": 3
+    }
   },
 
   // --------------------------------------------------------------------------

@@ -3,6 +3,13 @@ import type { ReactNode } from "react";
 import { axialDistance, axialEquals, axialKey, type Axial } from "../engine/hexCoords";
 import { isBuildableLand, isTransitionTile, terrainAt } from "../engine/terrain";
 import {
+  nextScrapYardLevel,
+  scrapYardBuildCost,
+  scrapYardBuildDurationMs,
+  scrapYardUpgradeCost,
+  scrapYardUpgradeDurationMs,
+} from "../engine/scrapYards";
+import {
   dockBuildCost,
   dockBuildDurationMs,
   dockLevel,
@@ -103,6 +110,7 @@ import {
   extractionFloorContribution,
   noiseCap,
   powerStationFloorContribution,
+  scrapYardFloorContribution,
   towerFloorContribution,
   wallFloorContribution,
 } from "../engine/noiseMeter";
@@ -135,6 +143,7 @@ import { assetUrlCandidates, resolveAssetPath } from "../render/assetPaths";
 import {
   dockSpriteCandidates,
   extractionTierCandidates,
+  scrapYardSpriteCandidates,
   structureAssetUrlCandidates,
   structureLevelCandidates,
 } from "../render/structureSprites";
@@ -142,6 +151,7 @@ import type { TerritoryRecord } from "../data/territory";
 import type { BaseRecord } from "../data/base";
 import type { ExtractionTile } from "../data/extractionTiles";
 import type { PowerStation } from "../data/powerStations";
+import type { ScrapYardRecord, ScrapYardsRecord } from "../data/scrapYards";
 import type { Tower } from "../data/towers";
 import type { Wall } from "../data/walls";
 import type { Barracks, TrainingUnitType } from "../data/barracks";
@@ -371,6 +381,7 @@ export function GameScreen({
   walls,
   barracksList,
   powerStations,
+  scrapYards,
   units,
   garrisons,
   scoutedTiles,
@@ -406,6 +417,11 @@ export function GameScreen({
   onUpgradeTower,
   onBuildPowerStation,
   onUpgradePowerStation,
+  onBuildScrapYard,
+  onUpgradeScrapYard,
+  onCollectScrapYard,
+  onAssignScrapperStash,
+  onRecallScrapper,
   onBuildWall,
   onUpgradeWall,
   onRepairWall,
@@ -455,6 +471,7 @@ export function GameScreen({
   walls: Wall[];
   barracksList: Barracks[];
   powerStations: PowerStation[];
+  scrapYards: ScrapYardsRecord;
   units: UnitsRecord;
   garrisons: GarrisonsRecord;
   scoutedTiles: ScoutedTiles;
@@ -493,6 +510,11 @@ export function GameScreen({
   onUpgradeTower: (coord: Axial) => Promise<BuildResult>;
   onBuildPowerStation: (coord: Axial) => Promise<BuildResult>;
   onUpgradePowerStation: (coord: Axial) => Promise<BuildResult>;
+  onBuildScrapYard: (coord: Axial) => Promise<BuildResult>;
+  onUpgradeScrapYard: (coord: Axial) => Promise<BuildResult>;
+  onCollectScrapYard: (coord: Axial) => Promise<BuildResult>;
+  onAssignScrapperStash: (yardCoord: Axial, stashId: string) => Promise<BuildResult>;
+  onRecallScrapper: (yardCoord: Axial) => Promise<BuildResult>;
   onBuildWall: (coord: Axial) => Promise<BuildResult>;
   onUpgradeWall: (coord: Axial) => Promise<BuildResult>;
   onRepairWall: (coord: Axial) => Promise<BuildResult>;
@@ -655,6 +677,9 @@ export function GameScreen({
   const powerStationAt = (coord: Axial): PowerStation | null =>
     powerStations.find((s) => axialKey(s.coord) === axialKey(coord)) ?? null;
 
+  const scrapYardAt = (coord: Axial): ScrapYardRecord | null =>
+    scrapYards.find((s) => axialKey(s.coord) === axialKey(coord)) ?? null;
+
   const wallAt = (coord: Axial): Wall | null => walls.find((w) => axialKey(w.coord) === axialKey(coord)) ?? null;
 
   const barracksAt = (coord: Axial): Barracks | null =>
@@ -681,7 +706,7 @@ export function GameScreen({
   }
 
   function buildOptionsFor(): BuildOption[] {
-    return RESOURCE_ORDER.map((resource) => {
+    return RESOURCE_ORDER.filter((resource) => resource !== "steel").map((resource) => {
       const existingCount = extractionTiles.filter((tile) => tile.resource === resource).length;
       const cost = scaledCostMap(tweaks.extraction_tiles[resource].build_cost_base, existingCount + 1);
       return {
@@ -763,6 +788,24 @@ export function GameScreen({
       cost,
       affordable: affordable(cost),
       durationMinutes: powerStationUpgradeDurationMs(tweaks, targetLevel) / 60_000,
+    };
+  }
+
+  function scrapYardBuildOptionFor(): RepairOption {
+    const cost = scrapYardBuildCost(tweaks, scrapYards.length + 1);
+    return { cost, affordable: affordable(cost), durationMinutes: scrapYardBuildDurationMs(tweaks) / 60_000 };
+  }
+
+  function scrapYardUpgradeOptionFor(y: ScrapYardRecord): PowerStationUpgradeOption | null {
+    if (y.damaged || isLandStructureAtTaskCap(y, research)) return null;
+    const targetLevel = nextScrapYardLevel(y.level);
+    if (!targetLevel) return null;
+    const cost = scrapYardUpgradeCost(tweaks, targetLevel as 2 | 3);
+    return {
+      targetLevel,
+      cost,
+      affordable: affordable(cost),
+      durationMinutes: scrapYardUpgradeDurationMs(tweaks, targetLevel as 2 | 3) / 60_000,
     };
   }
 
@@ -1229,7 +1272,11 @@ export function GameScreen({
   }
 
   async function handleQuickCollect(coord: Axial) {
-    const result = dockAt(coord) ? await onCollectDock(coord) : await onCollectTile(coord);
+    const result = scrapYardAt(coord)
+      ? await onCollectScrapYard(coord)
+      : dockAt(coord)
+        ? await onCollectDock(coord)
+        : await onCollectTile(coord);
     setActionError(result.ok ? null : result.reason);
   }
 
@@ -1255,6 +1302,60 @@ export function GameScreen({
     if (!selected) return;
     const result = await onUpgradePowerStation(selected);
     applyActionResult(result);
+  }
+
+  async function handleBuildScrapYard() {
+    if (!selected) return;
+    const result = await onBuildScrapYard(selected);
+    applyActionResult(result);
+  }
+
+  async function handleUpgradeScrapYard() {
+    if (!selected) return;
+    const result = await onUpgradeScrapYard(selected);
+    applyActionResult(result);
+  }
+
+  async function handleCollectScrapYard() {
+    if (!selected) return;
+    const result = await onCollectScrapYard(selected);
+    applyActionResult(result);
+  }
+
+  async function handleAssignScrapperStash(yardCoord: Axial, stashId: string) {
+    const result = await onAssignScrapperStash(yardCoord, stashId);
+    applyActionResult(result);
+  }
+
+  async function handleRecallScrapper() {
+    if (!selected) return;
+    const result = await onRecallScrapper(selected);
+    applyActionResult(result);
+  }
+
+  async function handleSendScrapperFromStash() {
+    if (!selected) return;
+    const stash = scrapStashes.find((s) => isActiveScrapStash(s) && axialEquals(s.coord, selected));
+    if (!stash) return;
+    const idleYard = scrapYards.find((y) => {
+      if (!y.scrapperReady || !isStructureActive(y)) return false;
+      const trip = y.scrapper;
+      return !trip || trip.phase === "idle";
+    });
+    if (!idleYard) {
+      applyActionResult({ ok: false, reason: "No idle Scrapper ready" });
+      return;
+    }
+    await handleAssignScrapperStash(idleYard.coord, stash.id);
+  }
+
+  function scrapperStatusText(yard: ScrapYardRecord): string {
+    if (!yard.scrapperReady) return "Scrapper not ready yet";
+    const trip = yard.scrapper;
+    if (!trip || trip.phase === "idle") return "Scrapper idle at yard";
+    if (trip.phase === "toStash") return "Scrapper en route to stash";
+    if (trip.cargo > 0) return `Scrapper returning with ${Math.floor(trip.cargo)} steel`;
+    return "Scrapper returning to yard";
   }
 
   async function handleBuildWall() {
@@ -1522,6 +1623,7 @@ export function GameScreen({
   const selectedTile = selected ? tileAt(selected) : null;
   const selectedTower = selected ? towerAt(selected) : null;
   const selectedPowerStation = selected ? powerStationAt(selected) : null;
+  const selectedScrapYard = selected ? scrapYardAt(selected) : null;
   const selectedWall = selected ? wallAt(selected) : null;
   const selectedBarracks = selected ? barracksAt(selected) : null;
   const militiaQueueStatus = trainQueueStatusFor(selectedBarracks, "militia");
@@ -1550,6 +1652,7 @@ export function GameScreen({
     !selectedTile &&
     !selectedTower &&
     !selectedPowerStation &&
+    !selectedScrapYard &&
     !selectedWall &&
     !selectedBarracks &&
     !selectedDock &&
@@ -1577,16 +1680,18 @@ export function GameScreen({
       ? towerFloorContribution(tweaks, selectedTower)
       : selectedPowerStation
         ? powerStationFloorContribution(tweaks, selectedPowerStation)
-        : selectedWall
-          ? wallFloorContribution(tweaks, selectedWall)
-          : null;
+        : selectedScrapYard
+          ? scrapYardFloorContribution(tweaks, selectedScrapYard)
+          : selectedWall
+            ? wallFloorContribution(tweaks, selectedWall)
+            : null;
   const selectedStructure =
-    selectedTile ?? selectedTower ?? selectedPowerStation ?? selectedWall ?? selectedBarracks;
+    selectedTile ?? selectedTower ?? selectedPowerStation ?? selectedScrapYard ?? selectedWall ?? selectedBarracks;
   const selectedGarrison = selected ? garrisonAt(garrisons, selected) : null;
   /** Recomputed once per render from the current structure lists — feeds both the resource-rate throughput calc below and every selected/hovered structure's power-state display (structurePowerState/powerStateLabel). */
   const powerNetwork = useMemo(
-    () => computePowerNetwork(tweaks, powerStations, extractionTiles, towers, walls, barracksList, docks),
-    [tweaks, powerStations, extractionTiles, towers, walls, barracksList, docks],
+    () => computePowerNetwork(tweaks, powerStations, extractionTiles, towers, walls, barracksList, docks, scrapYards),
+    [tweaks, powerStations, extractionTiles, towers, walls, barracksList, docks, scrapYards],
   );
   /** Null when the structure is L1/exempt or fully powered — see powerStateLabel. */
   function powerStateLabelFor(level: number, coord: Axial): string | null {
@@ -1616,7 +1721,9 @@ export function GameScreen({
         ? powerStateLabelFor(WALL_TIER_LEVEL[selectedWall.tier], selectedWall.coord)
         : selectedBarracks
           ? powerStateLabelFor(selectedBarracks.level, selectedBarracks.coord)
-          : null;
+          : selectedScrapYard
+            ? powerStateLabelFor(selectedScrapYard.level, selectedScrapYard.coord)
+            : null;
   /** Nominal power draw for the selected consumer structure (null for stations / hubs). */
   const selectedPowerDrawText = selectedTile
     ? powerDrawText("extraction", extractionTierLevel(selectedTile.tier))
@@ -1626,7 +1733,9 @@ export function GameScreen({
         ? powerDrawText("wall", WALL_TIER_LEVEL[selectedWall.tier])
         : selectedBarracks
           ? powerDrawText("barracks", selectedBarracks.level)
-          : null;
+          : selectedScrapYard
+            ? powerDrawText("scrap_yard", selectedScrapYard.level)
+            : null;
   const resourceRates = useMemo(() => {
     const gridSize = resolveWorldGridSize(world, tweaks);
     return computeResourceRates(
@@ -1665,8 +1774,17 @@ export function GameScreen({
         stockpileCap,
         upgradeAvailable: false,
       }));
-    return [...fromExtraction, ...fromDocks];
-  }, [extractionTiles, docks, tweaks, resources]);
+    const fromScrapYards = scrapYards
+      .filter((yard) => isStructureActive(yard) && yard.stockpile > 0)
+      .map((yard) => ({
+        coord: yard.coord,
+        resource: "steel" as const,
+        stockpile: yard.stockpile,
+        stockpileCap,
+        upgradeAvailable: scrapYardUpgradeOptionFor(yard)?.affordable ?? false,
+      }));
+    return [...fromExtraction, ...fromDocks, ...fromScrapYards];
+  }, [extractionTiles, docks, scrapYards, tweaks, resources]);
   /**
    * Coord keys of every upgradeable structure (base, Tower, Barracks, extraction
    * tile) whose next upgrade is unlocked and affordable right now — reuses the
@@ -1698,6 +1816,10 @@ export function GameScreen({
     for (const s of powerStations) {
       if (s.buildStartedAt != null) continue;
       if (powerStationUpgradeOptionFor(s)?.affordable) set.add(axialKey(s.coord));
+    }
+    for (const y of scrapYards) {
+      if (y.buildStartedAt != null) continue;
+      if (scrapYardUpgradeOptionFor(y)?.affordable) set.add(axialKey(y.coord));
     }
     for (const b of barracksList) {
       if (b.buildStartedAt != null) continue;
@@ -1750,7 +1872,7 @@ export function GameScreen({
     const canAfford = (cost: Partial<Record<ResourceType, number>>) =>
       Object.entries(cost).every(([res, amount]) => resources[res as ResourceType] >= (amount ?? 0));
 
-    const anyExtractionAffordable = RESOURCE_ORDER.some((resource) => {
+    const anyExtractionAffordable = RESOURCE_ORDER.filter((resource) => resource !== "steel").some((resource) => {
       const existingCount = extractionTiles.filter((t) => t.resource === resource).length;
       return canAfford(scaledCostMap(tweaks.extraction_tiles[resource].build_cost_base, existingCount + 1));
     });
@@ -1758,6 +1880,7 @@ export function GameScreen({
       anyExtractionAffordable ||
       canAfford(towerBuildCost(tweaks, towers.length + 1)) ||
       canAfford(powerStationBuildCost(tweaks, powerStations.length + 1)) ||
+      canAfford(scrapYardBuildCost(tweaks, scrapYards.length + 1)) ||
       canAfford(wallBuildCost(tweaks, walls.length + 1)) ||
       canAfford(barracksBuildCost(tweaks, barracksList.length + 1));
 
@@ -1767,6 +1890,7 @@ export function GameScreen({
     for (const t of extractionTiles) occupiedKeys.add(axialKey(t.coord));
     for (const t of towers) occupiedKeys.add(axialKey(t.coord));
     for (const s of powerStations) occupiedKeys.add(axialKey(s.coord));
+    for (const y of scrapYards) occupiedKeys.add(axialKey(y.coord));
     for (const w of walls) occupiedKeys.add(axialKey(w.coord));
     for (const b of barracksList) occupiedKeys.add(axialKey(b.coord));
     for (const d of docks) occupiedKeys.add(axialKey(d.coord));
@@ -1786,6 +1910,7 @@ export function GameScreen({
     extractionTiles,
     towers,
     powerStations,
+    scrapYards,
     walls,
     barracksList,
     docks,
@@ -2187,6 +2312,70 @@ export function GameScreen({
         }
         return actions;
       }
+    } else if (selectedScrapYard) {
+      if (selectedScrapYard.damaged && canRepairHordeDamagedAt(selected)) {
+        const repair = repairOptionFor(selectedStructure);
+        if (repair) {
+          actions.push({
+            key: "scrap-yard-repair",
+            icon: <Wrench size={18} />,
+            title: "Repair scrap yard",
+            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            disabled: !repair.affordable || selectedHordeOccupied,
+            onClick: handleRepairStructure,
+          });
+        }
+        return actions;
+      }
+      if (isOwned(selected)) {
+        const upgrade = scrapYardUpgradeOptionFor(selectedScrapYard);
+        if (upgrade) {
+          actions.push({
+            key: "scrap-yard-upgrade",
+            icon: structureIcon(scrapYardSpriteCandidates(upgrade.targetLevel), 45, resourceIcon("steel", 18)),
+            title: `Upgrade to L${upgrade.targetLevel}`,
+            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("scrap_yard", selectedScrapYard.level, upgrade.targetLevel)}`,
+            disabled: !upgrade.affordable,
+            upgradeAvailable: upgrade.affordable,
+            onClick: handleUpgradeScrapYard,
+          });
+        }
+        if (selectedScrapYard.scrapperReady && isStructureActive(selectedScrapYard)) {
+          const knownKeys = new Set([...territory.owned, ...scoutedTiles].map(axialKey));
+          const knownStashes = scrapStashes.filter(
+            (s) => isActiveScrapStash(s) && knownKeys.has(axialKey(s.coord)),
+          );
+          const trip = selectedScrapYard.scrapper;
+          const canAssign = !trip || trip.phase === "idle" || (trip.phase === "toStash" && trip.cargo === 0);
+          if (knownStashes.length > 0 && canAssign) {
+            actions.push({
+              key: "scrapper-assign",
+              icon: <HardHat size={18} />,
+              title: "Assign Scrapper",
+              detail: trip?.phase === "toStash" ? "Redirect empty haul" : "Send to a known stash",
+              subActions: knownStashes.map((stash) => ({
+                key: `scrapper-assign-${stash.id}`,
+                icon: resourceIcon("steel", 18),
+                title: `Stash (${Math.floor(stash.remainingSteel)} steel)`,
+                detail: `Distance ${axialDistance(selectedScrapYard.coord, stash.coord)}`,
+                onClick: () => {
+                  void handleAssignScrapperStash(selectedScrapYard.coord, stash.id);
+                },
+              })),
+            });
+          }
+          if (trip && trip.phase !== "idle") {
+            actions.push({
+              key: "scrapper-recall",
+              icon: <Undo2 size={18} />,
+              title: "Recall Scrapper",
+              detail: trip.cargo > 0 ? `Returning with ${Math.floor(trip.cargo)} steel` : "Pull back to yard",
+              onClick: handleRecallScrapper,
+            });
+          }
+        }
+        return actions;
+      }
     } else if (selectedWall) {
       if (selectedWall.damaged && canRepairHordeDamagedAt(selected)) {
         const repair = repairOptionFor(selectedStructure);
@@ -2412,6 +2601,15 @@ export function GameScreen({
         detail: `${formatCost(powerStation.cost)}, ${powerStation.durationMinutes}m`,
         disabled: !powerStation.affordable,
         onClick: handleBuildPowerStation,
+      });
+      const scrapYard = scrapYardBuildOptionFor();
+      civilSubActions.push({
+        key: "build-scrap-yard",
+        icon: structureIcon(scrapYardSpriteCandidates(1), 45, resourceIcon("steel", 18)),
+        title: "Build scrap yard",
+        detail: `${formatCost(scrapYard.cost)}, ${scrapYard.durationMinutes}m`,
+        disabled: !scrapYard.affordable,
+        onClick: handleBuildScrapYard,
       });
 
       const militarySubActions: SheetAction[] = [];
@@ -2676,6 +2874,46 @@ export function GameScreen({
           coord: station.coord,
           durationMs,
           remainingMs: remainingMs(station.damageRepair.startedAt, durationMs, now),
+        });
+      }
+    }
+
+    for (const yard of scrapYards) {
+      const key = axialKey(yard.coord);
+      if (yard.buildStartedAt) {
+        const durationMs = scrapYardBuildDurationMs(tweaks);
+        rows.push({
+          key: `scrap-yard-build-${key}`,
+          kind: "build",
+          icon: buildIcon,
+          label: "Building scrap yard",
+          coord: yard.coord,
+          durationMs,
+          remainingMs: remainingMs(yard.buildStartedAt, durationMs, now),
+        });
+      }
+      if (yard.upgrade) {
+        const durationMs = scrapYardUpgradeDurationMs(tweaks, yard.upgrade.targetLevel as 2 | 3);
+        rows.push({
+          key: `scrap-yard-upgrade-${key}`,
+          kind: "upgrade",
+          icon: upgradeIcon,
+          label: `Upgrading scrap yard to L${yard.upgrade.targetLevel}`,
+          coord: yard.coord,
+          durationMs,
+          remainingMs: remainingMs(yard.upgrade.startedAt, durationMs, now),
+        });
+      }
+      if (yard.damageRepair) {
+        const durationMs = structureRepairDurationMs(tweaks);
+        rows.push({
+          key: `scrap-yard-repair-${key}`,
+          kind: "repair",
+          icon: repairIcon,
+          label: "Repairing scrap yard",
+          coord: yard.coord,
+          durationMs,
+          remainingMs: remainingMs(yard.damageRepair.startedAt, durationMs, now),
         });
       }
     }
@@ -3065,6 +3303,19 @@ export function GameScreen({
         </div>,
       );
     }
+    if (selectedScrapYard) {
+      rows.push(
+        <div key="scrap-yard-stockpile">Stockpile: {Math.floor(selectedScrapYard.stockpile)} steel</div>,
+        <div key="scrap-yard-courier">
+          {selectedScrapYard.courier
+            ? selectedScrapYard.courier.phase === "toBase"
+              ? "Courier — delivering to base"
+              : "Courier — returning"
+            : "Courier — automated last-mile"}
+        </div>,
+        <div key="scrap-yard-scrapper">{scrapperStatusText(selectedScrapYard)}</div>,
+      );
+    }
     if (selectedPowerDrawText) {
       rows.push(<div key="power-draw">{selectedPowerDrawText}</div>);
     }
@@ -3114,6 +3365,7 @@ export function GameScreen({
     if (selectedBarracks) return `Barracks — L${selectedBarracks.level}`;
     if (selectedTower) return `Tower — L${selectedTower.level}`;
     if (selectedPowerStation) return `Power station — L${selectedPowerStation.level}`;
+    if (selectedScrapYard) return `Scrap yard — L${selectedScrapYard.level}`;
     if (selectedWall) return `Wall — ${selectedWall.tier}`;
     if (selectedTile) return `${selectedTile.resource} — ${selectedTile.tier}`;
     if (selectedEmpty) return isOwned(selected) ? "Empty tile" : isScouted(selected) ? "Scouted tile" : "Unexplored tile";
@@ -3289,6 +3541,41 @@ export function GameScreen({
             </>
           )}
           <span>Noise floor: +{powerStationFloorContribution(tweaks, powerStation).toFixed(1)}db</span>
+        </HoverPanel>
+      );
+    }
+
+    const scrapYard = scrapYardAt(coord);
+    if (scrapYard) {
+      const status = scrapYard.buildStartedAt
+        ? "Under construction"
+        : scrapYard.damaged
+          ? scrapYard.damageRepair
+            ? "Repairing…"
+            : "Damaged"
+          : scrapYard.upgrade
+            ? `Upgrading to L${scrapYard.upgrade.targetLevel}…`
+            : "Operational";
+      return (
+        <HoverPanel
+          icon={structureIcon(scrapYardSpriteCandidates(scrapYard.level), 28, resourceIcon("steel", 22))}
+          title={`Scrap yard — L${scrapYard.level}`}
+          status={status}
+        >
+          <span>Stockpile: {Math.floor(scrapYard.stockpile)} steel</span>
+          <span>
+            {scrapYard.courier
+              ? scrapYard.courier.phase === "toBase"
+                ? "Courier delivering to base"
+                : "Courier returning"
+              : "Courier automated"}
+          </span>
+          <span>{scrapperStatusText(scrapYard)}</span>
+          <span>Noise floor: +{scrapYardFloorContribution(tweaks, scrapYard).toFixed(1)}db</span>
+          <span>{powerDrawText("scrap_yard", scrapYard.level)}</span>
+          {powerStateLabelFor(scrapYard.level, scrapYard.coord) && (
+            <span>{powerStateLabelFor(scrapYard.level, scrapYard.coord)}</span>
+          )}
         </HoverPanel>
       );
     }
@@ -3555,6 +3842,25 @@ export function GameScreen({
       actions.push({ key: "info", icon: <Info size={18} />, title: "Info", infoContent: info });
     }
 
+    // Scrap stashes may sit on scouted (unowned) hexes — Send Scrapper still applies.
+    if (selectedScrapStash) {
+      const hasIdleScrapper = scrapYards.some((y) => {
+        if (!y.scrapperReady || !isStructureActive(y)) return false;
+        const trip = y.scrapper;
+        return !trip || trip.phase === "idle";
+      });
+      actions.push({
+        key: "send-scrapper",
+        icon: <HardHat size={18} />,
+        title: "Send Scrapper",
+        detail: hasIdleScrapper
+          ? "Nearest ready idle yard"
+          : "No idle Scrapper ready",
+        disabled: !hasIdleScrapper,
+        onClick: handleSendScrapperFromStash,
+      });
+    }
+
     if (!isOwned(selected)) return actions;
 
     if (selectedTile && !selectedTile.damaged && selectedTile.stockpile > 0) {
@@ -3575,6 +3881,15 @@ export function GameScreen({
         onClick: handleCollectDock,
       });
     }
+    if (selectedScrapYard && !selectedScrapYard.damaged && selectedScrapYard.stockpile > 0) {
+      actions.push({
+        key: "collect-scrap-yard",
+        icon: <PackageCheck size={18} />,
+        title: "Collect",
+        detail: `${Math.floor(selectedScrapYard.stockpile)} steel stockpiled`,
+        onClick: handleCollectScrapYard,
+      });
+    }
 
     const garrison = !selectedIsBase ? garrisonSheetAction() : null;
     if (garrison) {
@@ -3586,6 +3901,7 @@ export function GameScreen({
       (!!selectedTile && hasAnyStructureTask(selectedTile)) ||
       (!!selectedTower && hasAnyStructureTask(selectedTower)) ||
       (!!selectedPowerStation && hasAnyStructureTask(selectedPowerStation)) ||
+      (!!selectedScrapYard && hasAnyStructureTask(selectedScrapYard)) ||
       (!!selectedWall && hasAnyStructureTask(selectedWall)) ||
       (!!selectedBarracks && hasAnyStructureTask(selectedBarracks)) ||
       (!!selectedDock && countDockTasks(selectedDock) > 0);
@@ -3631,6 +3947,7 @@ export function GameScreen({
           walls={walls}
           barracksList={barracksList}
           powerStations={powerStations}
+          scrapYards={scrapYards}
           garrisons={garrisons}
           scoutedTiles={scoutedTiles}
           lab={lab}

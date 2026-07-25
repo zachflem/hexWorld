@@ -4,6 +4,7 @@ import type { ExtractionTile } from "../data/extractionTiles";
 import type { Garrison, GarrisonsRecord } from "../data/garrisons";
 import type { HordeRecord, HordesRecord } from "../data/hordes";
 import type { OutpostsRecord } from "../data/outposts";
+import type { ScrapYardRecord } from "../data/scrapYards";
 import type { TerritoryRecord } from "../data/territory";
 import type { Tower } from "../data/towers";
 import type { Tweaks } from "../data/tweaksSchema";
@@ -175,6 +176,7 @@ function structureCombatDefense(
   barracksList: Barracks[],
   key: string,
   powerNetwork?: PowerNetworkSnapshot,
+  scrapYards: ScrapYardRecord[] = [],
 ): number {
   const tower = towers.find((t) => axialKey(t.coord) === key);
   if (tower) {
@@ -197,6 +199,9 @@ function structureCombatDefense(
 
   const barracks = barracksList.find((b) => axialKey(b.coord) === key);
   if (barracks) return isStructureActive(barracks) ? structureHp(tweaks, barracks.totalInvested) : 0;
+
+  const scrapYard = scrapYards.find((y) => axialKey(y.coord) === key);
+  if (scrapYard) return isStructureActive(scrapYard) ? structureHp(tweaks, scrapYard.totalInvested) : 0;
 
   return 0;
 }
@@ -222,10 +227,11 @@ export function hordeTileDefense(
   barracksList: Barracks[],
   garrisons: GarrisonsRecord,
   coord: Axial,
+  scrapYards: ScrapYardRecord[] = [],
 ): number {
   const key = axialKey(coord);
   return (
-    structureCombatDefense(tweaks, extractionTiles, towers, walls, barracksList, key) +
+    structureCombatDefense(tweaks, extractionTiles, towers, walls, barracksList, key, undefined, scrapYards) +
     garrisonDefense(tweaks, garrisons, coord)
   );
 }
@@ -455,6 +461,7 @@ export function advanceHordes(
   elapsedSeconds: number,
   seed: number,
   powerNetwork?: PowerNetworkSnapshot,
+  scrapYards: ScrapYardRecord[] = [],
 ): {
   hordes: HordesRecord;
   territory: TerritoryRecord;
@@ -522,7 +529,16 @@ export function advanceHordes(
         break;
       }
 
-      const defense = hordeTileDefense(tweaks, extractionTiles, towers, walls, barracksList, garrisons, nextCoord);
+      const defense = hordeTileDefense(
+        tweaks,
+        extractionTiles,
+        towers,
+        walls,
+        barracksList,
+        garrisons,
+        nextCoord,
+        scrapYards,
+      );
       if (!resolveHordeTileFight(size, defense)) {
         progress = 0;
         break;
@@ -592,7 +608,7 @@ function applyHordeCaptureDamage<T extends CapturedStructureFields>(structure: T
   };
 }
 
-export type HordeStructureKind = "extraction tile" | "tower" | "wall" | "barracks";
+export type HordeStructureKind = "extraction tile" | "tower" | "wall" | "barracks" | "scrap yard";
 
 export type HordeStructureCaptureEvent = {
   coord: Axial;
@@ -627,6 +643,7 @@ export function hordeStructureCaptureEvents(
   towers: CapturedStructureFields[],
   walls: CapturedStructureFields[],
   barracksList: CapturedStructureFields[],
+  scrapYards: CapturedStructureFields[] = [],
 ): HordeStructureCaptureEvent[] {
   if (capturedTiles.length === 0) return [];
 
@@ -651,6 +668,11 @@ export function hordeStructureCaptureEvents(
     const barracks = barracksList.find((s) => axialKey(s.coord) === key);
     if (barracks && !barracks.damaged) {
       events.push({ coord, kind: "barracks", cancelledWork: cancelledWorkLabelsForCapture(barracks) });
+      continue;
+    }
+    const scrapYard = scrapYards.find((s) => axialKey(s.coord) === key);
+    if (scrapYard && !scrapYard.damaged) {
+      events.push({ coord, kind: "scrap yard", cancelledWork: cancelledWorkLabelsForCapture(scrapYard) });
     }
   }
   return events;

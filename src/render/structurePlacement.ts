@@ -15,7 +15,8 @@ export type StructurePlacementKey =
   | "dock"
   | "construction"
   | "extraction"
-  | "powerStation";
+  | "powerStation"
+  | "scrapYard";
 
 export type StructurePlacementTune = {
   /** Vertical nudge in hex-radius units (added to STRUCTURE_GROUND_FRACTION). Negative = up. */
@@ -39,6 +40,7 @@ export const STRUCTURE_PLACEMENT: Record<StructurePlacementKey, StructurePlaceme
   construction: { offset: 0, scale: 1.8 },
   extraction: { offset: 0.1, scale: 2.2 },
   powerStation: { offset: 0.1, scale: 1.6 },
+  scrapYard: { offset: 0.1, scale: 2.2 },
 };
 
 /**
@@ -86,6 +88,11 @@ export const STRUCTURE_VARIANT_PLACEMENT: Record<string, StructurePlacementTune>
   "steel-small": { offset: 0.1, scale: 2.6 },
   "steel-mid": { offset: 0.1, scale: 1.8 },
   "steel-large": { offset: 0.1, scale: 1.8 },
+  // Scrap Yard (falls back to steel-* art until dedicated sprites ship)
+  "scrap-yard": { offset: 0.1, scale: 2.2 },
+  "scrap-yard-1": { offset: 0.1, scale: 2.2 },
+  "scrap-yard-2": { offset: 0.1, scale: 1.8 },
+  "scrap-yard-3": { offset: 0.1, scale: 1.8 },
   // Extraction — power
   "power-small": { offset: 0.1, scale: 1.6 },
   "power-mid": { offset: 0.1, scale: 1.6 },

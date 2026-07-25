@@ -1,5 +1,6 @@
 import type { ExtractionTile } from "../data/extractionTiles";
 import type { PowerStation } from "../data/powerStations";
+import type { ScrapYardRecord } from "../data/scrapYards";
 import type { Tower } from "../data/towers";
 import type { Wall } from "../data/walls";
 import type { Tweaks } from "../data/tweaksSchema";
@@ -16,6 +17,10 @@ export function extractionFloorContribution(tweaks: Tweaks, tile: ExtractionTile
   const base = tweaks.noise.passive_gathering_noise_floor[tile.resource];
   const tierIndex = TIER_ORDER.indexOf(tile.tier);
   return base * tweaks.noise.extraction_tier_noise_multiplier ** tierIndex;
+}
+
+export function scrapYardFloorContribution(tweaks: Tweaks, yard: ScrapYardRecord): number {
+  return isStructureActive(yard) ? tweaks.scrap_yards.noise_passive_per_level * yard.level : 0;
 }
 
 /** Towers/walls are built to watch and hold ground quietly — a tiny per-level/tier floor contribution vs. an active extraction tile. A damaged (horde-captured) or still-under-construction one contributes nothing, same as everywhere else it goes non-functional (engine/formulas.ts:isStructureActive). */
@@ -72,13 +77,15 @@ export function noiseFloor(
   baseLevel: number,
   powerStations: PowerStation[] = [],
   powerNetwork?: PowerNetworkSnapshot,
+  scrapYards: ScrapYardRecord[] = [],
 ): number {
   const extractionTotal = extractionTiles.reduce((sum, tile) => sum + extractionFloorContribution(tweaks, tile), 0);
   const towerTotal = towers.reduce((sum, tower) => sum + towerFloorContribution(tweaks, tower), 0);
   const wallTotal = walls.reduce((sum, wall) => sum + wallFloorContribution(tweaks, wall), 0);
   const stationTotal = powerStations.reduce((sum, station) => sum + powerStationFloorContribution(tweaks, station), 0);
+  const scrapYardTotal = scrapYards.reduce((sum, yard) => sum + scrapYardFloorContribution(tweaks, yard), 0);
   const wallDampeningTotal = walls.reduce((sum, wall) => sum + wallNoiseDampening(tweaks, wall, powerNetwork), 0);
-  const structureTotal = extractionTotal + towerTotal + wallTotal + stationTotal - wallDampeningTotal;
+  const structureTotal = extractionTotal + towerTotal + wallTotal + stationTotal + scrapYardTotal - wallDampeningTotal;
   return Math.min(noiseCap(tweaks, baseLevel), Math.max(tweaks.noise.noise_floor_minimum, structureTotal));
 }
 
@@ -101,6 +108,7 @@ export function accrueNoise(
   baseLevel: number,
   powerStations: PowerStation[] = [],
   powerNetwork?: PowerNetworkSnapshot,
+  scrapYards: ScrapYardRecord[] = [],
 ): number {
   if (elapsedSeconds <= 0) return noise;
   const floor = noiseFloor(
@@ -111,6 +119,7 @@ export function accrueNoise(
     baseLevel,
     powerStations,
     powerNetwork,
+    scrapYards,
   );
   const k = Math.log(2) / tweaks.noise.floor_convergence_half_life_seconds;
   const next = floor + (noise - floor) * Math.exp(-k * elapsedSeconds);
