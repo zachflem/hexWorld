@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import {
   axialEquals,
   axialKey,
+  axialNeighbors,
   axialSpiral,
   axialToPixel,
   hexCorners,
@@ -96,6 +97,74 @@ const FOG_OVERLAY: Record<FogTier, string | null> = {
   scouted: "rgba(40, 70, 110, 0.35)",
   hidden: "#0a0a0c",
 };
+
+/**
+ * Pointy-top corner index (hexCorners starts at top, clockwise) for the edge
+ * facing each axialNeighbors direction (E, NE, NW, W, SW, SE). The outer edge
+ * runs from that corner to the next clockwise.
+ */
+const OUTER_EDGE_CORNER_START = [1, 0, 5, 4, 3, 2] as const;
+
+/**
+ * Dev-server-only map perimeter — strokes hex edges that face out of bounds so
+ * spawn position is visible at a glance through fog. Gated by import.meta.env.DEV
+ * (Vite strips the call site in production builds).
+ */
+function drawDevMapEdgeOutline(
+  ctx: CanvasRenderingContext2D,
+  gridSize: number,
+  pan: { x: number; y: number },
+  zoom: number,
+  size: number,
+  viewWidth: number,
+  viewHeight: number,
+): void {
+  ctx.save();
+  ctx.strokeStyle = "rgba(220, 218, 210, 0.5)";
+  ctx.lineWidth = Math.max(1.5, size * 0.07);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+
+  const cullPad = size * 3;
+  const strokeOuterEdges = (coord: Axial) => {
+    const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
+    const screenCenter = { x: worldPixel.x * zoom + pan.x, y: worldPixel.y * zoom + pan.y };
+    if (
+      screenCenter.x < -cullPad ||
+      screenCenter.x > viewWidth + cullPad ||
+      screenCenter.y < -cullPad ||
+      screenCenter.y > viewHeight + cullPad
+    ) {
+      return;
+    }
+
+    const corners = hexCorners(screenCenter, size);
+    const neighbors = axialNeighbors(coord);
+    for (let d = 0; d < 6; d++) {
+      if (isWithinMapBounds(neighbors[d], gridSize)) continue;
+      const a = OUTER_EDGE_CORNER_START[d];
+      const b = (a + 1) % 6;
+      ctx.moveTo(corners[a].x, corners[a].y);
+      ctx.lineTo(corners[b].x, corners[b].y);
+    }
+  };
+
+  for (let r = 0; r < gridSize; r++) {
+    const rowHalf = Math.floor(r / 2);
+    if (r === 0 || r === gridSize - 1) {
+      for (let col = 0; col < gridSize; col++) {
+        strokeOuterEdges({ q: col - rowHalf, r });
+      }
+    } else {
+      strokeOuterEdges({ q: 0 - rowHalf, r });
+      strokeOuterEdges({ q: gridSize - 1 - rowHalf, r });
+    }
+  }
+
+  ctx.stroke();
+  ctx.restore();
+}
 
 const RESOURCE_MARKER_COLORS: Record<ResourceType, string> = {
   food: "#ffd76a",
@@ -740,10 +809,10 @@ export const HexCanvas = forwardRef<
         }
       }
 
-      // Pass 2: fog, structures, markers, and every other per-tile
-      // decoration — drawn after the whole terrain layer above so fog tint
-      // and the hidden-tile fill always paint over any texture bleed from
-      // pass 1.
+      // Pass 2: fog/tints → selection ring → structures → markers.
+      // Drawn after the whole terrain/path layer so fog tint and the
+      // hidden-tile fill always paint over any texture bleed from pass 1;
+      // selection is intentionally under structure sprites.
       for (let r = Math.max(0, rMin); r <= Math.min(gridSize - 1, rMax); r++) {
         const qMin = Math.floor(worldLeft / (BASE_HEX_SIZE * sqrt3) - r / 2) - 1;
         const qMax = Math.ceil(worldRight / (BASE_HEX_SIZE * sqrt3) - r / 2) + 1;
@@ -792,6 +861,11 @@ export const HexCanvas = forwardRef<
             ctx.fillStyle = BUILD_MODE_TINT;
             ctx.fill();
           }
+
+          // Selection ring after terrain/path (pass 1) and fog/tints, but
+          // before structure sprites so the stroke sits under buildings
+          // instead of clipping their lower edge.
+          if (isSelected) strokeSelection(corners);
 
           if (axialEquals(coord, base)) {
             const baseIcon = getStructureIconTextureCandidates(structureLevelCandidates("base", baseLevel));
@@ -1260,9 +1334,12 @@ export const HexCanvas = forwardRef<
             ctx.textBaseline = "middle";
             ctx.fillText("🚩", badgeX, badgeY);
           }
-
-          if (isSelected) strokeSelection(corners);
         }
+      }
+
+      // After fog so the perimeter stays visible on hidden tiles (spawn debug).
+      if (import.meta.env.DEV) {
+        drawDevMapEdgeOutline(ctx, gridSize, pan, zoom, size, canvas.width, canvas.height);
       }
     }
 

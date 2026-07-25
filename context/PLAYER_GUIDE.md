@@ -55,7 +55,7 @@ The top-left resource bar shows stockpile amounts; a small green/red **±** next
 
 ## Your starting position
 
-You begin owning your base tile plus the two full rings around it (19 tiles) outright — no claiming needed. You start with enough food, wood, and stone to build one extraction tile of each of those three types, with a modest buffer left over.
+You begin owning your base tile plus the two full rings around it (19 tiles) outright — no claiming needed. Different seeds vary the **starting landscape** around that camp (biome mix near home), not only the far map — the same seed always settles you in the same spot. You start with enough food, wood, and stone to build one extraction tile of each of those three types, with a modest buffer left over.
 
 ---
 
