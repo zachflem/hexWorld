@@ -63,7 +63,7 @@ export function getScrapTexture(variant: number): HTMLImageElement | null {
 }
 
 /**
- * Fixed-structure marker icon (base, tower, barracks, dock, den, outpost,
+ * Fixed-structure marker icon (base, tower, barracks, dock, den, lab, outpost,
  * wall tiers, ...) — a small overlay icon (like resource markers), not
  * full-hex art like terrain. `name` matches the PNG's filename under
  * profiles/{slug}/assets/structures/ (e.g. "tower" -> tower.png).

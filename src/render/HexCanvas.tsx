@@ -224,6 +224,8 @@ const TOWER_ACTIVE_RING_COLOR = "#ffd23f";
 const BARRACKS_COLOR = "#8e44ad";
 const DOCK_COLOR = "#8a6d3b";
 const DEN_COLOR = "#4a1a1a";
+/** Fallback when structures/lab.png hasn't loaded — cool teal so it reads apart from dens. */
+const LAB_COLOR = "#1a5a6b";
 /** Fallback for a converted outpost when tiles/structures/outpost.png hasn't loaded yet — reuses the base's ⌂ glyph (it IS a base, functionally) but a distinct color so it reads as base-like without being mistaken for the player's actual main base. */
 const OUTPOST_COLOR = "#3a6b8a";
 /** Ring drawn around a den currently under siege (hold period) — same technique as TOWER_ACTIVE_RING_COLOR. */
@@ -1118,6 +1120,28 @@ export const HexCanvas = forwardRef<
               // (see the upgradeAvailableKeys doc comment above) — never
               // upgradeable, so it never gets the orange treatment.
               drawLevelBadge(screenCenter, den.level);
+            } else if (
+              axialEquals(coord, lab.coord) &&
+              (fogDisabled || tier === "scouted" || tier === "owned")
+            ) {
+              // Scouted (or owned after claim) lab hex — asset exists but was
+              // never drawn, so "Scouts found the lab" toasts left an empty tile.
+              const labIcon = getStructureIconTexture("lab");
+              if (labIcon) {
+                drawPlacedStructureIcon(ctx, labIcon, screenCenter.x, screenCenter.y, size, "lab");
+              } else {
+                ctx.beginPath();
+                ctx.arc(screenCenter.x, screenCenter.y, size * 0.42, 0, Math.PI * 2);
+                ctx.fillStyle = LAB_COLOR;
+                ctx.fill();
+                ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+                ctx.stroke();
+                ctx.fillStyle = "#ffffff";
+                ctx.font = `bold ${Math.max(9, size * 0.4)}px sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("LAB", screenCenter.x, screenCenter.y);
+              }
             } else if (tower) {
               if (activeTowerKeys.has(coordKey)) {
                 ctx.beginPath();

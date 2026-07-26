@@ -141,7 +141,7 @@ You can **garrison** militia/knights/snipers on any owned tile — a garrison au
 
 **Den / lab assaults** cannot retarget mid-march, but you can **Recall** them home to the barracks/hub they launched from (outbound food sunk; return free). Already-claimed tiles stay owned.
 
-Those same options also appear on the destination tile’s bottom sheet under **Party orders** (click the hex). The arrival decision notification stays open until you choose or **Dismiss** it (collapses to an icon peek like other timers; the countdown still runs until auto-recall). A wipe leaves a **tombstone** showing units lost, power, and cause.
+Those same options also appear on the destination tile’s bottom sheet under **Party orders** (click the hex). The arrival decision notification stays fully expanded with those buttons until you choose (or the countdown hits auto-recall). A wipe leaves a **tombstone** showing units lost, power, and cause.
 
 Training militia normally queues them at your barracks over time, but you can also **rush** the queue to finish instantly for a noise spike — useful when you need bodies right now and are willing to accept the extra attention.
 
@@ -207,7 +207,7 @@ Somewhere out past every zombie den — deliberately farther out than any of the
 
 **Finding it** has two tracks that work together:
 
-- **Watchtowers (level 2+)** sometimes pick up a vague distant **signal** ("something in the north — send the scouts"). That is not a clue — it steers **Wandering Scouts** toward that sector and makes them more likely to actually step the lab hex. Level 4 towers hear signals more often. Scouts can also stumble onto the lab with no signal at all.
+- **Watchtowers (level 2+)** sometimes pick up a vague distant **signal** ("something in the north — send the scouts"). That is not a clue — it steers **Wandering Scouts** toward that sector and makes them more likely to actually step the lab hex. Level 4 towers hear signals more often. Scouts can also stumble onto the lab with no signal at all — when they do, a toast names the coordinates and the lab marker appears on that hex.
 - **Clearing a den** always awards one directional **clue** (5 total). Clues refine from a rough compass quadrant relative to your base down to a narrower arc. Wandering scouts never collect clues.
 
 Once you've secured **5 dens' worth of clues**, the map marks a **search cluster**: scouted hexes inside it get a light tint in your chosen color, and unscouted hexes there show a little more through the fog — still not the exact lab tile. Send scouts through the cluster (or keep exploring earlier) to find and assault the lab.

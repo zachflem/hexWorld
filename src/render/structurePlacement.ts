@@ -9,6 +9,7 @@ export type StructurePlacementKey =
   | "base"
   | "outpost"
   | "den"
+  | "lab"
   | "tower"
   | "barracks"
   | "wall"
@@ -33,6 +34,7 @@ export const STRUCTURE_PLACEMENT: Record<StructurePlacementKey, StructurePlaceme
   base: { offset: 0.5, scale: 2.4 },
   outpost: { offset: 0, scale: 2.2 },
   den: { offset: 0, scale: 1.6 },
+  lab: { offset: 0, scale: 1.8 },
   tower: { offset: 0, scale: 2.2 },
   barracks: { offset: 0.1, scale: 2.4 },
   wall: { offset: 0, scale: 2.4 },

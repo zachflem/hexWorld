@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Package, Skull, Zap } from "lucide-react";
+import { FlaskConical, Package, Skull, Zap } from "lucide-react";
 import { loadProfile, fetchProfileRegistry, resolveProfileSlug, DEFAULT_PROFILE_SLUG, type ProfileEntry } from "./data/profileRegistry";
 import type { Tweaks } from "./data/tweaksSchema";
 import { PROFILE_SLUG_DB_KEY } from "./data/profile";
@@ -1225,7 +1225,11 @@ export default function App() {
       // watchtower search pulse (signal already did its job).
       if (wanderingLabRevealed) {
         labWorking = { ...labWorking, watchtowerSignal: null };
-        pushToast({ message: "Scouts found the hidden lab!" });
+        pushToast({
+          icon: <FlaskConical size={NOTIFICATION_ICON_SIZE} />,
+          message: "Scouts found the hidden lab!",
+          coord: labWorking.coord,
+        });
       }
 
       // Scrapper yard↔stash hauls (after yard construction + scrap samples).
@@ -1623,7 +1627,8 @@ export default function App() {
             });
             continue;
           }
-          // Outbound arrival — wait for orders
+          // Outbound arrival — wait for orders. HUD is the NotificationTray
+          // forceExpanded decision row; no separate toast.
           const decisionDeadlineAt =
             virtualNow + current.tweaks.expeditions.arrival_decision_minutes * 60_000;
           nextExpeditions.push({
@@ -1631,10 +1636,6 @@ export default function App() {
             resolvedIndex: expedition.path.length - 1,
             phase: "awaitingOrders",
             decisionDeadlineAt,
-          });
-          pushToast({
-            message: "We made it. Where to next, boss?",
-            coord: expedition.target,
           });
           continue;
         }
