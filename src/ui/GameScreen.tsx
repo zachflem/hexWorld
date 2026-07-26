@@ -138,7 +138,13 @@ import {
   outpostReinforcementUpgradeDurationMs,
   outpostRepairCost,
 } from "../engine/outposts";
-import { availableCrossBowSnipers, availableJunkyardKnights, availableMilitia, garrisonAt } from "../engine/garrisons";
+import {
+  availableCrossBowSnipers,
+  availableJunkyardKnights,
+  availableMilitia,
+  garrisonAt,
+  isHordeReachableFromGarrison,
+} from "../engine/garrisons";
 import type { Player } from "../data/player";
 import { RESOURCE_ORDER, type ResourceAmounts, type ResourceType } from "../data/resources";
 import { assetUrlCandidates, resolveAssetPath } from "../render/assetPaths";
@@ -2084,6 +2090,28 @@ export function GameScreen({
     };
   }
 
+  /** True when a live horde stands on this tile or within garrison strike range (incl. wall bonus). */
+  function selectedThreatenedByHorde(): boolean {
+    if (!selected || !isOwned(selected)) return false;
+    return hordes.some((h) => {
+      const tile = h.path[h.pathIndex];
+      return tile != null && isHordeReachableFromGarrison(tweaks, walls, selected, tile);
+    });
+  }
+
+  /** Category tab for Garrison — preferDefault when a horde threatens so the sheet opens on the form. */
+  function garrisonCategoryAction(preferDefault: boolean): SheetAction | null {
+    const leaf = garrisonSheetAction();
+    if (!leaf) return null;
+    return {
+      key: "garrison",
+      icon: <Flag size={18} />,
+      title: "Garrison",
+      preferDefault,
+      subActions: [leaf],
+    };
+  }
+
   function structuralActionsFor(): SheetAction[] {
     if (!selected) return [];
     const actions: SheetAction[] = [];
@@ -2234,14 +2262,9 @@ export function GameScreen({
           })),
         });
       }
-      const garrison = garrisonSheetAction();
+      const garrison = garrisonCategoryAction(selectedThreatenedByHorde());
       if (garrison) {
-        actions.push({
-          key: "garrison",
-          icon: <Flag size={18} />,
-          title: "Garrison",
-          subActions: [garrison],
-        });
+        actions.push(garrison);
       }
       return actions;
     }
@@ -3984,9 +4007,17 @@ export function GameScreen({
       });
     }
 
-    const garrison = !selectedIsBase ? garrisonSheetAction() : null;
-    if (garrison) {
-      actions.push(garrison);
+    // Non-base: leaf under Actions usually; promote to a preferDefault Garrison
+    // tab when a horde is in strike range so the player lands on the form.
+    if (!selectedIsBase) {
+      const threatened = selectedThreatenedByHorde();
+      if (threatened) {
+        const garrisonCat = garrisonCategoryAction(true);
+        if (garrisonCat) actions.push(garrisonCat);
+      } else {
+        const garrison = garrisonSheetAction();
+        if (garrison) actions.push(garrison);
+      }
     }
 
     const canDemolishHere = !selectedIsBase && (!!selectedStructure || !!selectedDock);

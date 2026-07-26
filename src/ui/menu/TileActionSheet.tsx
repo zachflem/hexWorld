@@ -24,6 +24,12 @@ export interface SheetAction {
    * used for map upgrade badges.
    */
   upgradeAvailable?: boolean;
+  /**
+   * Prefer this category as the sheet's default tab (after In progress /
+   * arrival orders). Used when a horde threatens the tile so Garrison opens
+   * first — and its form auto-opens when present.
+   */
+  preferDefault?: boolean;
   onClick?: () => void;
   /** Category tab: items listed when this tab is active. */
   subActions?: SheetAction[];
@@ -45,6 +51,7 @@ interface SheetTab {
   items?: SheetAction[];
   infoContent?: ReactNode;
   upgradeAvailable?: boolean;
+  preferDefault?: boolean;
 }
 
 function anyUpgradeAvailable(actions: SheetAction[]): boolean {
@@ -86,6 +93,7 @@ export function deriveSheetTabs(actions: SheetAction[]): SheetTab[] {
         kind: "list",
         items,
         upgradeAvailable: action.upgradeAvailable || anyUpgradeAvailable(items),
+        preferDefault: action.preferDefault,
       });
       continue;
     }
@@ -143,7 +151,8 @@ export function deriveSheetTabs(actions: SheetAction[]): SheetTab[] {
   return tabs;
 }
 
-function defaultTabKey(tabs: SheetTab[]): string | null {
+/** Exported for unit tests — picks which category tab the sheet opens on. */
+export function defaultTabKey(tabs: SheetTab[]): string | null {
   if (tabs.length === 0) return null;
   // Busy work on this tile outranks upgrade highlights — the sheet should
   // open on what's already happening (#74).
@@ -152,10 +161,22 @@ function defaultTabKey(tabs: SheetTab[]): string | null {
   // Party waiting for arrival orders — same urgency as a live job (#73).
   const arrivalOrders = tabs.find((t) => t.key === "arrival-orders");
   if (arrivalOrders) return arrivalOrders.key;
+  // Horde-threat Garrison (or any preferDefault category) before upgrade shine.
+  const preferred = tabs.find((t) => t.preferDefault);
+  if (preferred) return preferred.key;
   // Prefer an affordable upgrade highlight when present; otherwise the first
   // tab (Upgrades if that group exists, else Build/Train/etc.).
   const withUpgrade = tabs.find((t) => t.upgradeAvailable);
   return (withUpgrade ?? tabs[0]).key;
+}
+
+/** When the default tab is a preferDefault category, open its form immediately. */
+export function defaultOpenFormKey(tabs: SheetTab[], tabKey: string | null): string | null {
+  if (tabKey == null) return null;
+  const tab = tabs.find((t) => t.key === tabKey);
+  if (!tab || tab.kind !== "list" || !tab.preferDefault) return null;
+  const formItem = tab.items?.find((a) => a.formContent != null && !a.disabled);
+  return formItem?.key ?? null;
 }
 
 /**
@@ -172,22 +193,24 @@ export function TileActionSheet({
   onClose: () => void;
 }) {
   const tabs = useMemo(() => deriveSheetTabs(actions), [actions]);
-  const tabSignature = tabs.map((t) => t.key).join("|");
+  const tabSignature = tabs.map((t) => `${t.key}:${t.preferDefault ? "1" : "0"}`).join("|");
   const [activeTabKey, setActiveTabKey] = useState<string | null>(() => defaultTabKey(tabs));
-  const [openFormKey, setOpenFormKey] = useState<string | null>(null);
+  const [openFormKey, setOpenFormKey] = useState<string | null>(() =>
+    defaultOpenFormKey(tabs, defaultTabKey(tabs)),
+  );
 
   // Preserve the active tab across GameScreen re-renders (action trees are
   // rebuilt every tick); only re-pick a default when the tab set itself changes.
   useEffect(() => {
+    let openedForm: string | null | undefined;
     setActiveTabKey((current) => {
       if (current && tabs.some((t) => t.key === current)) return current;
-      return defaultTabKey(tabs);
+      const next = defaultTabKey(tabs);
+      openedForm = defaultOpenFormKey(tabs, next);
+      return next;
     });
+    if (openedForm !== undefined) setOpenFormKey(openedForm);
   }, [tabSignature, tabs]);
-
-  useEffect(() => {
-    setOpenFormKey(null);
-  }, [activeTabKey]);
 
   const activeTab = tabs.find((t) => t.key === activeTabKey) ?? tabs[0] ?? null;
   const openFormAction =
@@ -200,6 +223,11 @@ export function TileActionSheet({
       return;
     }
     action.onClick?.();
+  }
+
+  function selectTab(tabKey: string) {
+    setActiveTabKey(tabKey);
+    setOpenFormKey(null);
   }
 
   const tabBar =
@@ -221,7 +249,7 @@ export function TileActionSheet({
               type="button"
               role="tab"
               aria-selected={active}
-              onClick={() => setActiveTabKey(tab.key)}
+              onClick={() => selectTab(tab.key)}
               style={{
                 flex: "0 0 auto",
                 background: active ? "rgba(255, 255, 255, 0.14)" : "transparent",
