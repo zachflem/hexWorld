@@ -11,6 +11,7 @@ import {
   ASSAULT_CORRIDOR,
   TERRITORY_CORRIDOR,
   expeditionPathIndexAt,
+  assaultProvisionsCost,
   expeditionProvisionsCost,
   expeditionTravelDurationMs,
   findBestExpeditionRoute,
@@ -218,6 +219,16 @@ describe("expeditionProvisionsCost", () => {
     const tweaks = loadRealTweaks();
     expect(expeditionProvisionsCost(tweaks, 0, 5)).toBe(0);
     expect(expeditionProvisionsCost(tweaks, 10, 0)).toBe(0);
+  });
+});
+
+describe("assaultProvisionsCost", () => {
+  it("applies assault_provisions_multiplier on top of expedition rates", () => {
+    const tweaks = loadRealTweaks();
+    const full = expeditionProvisionsCost(tweaks, 200, 104);
+    const assault = assaultProvisionsCost(tweaks, 200, 104);
+    expect(assault).toBeCloseTo(full * tweaks.expeditions.assault_provisions_multiplier);
+    expect(assault).toBeLessThan(full);
   });
 });
 

@@ -114,6 +114,7 @@ import {
   TERRITORY_CORRIDOR,
   expeditionPathIndexAt,
   expeditionCurrentTile,
+  assaultProvisionsCost,
   expeditionProvisionsCost,
   expeditionTravelDurationMs,
   findBestExpeditionRoute,
@@ -4707,7 +4708,7 @@ export default function App() {
     const partySize = party.militiaCommitted + party.junkyardKnightCommitted + party.crossBowSniperCommitted;
     if (partySize <= 0) return { ok: false, reason: "Commit at least one unit" };
 
-    const provisionsCost = expeditionProvisionsCost(tweaks, partySize, route.cost);
+    const provisionsCost = assaultProvisionsCost(tweaks, partySize, route.cost);
     if (game.resources.food < provisionsCost) return { ok: false, reason: "Not enough food" };
 
     const resources = { ...game.resources, food: game.resources.food - provisionsCost };
@@ -4791,7 +4792,7 @@ export default function App() {
     const partySize = party.militiaCommitted + party.junkyardKnightCommitted + party.crossBowSniperCommitted;
     if (partySize <= 0) return { ok: false, reason: "Commit at least one unit" };
 
-    const provisionsCost = expeditionProvisionsCost(tweaks, partySize, route.cost);
+    const provisionsCost = assaultProvisionsCost(tweaks, partySize, route.cost);
     if (game.resources.food < provisionsCost) return { ok: false, reason: "Not enough food" };
 
     const resources = { ...game.resources, food: game.resources.food - provisionsCost };

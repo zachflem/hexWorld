@@ -117,6 +117,14 @@ export function expeditionProvisionsCost(tweaks: Tweaks, partySize: number, path
   return partySize * pathCost * tweaks.expeditions.provisions_food_per_unit_per_cost;
 }
 
+/**
+ * Den/lab assault provisions — same shape as expeditions but discounted.
+ * Lab parties × long far-map routes made full expedition rates unpayable.
+ */
+export function assaultProvisionsCost(tweaks: Tweaks, partySize: number, pathCost: number): number {
+  return expeditionProvisionsCost(tweaks, partySize, pathCost) * tweaks.expeditions.assault_provisions_multiplier;
+}
+
 /** Reinforce detachments pay a fraction of normal provisions (path already known/cleared). */
 export function reinforceProvisionsCost(tweaks: Tweaks, partySize: number, pathCost: number): number {
   return expeditionProvisionsCost(tweaks, partySize, pathCost) * tweaks.expeditions.reinforce_cost_multiplier;

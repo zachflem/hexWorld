@@ -485,6 +485,8 @@
   "expeditions": {
     "_status": "corridor conquest (2026-07-24, #73) — free-claim scouted/owned, horde fight-or-wipe, arrival orders.",
     "provisions_food_per_unit_per_cost": 1.5,
+    "assault_provisions_multiplier": 0.1,
+    "_assault_provisions_note": "Den/lab assaults only (engine/expeditions.ts:assaultProvisionsCost). Full expedition rates × lab-distance × win-condition army sizes blew past storage (e.g. ~200 units over cost~100 ≈ 30k food). 0.1× keeps a typical lab march around a few thousand food — late-game L3–L4 storage, not a second economy.",
     "travel_seconds_per_cost": 15,
     "tombstone_lifetime_minutes": 5,
     "unowned_path_penalty": 50,

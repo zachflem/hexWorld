@@ -196,6 +196,10 @@ export function assignScrapperStash(
   return { ...yard, scrapper: next };
 }
 
+/**
+ * Pull the Scrapper home and clear its stash assignment (Q47) — on arrival it
+ * idles at the yard instead of auto-looping the old stash. Cargo is kept (Q38).
+ */
 export function recallScrapperToYard(
   tweaks: Tweaks,
   seed: number,
@@ -222,7 +226,7 @@ export function recallScrapperToYard(
     gridSize,
     now,
     speed,
-    trip.assignedStashId,
+    null,
     "toYard",
     trip.cargo,
   );

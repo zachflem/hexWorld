@@ -6,7 +6,12 @@ import { tweaksSchema } from "../data/tweaksSchema";
 import { idleScrapperTrip, type ScrapYardRecord } from "../data/scrapYards";
 import type { ScrapStashRecord } from "../data/scrapStashes";
 import type { PowerNetworkSnapshot } from "./power";
-import { advanceScrappers, assignScrapperStash, scrapYardYieldPerSecond } from "./scrappers";
+import {
+  advanceScrappers,
+  assignScrapperStash,
+  recallScrapperToYard,
+  scrapYardYieldPerSecond,
+} from "./scrappers";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -129,6 +134,57 @@ describe("scrappers", () => {
     expect(afterDeliver.scrapYards[0]!.scrapper?.phase).toBe("toStash");
     expect(afterDeliver.scrapYards[0]!.scrapper?.assignedStashId).toBe("stash-1");
     expect(afterDeliver.scrapYards[0]!.scrapper?.cargo).toBe(0);
+  });
+
+  it("recall clears the stash assignment so arrival does not auto-redeploy", () => {
+    const tweaks = loadRealTweaks();
+    const base = { q: 0, r: 0 };
+    const yardCoord = { q: 1, r: 0 };
+    const stashCoord = { q: 2, r: 0 };
+    const owned = [base, yardCoord, stashCoord];
+    const territory = { base, owned };
+    const seed = 1;
+    const gridSize = 32;
+    const now = 1_000;
+
+    const startedYard = assignScrapperStash(
+      tweaks,
+      seed,
+      yard({ coord: yardCoord }),
+      stash({ coord: stashCoord, remainingSteel: 40 }),
+      territory,
+      [],
+      gridSize,
+      now,
+    );
+    expect(startedYard).not.toBeNull();
+
+    const recalled = recallScrapperToYard(
+      tweaks,
+      seed,
+      startedYard!,
+      territory,
+      [],
+      gridSize,
+      now + 1,
+    );
+    expect(recalled).not.toBeNull();
+    expect(recalled!.scrapper?.phase).toBe("toYard");
+    expect(recalled!.scrapper?.assignedStashId).toBeNull();
+
+    const afterHome = advanceScrappers(
+      tweaks,
+      seed,
+      [recalled!],
+      [stash({ coord: stashCoord, remainingSteel: 40 })],
+      territory,
+      [],
+      gridSize,
+      recalled!.scrapper!.arriveAt,
+      UNLIMITED_POWER,
+    );
+    expect(afterHome.scrapYards[0]!.scrapper?.phase).toBe("idle");
+    expect(afterHome.scrapYards[0]!.scrapper?.assignedStashId).toBeNull();
   });
 
   it("stops looping and idles when the assigned stash is empty", () => {

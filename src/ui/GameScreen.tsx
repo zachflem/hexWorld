@@ -119,6 +119,7 @@ import {
 import { computeResourceRates } from "../engine/resourceRates";
 import { canRepairHordeDamagedTile } from "../engine/territory";
 import {
+  assaultProvisionsCost,
   expeditionProvisionsCost,
   expeditionTravelDurationMs,
   findBestExpeditionRoute,
@@ -1118,7 +1119,7 @@ export function GameScreen({
     if (!route) return null;
     const partySize = militiaToSend + junkyardKnightToSend + crossBowSniperToSend;
     const provisionsCost: Partial<Record<ResourceType, number>> = {
-      food: expeditionProvisionsCost(tweaks, partySize, route.cost),
+      food: assaultProvisionsCost(tweaks, partySize, route.cost),
     };
     return {
       distanceTiles: route.path.length - 1,
@@ -1150,7 +1151,7 @@ export function GameScreen({
     if (!route) return null;
     const partySize = militiaToSend + junkyardKnightToSend + crossBowSniperToSend;
     const provisionsCost: Partial<Record<ResourceType, number>> = {
-      food: expeditionProvisionsCost(tweaks, partySize, route.cost),
+      food: assaultProvisionsCost(tweaks, partySize, route.cost),
     };
     return {
       distanceTiles: route.path.length - 1,
@@ -2432,13 +2433,16 @@ export function GameScreen({
             (s) => isActiveScrapStash(s) && knownKeys.has(axialKey(s.coord)),
           );
           const trip = selectedScrapYard.scrapper;
-          const canAssign = !trip || trip.phase === "idle" || (trip.phase === "toStash" && trip.cargo === 0);
-          if (knownStashes.length > 0 && canAssign) {
+          // Assign only when parked with no stash job — not while looping a haul
+          // (outbound used to re-show Assign for mid-route redirect and flickered).
+          const canAssign =
+            knownStashes.length > 0 && (!trip || (trip.phase === "idle" && trip.assignedStashId == null));
+          if (canAssign) {
             actions.push({
               key: "scrapper-assign",
               icon: <HardHat size={18} />,
               title: "Assign Scrapper",
-              detail: trip?.phase === "toStash" ? "Redirect empty haul" : "Send to a known stash",
+              detail: "Send to a known stash",
               subActions: knownStashes.map((stash) => ({
                 key: `scrapper-assign-${stash.id}`,
                 icon: resourceIcon("steel", 18),

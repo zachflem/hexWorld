@@ -317,6 +317,12 @@ export const tweaksSchema = z.object({
   expeditions: z.object({
     _status: z.string(),
     provisions_food_per_unit_per_cost: z.number(),
+    /**
+     * Multiplier on provisions for den/lab assaults only — lab routes are long
+     * and parties are large, so full expedition rates made the win condition
+     * food-impossible (often > L5 storage).
+     */
+    assault_provisions_multiplier: z.number(),
     travel_seconds_per_cost: z.number(),
     tombstone_lifetime_minutes: z.number(),
     /** Extra Dijkstra weight for stepping onto scouted-but-unowned tiles (owned preferred). */
