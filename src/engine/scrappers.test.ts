@@ -6,7 +6,7 @@ import { tweaksSchema } from "../data/tweaksSchema";
 import { idleScrapperTrip, type ScrapYardRecord } from "../data/scrapYards";
 import type { ScrapStashRecord } from "../data/scrapStashes";
 import type { PowerNetworkSnapshot } from "./power";
-import { advanceScrappers, assignScrapperStash } from "./scrappers";
+import { advanceScrappers, assignScrapperStash, scrapYardYieldPerSecond } from "./scrappers";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -126,8 +126,62 @@ describe("scrappers", () => {
     );
 
     expect(afterDeliver.scrapYards[0]!.stockpile).toBe(expectedCargo);
-    expect(afterDeliver.scrapYards[0]!.scrapper?.phase).toBe("idle");
+    expect(afterDeliver.scrapYards[0]!.scrapper?.phase).toBe("toStash");
+    expect(afterDeliver.scrapYards[0]!.scrapper?.assignedStashId).toBe("stash-1");
     expect(afterDeliver.scrapYards[0]!.scrapper?.cargo).toBe(0);
+  });
+
+  it("stops looping and idles when the assigned stash is empty", () => {
+    const tweaks = loadRealTweaks();
+    const base = { q: 0, r: 0 };
+    const yardCoord = { q: 1, r: 0 };
+    const stashCoord = { q: 2, r: 0 };
+    const owned = [base, yardCoord, stashCoord];
+    const territory = { base, owned };
+    const seed = 1;
+    const gridSize = 32;
+    const now = 1_000;
+    const cap = tweaks.scrap_yards.scrapper.capacity_by_level[1] ?? 8;
+
+    const startedYard = assignScrapperStash(
+      tweaks,
+      seed,
+      yard({ coord: yardCoord }),
+      stash({ coord: stashCoord, remainingSteel: cap }),
+      territory,
+      [],
+      gridSize,
+      now,
+    );
+    expect(startedYard).not.toBeNull();
+
+    const afterPickup = advanceScrappers(
+      tweaks,
+      seed,
+      [startedYard!],
+      [stash({ coord: stashCoord, remainingSteel: cap })],
+      territory,
+      [],
+      gridSize,
+      startedYard!.scrapper!.arriveAt,
+      UNLIMITED_POWER,
+    );
+    expect(afterPickup.scrapStashes[0]!.remainingSteel).toBe(0);
+
+    const afterDeliver = advanceScrappers(
+      tweaks,
+      seed,
+      afterPickup.scrapYards,
+      afterPickup.scrapStashes,
+      afterPickup.territory,
+      afterPickup.scoutedTiles,
+      gridSize,
+      afterPickup.scrapYards[0]!.scrapper!.arriveAt,
+      UNLIMITED_POWER,
+    );
+
+    expect(afterDeliver.scrapYards[0]!.stockpile).toBe(cap);
+    expect(afterDeliver.scrapYards[0]!.scrapper?.phase).toBe("idle");
   });
 
   it("L2+ yards without power freeze the Scrapper mid-route (cargo kept)", () => {
@@ -170,5 +224,31 @@ describe("scrappers", () => {
     expect(frozen.scrapYards[0]!.scrapper?.cargo).toBe(0);
     expect(frozen.scrapStashes[0]!.remainingSteel).toBe(40);
     expect(frozen.scrapYards[0]!.stockpile).toBe(0);
+  });
+
+  it("scrapYardYieldPerSecond estimates steel/sec from capacity and round-trip to a known stash", () => {
+    const tweaks = loadRealTweaks();
+    const base = { q: 0, r: 0 };
+    const yardCoord = { q: 1, r: 0 };
+    const stashCoord = { q: 2, r: 0 };
+    const owned = [base, yardCoord, stashCoord];
+    const territory = { base, owned };
+    const activeYard = yard({ coord: yardCoord, level: 1 });
+    const stashes = [stash({ coord: stashCoord, remainingSteel: 400 })];
+
+    const rate = scrapYardYieldPerSecond(tweaks, 1, activeYard, stashes, territory, [], 32, UNLIMITED_POWER);
+    expect(rate).toBeGreaterThan(0);
+
+    const offline = scrapYardYieldPerSecond(
+      tweaks,
+      1,
+      yard({ coord: yardCoord, level: 2 }),
+      stashes,
+      territory,
+      [],
+      32,
+      OFFLINE_POWER,
+    );
+    expect(offline).toBe(0);
   });
 });

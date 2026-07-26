@@ -9,6 +9,7 @@ import {
   scrapYardUpgradeCost,
   scrapYardUpgradeDurationMs,
 } from "../engine/scrapYards";
+import { scrapYardYieldPerSecond } from "../engine/scrappers";
 import {
   dockBuildCost,
   dockBuildDurationMs,
@@ -3309,7 +3310,18 @@ export function GameScreen({
     }
     if (selectedScrapYard) {
       const yardCourierAutomated = structureHasCourierAutomation(selectedScrapYard.level);
+      const scrapYield = scrapYardYieldPerSecond(
+        tweaks,
+        world.seed,
+        selectedScrapYard,
+        scrapStashes,
+        territory,
+        scoutedTiles,
+        gridSize,
+        powerNetwork,
+      );
       rows.push(
+        <div key="scrap-yard-yield">Yield: {scrapYield.toFixed(1)} steel/sec</div>,
         <div key="scrap-yard-stockpile">Stockpile: {Math.floor(selectedScrapYard.stockpile)} steel</div>,
         <div key="scrap-yard-courier">
           {yardCourierAutomated
@@ -3563,20 +3575,36 @@ export function GameScreen({
           : scrapYard.upgrade
             ? `Upgrading to L${scrapYard.upgrade.targetLevel}…`
             : "Operational";
+      const yardCourierAutomated = structureHasCourierAutomation(scrapYard.level);
+      const scrapYield = scrapYardYieldPerSecond(
+        tweaks,
+        world.seed,
+        scrapYard,
+        scrapStashes,
+        territory,
+        scoutedTiles,
+        gridSize,
+        powerNetwork,
+      );
       return (
         <HoverPanel
           icon={structureIcon(scrapYardSpriteCandidates(scrapYard.level), 28, resourceIcon("steel", 22))}
           title={`Scrap yard — L${scrapYard.level}`}
           status={status}
         >
-          <span>Stockpile: {Math.floor(scrapYard.stockpile)} steel</span>
+          {isStructureActive(scrapYard) && (
+            <span>Yield: {scrapYield.toFixed(1)} steel/sec</span>
+          )}
           <span>
-            {scrapYard.courier
-              ? scrapYard.courier.phase === "toBase"
-                ? "Courier delivering to base"
-                : "Courier returning"
-              : "Courier automated"}
+            {yardCourierAutomated
+              ? scrapYard.courier
+                ? scrapYard.courier.phase === "toBase"
+                  ? "Courier delivering to base"
+                  : "Courier returning"
+                : "Courier automated"
+              : "Manual collection (L2 automates)"}
           </span>
+          <span>Stockpile: {Math.floor(scrapYard.stockpile)} steel</span>
           <span>{scrapperStatusText(scrapYard)}</span>
           <span>Noise floor: +{scrapYardFloorContribution(tweaks, scrapYard).toFixed(1)}db</span>
           <span>{powerDrawText("scrap_yard", scrapYard.level)}</span>

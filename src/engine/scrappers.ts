@@ -6,7 +6,6 @@ import type { TerritoryRecord } from "../data/territory";
 import type { Tweaks } from "../data/tweaksSchema";
 import { axialDistance, axialKey, type Axial } from "./hexCoords";
 import {
-  expeditionTravelDurationMs,
   findExpeditionRouteFrom,
   stepCorridorWalk,
 } from "./expeditions";
@@ -27,6 +26,16 @@ export function scrapperHasAuto(tweaks: Tweaks, yardLevel: number): boolean {
   return yardLevel >= tweaks.scrap_yards.scrapper.auto_next_stash_min_level;
 }
 
+/** Scrapper leg duration — uses scrap_yards.scrapper.travel_seconds_per_cost, not expedition pacing. */
+export function scrapperTravelDurationMs(
+  tweaks: Tweaks,
+  pathCost: number,
+  speedMultiplier: number,
+): number {
+  const sec = tweaks.scrap_yards.scrapper.travel_seconds_per_cost;
+  return (pathCost * sec * 1000) / Math.max(0.01, speedMultiplier);
+}
+
 function startLeg(
   tweaks: Tweaks,
   seed: number,
@@ -43,7 +52,7 @@ function startLeg(
 ): ScrapperTrip | null {
   const route = findExpeditionRouteFrom(tweaks, seed, from, to, territory, scoutedTiles, gridSize);
   if (!route || route.path.length < 2) return null;
-  const duration = expeditionTravelDurationMs(tweaks, route.cost, speedMultiplier);
+  const duration = scrapperTravelDurationMs(tweaks, route.cost, speedMultiplier);
   if (duration <= 0) return null;
   return {
     assignedStashId,
@@ -78,15 +87,64 @@ function closestKnownStash(
   let best: ScrapStashRecord | null = null;
   let bestDist = Infinity;
   for (const stash of stashes) {
-    if (!isActiveScrapStash(stash)) continue;
-    if (!knownKeys.has(axialKey(stash.coord))) continue;
-    const d = axialDistance(yard.coord, stash.coord);
-    if (d < bestDist) {
-      bestDist = d;
+    if (!isActiveScrapStash(stash) || !knownKeys.has(axialKey(stash.coord))) continue;
+    const dist = axialDistance(yard.coord, stash.coord);
+    if (dist < bestDist) {
+      bestDist = dist;
       best = stash;
     }
   }
   return best;
+}
+
+/**
+ * Estimated steel inflow into the yard stockpile (units/sec) from Scrapper
+ * hauling — capacity ÷ round-trip travel to the assigned or nearest known
+ * active stash. Mirrors extraction `yieldPerSecond` for tooltips / Info.
+ * Returns 0 when idle with no reachable stash, offline, or Scrapper not ready.
+ */
+export function scrapYardYieldPerSecond(
+  tweaks: Tweaks,
+  seed: number,
+  yard: ScrapYardRecord,
+  stashes: ScrapStashesRecord,
+  territory: TerritoryRecord,
+  scoutedTiles: Axial[],
+  gridSize: number,
+  powerNetwork?: PowerNetworkSnapshot,
+): number {
+  if (!yard.scrapperReady || !isStructureActive(yard)) return 0;
+  if (powerNetwork && powerPerformanceFactor(powerNetwork, yard.level, yard.coord) <= 0) {
+    return 0;
+  }
+
+  const known = new Set([...territory.owned, ...scoutedTiles].map(axialKey));
+  const trip = yard.scrapper;
+  let stash: ScrapStashRecord | null = null;
+  if (trip?.assignedStashId) {
+    stash = stashes.find((s) => s.id === trip.assignedStashId && isActiveScrapStash(s)) ?? null;
+  }
+  if (!stash) stash = closestKnownStash(yard, stashes, known);
+  if (!stash) return 0;
+
+  const route = findExpeditionRouteFrom(
+    tweaks,
+    seed,
+    yard.coord,
+    stash.coord,
+    territory,
+    scoutedTiles,
+    gridSize,
+  );
+  if (!route || route.path.length < 2) return 0;
+
+  const speed = scrapperSpeedMultiplier(tweaks, yard.level);
+  const oneWayMs = scrapperTravelDurationMs(tweaks, route.cost, speed);
+  const roundTripSec = (2 * oneWayMs) / 1000;
+  if (roundTripSec <= 0) return 0;
+
+  const cargo = Math.min(scrapperCapacity(tweaks, yard.level), stash.remainingSteel);
+  return cargo / roundTripSec;
 }
 
 /**
@@ -181,7 +239,8 @@ export type AdvanceScrappersResult = {
 
 /**
  * Advance in-flight Scrappers: pickup at stash, deliver to yard stockpile,
- * Auto L3+ picks next closest known stash (Q58).
+ * then loop the same stash until empty (Q8). Auto L3+ picks the next closest
+ * known stash only after the assigned one is depleted (Q58).
  * L2+ yards with no power / below cutoff freeze mid-route (keep cargo); L1 is
  * power-exempt like other structures.
  */
@@ -268,9 +327,32 @@ export function advanceScrappers(
         trip = returnLeg ?? idleScrapperTrip();
       } else if (trip.phase === "toYard") {
         stockpile = Math.min(tileCap, stockpile + trip.cargo);
+        const finishedStashId = trip.assignedStashId;
         trip = idleScrapperTrip();
 
-        if (scrapperHasAuto(tweaks, yard.level)) {
+        // Loop the same assigned stash until empty (Q8). Auto L3+ only kicks in
+        // after that stash is gone — then pick the next closest known stash (Q58).
+        const sameStash =
+          finishedStashId != null
+            ? nextStashes.find((s) => s.id === finishedStashId && isActiveScrapStash(s))
+            : null;
+        if (sameStash) {
+          const again = startLeg(
+            tweaks,
+            seed,
+            yard.coord,
+            sameStash.coord,
+            nextTerritory,
+            nextScouted,
+            gridSize,
+            now,
+            speed,
+            sameStash.id,
+            "toStash",
+            0,
+          );
+          if (again) trip = again;
+        } else if (scrapperHasAuto(tweaks, yard.level)) {
           const known = new Set([...nextTerritory.owned, ...nextScouted].map(axialKey));
           const next = closestKnownStash(yard, nextStashes, known);
           if (next) {

@@ -422,9 +422,16 @@ export const tweaksSchema = z.object({
     max_level_shipped: z.number(),
     noise_passive_per_level: z.number(),
     scrapper: z.object({
+      _status: z.string().optional(),
       /** Index by yard level; [0] unused. */
       capacity_by_level: z.array(z.number()),
       speed_multiplier_by_level: z.array(z.number()),
+      /**
+       * Seconds per Dijkstra path-cost unit for Scrapper legs — separate from
+       * expeditions.travel_seconds_per_cost so mountain routes don't make steel
+       * crawl (expeditions use 15; Scrappers are light salvage haulers).
+       */
+      travel_seconds_per_cost: z.number(),
       auto_next_stash_min_level: z.number(),
     }),
   }),

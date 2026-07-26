@@ -756,9 +756,11 @@
     "_noise_note": "Ambient floor contribution = noise_passive_per_level * yard.level when active. Lower than a working steel extractor — yard is a hub, not a forge."
 ,
     "scrapper": {
-      "_status": "first pass, untested — capacity/speed by yard level (index 0 unused). Auto at L3 (Q58).",
-      "capacity_by_level": [0, 8, 14, 20, 28, 36],
-      "speed_multiplier_by_level": [0, 0.7, 1.0, 1.25, 1.5, 1.5],
+      "_status": "playtest retune 2026-07-26 — own travel_seconds_per_cost (not expedition 15s). Mountains cost ×4 in pathfinding; sharing expedition pacing made a 5-mountain haul ~0.2 steel/sec.",
+      "capacity_by_level": [0, 24, 36, 48, 64, 80],
+      "speed_multiplier_by_level": [0, 5.0, 6.5, 8.0, 10.0, 10.0],
+      "travel_seconds_per_cost": 2.5,
+      "_travel_note": "Expeditions use 15s/cost. Scrappers are light salvage — 2.5s/cost keeps mountain routes (~cost 20) around ~10s one-way at L1 rather than ~60s.",
       "auto_next_stash_min_level": 3
     }
   },

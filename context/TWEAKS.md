@@ -346,8 +346,9 @@ Pools bake into `remainingSteel` at world-gen — new worlds only for retunes.
 | `build_cost_base` | 400 wood + 300 stone (Formula A per additional yard) |
 | L2/L3 upgrade | Reuses steel mid/large extraction tier cost/time tables |
 | `noise_passive_per_level` | Ambient floor contribution × yard level |
-| `scrapper.capacity_by_level` | [0, 8, 14, 20, …] cargo per haul |
-| `scrapper.speed_multiplier_by_level` | [0, 0.7, 1.0, 1.25, …] |
+| `scrapper.capacity_by_level` | [0, 24, 36, 48, 64, 80] cargo per haul |
+| `scrapper.speed_multiplier_by_level` | [0, 5.0, 6.5, 8.0, 10.0, 10.0] |
+| `scrapper.travel_seconds_per_cost` | **2.5** (expeditions use 15) — Scrappers must not share militia march pacing; mountain tiles cost ×4 in pathfinding and were producing ~0.2 steel/sec |
 | `scrapper.auto_next_stash_min_level` | 3 |
 
 Yard courier at L2+; Scrapper freezes when the yard is power-offline. See [Milestone26.md](Milestone26.md) / [ScrapperEconomy.md](ScrapperEconomy.md).
