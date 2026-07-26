@@ -46,8 +46,7 @@ function TrayRow({
   onGoToTile,
   actions,
   expandedMs,
-  highlightPeek,
-  stayExpandedUntilDismiss,
+  forceExpanded,
 }: {
   rowKey: string;
   icon: ReactNode;
@@ -60,9 +59,8 @@ function TrayRow({
   onGoToTile?: (coord: Axial) => void;
   actions?: { label: string; onClick: () => void }[];
   expandedMs?: number;
-  highlightPeek?: boolean;
-  /** Arrival orders: stay open until Dismiss or the party auto-recalls. */
-  stayExpandedUntilDismiss?: boolean;
+  /** Arrival orders: stay fully expanded until the player picks an action or auto-recall. */
+  forceExpanded?: boolean;
 }) {
   const labelNode =
     onLabelClick != null ? (
@@ -79,26 +77,22 @@ function TrayRow({
       icon={icon}
       panelStyle={{ padding: "0.4rem 0.65rem", fontSize: "0.8rem" }}
       expandedMs={expandedMs}
-      highlightPeek={highlightPeek}
-      stayExpandedUntilDismiss={stayExpandedUntilDismiss}
+      forceExpanded={forceExpanded}
     >
-      {({ collapse }) => (
-        <>
-          {labelNode}
-          {coord != null && onGoToTile != null ? (
-            <>
-              {" "}
-              <CoordLink coord={coord} onGoToTile={onGoToTile} />
-            </>
-          ) : null}
-          {onRush && <TrayActionButton label="Rush" onClick={onRush} />}
-          {actions?.map((a) => (
-            <TrayActionButton key={a.label} label={a.label} onClick={a.onClick} />
-          ))}
-          {stayExpandedUntilDismiss ? <TrayActionButton label="Dismiss" onClick={collapse} /> : null}
-          <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.7)" }}>{formatDuration(remaining)}</span>
-        </>
-      )}
+      <>
+        {labelNode}
+        {coord != null && onGoToTile != null ? (
+          <>
+            {" "}
+            <CoordLink coord={coord} onGoToTile={onGoToTile} />
+          </>
+        ) : null}
+        {onRush && <TrayActionButton label="Rush" onClick={onRush} />}
+        {actions?.map((a) => (
+          <TrayActionButton key={a.label} label={a.label} onClick={a.onClick} />
+        ))}
+        <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.7)" }}>{formatDuration(remaining)}</span>
+      </>
     </CollapsibleNotificationRow>
   );
 }
@@ -119,7 +113,8 @@ export type NotificationCountdownRow = {
 
 /**
  * Compact rows, one per active expedition/den-assault/lab-assault/garrison-recall.
- * Arrival decisions stay expanded until Dismiss or auto-recall; collapsed peek is highlighted.
+ * Arrival decisions stay fully expanded (with action buttons) until the player
+ * picks an order or auto-recall fires.
  */
 export function NotificationTray({
   expeditions,
@@ -191,8 +186,7 @@ export function NotificationTray({
               coord={expedition.target}
               remaining={Math.max(0, deadline - now)}
               onGoToTile={onGoToTile}
-              stayExpandedUntilDismiss
-              highlightPeek
+              forceExpanded
               actions={[
                 ...(onBeginRedeploy
                   ? [{ label: "Redeploy", onClick: () => onBeginRedeploy(expedition.id) }]

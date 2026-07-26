@@ -7,7 +7,7 @@ export const NOTIFICATION_SLIDE_MS = 350;
 export const NOTIFICATION_ICON_SIZE = 14;
 /** Compact countdown / toast rows. */
 export const NOTIFICATION_ROW_MAX_WIDTH = "min(90vw, 320px)";
-/** Arrival orders with action buttons — must fit Redeploy / Reinforce / Garrison / Recall / Dismiss. */
+/** Arrival orders with action buttons — must fit Redeploy / Reinforce / Garrison / Recall. */
 export const NOTIFICATION_DECISION_ROW_MAX_WIDTH = "min(96vw, 720px)";
 
 function NotificationIconSlot({ icon }: { icon: ReactNode }) {
@@ -35,9 +35,8 @@ function NotificationIconSlot({ icon }: { icon: ReactNode }) {
  * Default (tray): expanded label/countdown for {@link NOTIFICATION_EXPANDED_MS},
  * then the text slides out while the icon stays as a compact peek. Tap to expand again.
  *
- * `stayExpandedUntilDismiss`: stay expanded until the player hits Dismiss (or the row
- * unmounts). Used for expedition arrival orders — collapses to the usual icon peek,
- * still present until auto-recall removes the expedition.
+ * `forceExpanded`: always show the full row (no auto-collapse, no icon peek).
+ * Used for expedition arrival orders until the player picks an action or auto-recall.
  *
  * `ephemeral` (toasts): stay expanded, then call `onEphemeralDismiss` — no icon peek.
  * Watchtower / clue / den notices should vanish, not linger like build timers.
@@ -60,10 +59,8 @@ export function CollapsibleNotificationRow({
   /** Show once, then remove — no collapse-to-icon linger. */
   ephemeral = false,
   onEphemeralDismiss,
-  /** Emphasize the collapsed icon peek (arrival decisions). */
-  highlightPeek = false,
-  /** Do not auto-collapse; caller should offer Dismiss via function children. */
-  stayExpandedUntilDismiss = false,
+  /** Always expanded — no timer collapse and no peek. Arrival decision rows. */
+  forceExpanded = false,
 }: {
   rowKey: string;
   icon: ReactNode;
@@ -76,13 +73,15 @@ export function CollapsibleNotificationRow({
   wrapText?: boolean;
   ephemeral?: boolean;
   onEphemeralDismiss?: () => void;
-  highlightPeek?: boolean;
-  stayExpandedUntilDismiss?: boolean;
+  forceExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expandedState, setExpanded] = useState(true);
+  const expanded = forceExpanded || expandedState;
 
   const expand = useCallback(() => setExpanded(true), []);
-  const collapse = useCallback(() => setExpanded(false), []);
+  const collapse = useCallback(() => {
+    if (!forceExpanded) setExpanded(false);
+  }, [forceExpanded]);
   const body = typeof children === "function" ? children({ expanded, collapse }) : children;
 
   useEffect(() => {
@@ -91,70 +90,55 @@ export function CollapsibleNotificationRow({
       const dismissTimer = window.setTimeout(onEphemeralDismiss, expandedMs);
       return () => window.clearTimeout(dismissTimer);
     }
-    if (stayExpandedUntilDismiss) return;
-    if (!expanded) return;
+    if (forceExpanded) return;
+    if (!expandedState) return;
     const collapseTimer = window.setTimeout(() => setExpanded(false), expandedMs);
     return () => window.clearTimeout(collapseTimer);
-  }, [ephemeral, expanded, expandedMs, onEphemeralDismiss, rowKey, stayExpandedUntilDismiss]);
+  }, [ephemeral, expandedState, expandedMs, onEphemeralDismiss, rowKey, forceExpanded]);
 
   useEffect(() => {
-    if (ephemeral || expanded || onPeekDismiss == null || peekDismissMs == null) return;
+    if (ephemeral || forceExpanded || expanded || onPeekDismiss == null || peekDismissMs == null) return;
     const dismissTimer = window.setTimeout(onPeekDismiss, peekDismissMs);
     return () => window.clearTimeout(dismissTimer);
-  }, [ephemeral, expanded, onPeekDismiss, peekDismissMs, rowKey]);
+  }, [ephemeral, forceExpanded, expanded, onPeekDismiss, peekDismissMs, rowKey]);
 
   const slideMs = NOTIFICATION_SLIDE_MS;
   /** Wrapping only while fully expanded — shrinking max-width with pre-wrap makes a tall 1-char column. */
   const wrapping = wrapText && expanded;
-  /** Arrival decision rows: wider slide-out + flex-wrap so action buttons aren't clipped. */
-  const decisionExpanded = stayExpandedUntilDismiss && expanded;
-  const rowMaxWidth = decisionExpanded
-    ? NOTIFICATION_DECISION_ROW_MAX_WIDTH
-    : NOTIFICATION_ROW_MAX_WIDTH;
+  const rowMaxWidth = forceExpanded ? NOTIFICATION_DECISION_ROW_MAX_WIDTH : NOTIFICATION_ROW_MAX_WIDTH;
 
   return (
     <Panel
       style={{
         display: "flex",
-        alignItems: wrapping || decisionExpanded ? "flex-start" : "center",
+        alignItems: wrapping || forceExpanded ? "flex-start" : "center",
         alignSelf: "flex-end",
         gap: expanded ? "0.5rem" : 0,
         maxWidth: rowMaxWidth,
         overflow: "hidden",
         transition: `gap ${slideMs}ms ease, max-width ${slideMs}ms ease`,
-        ...(highlightPeek && !expanded
-          ? {
-              boxShadow: "0 0 0 2px rgba(255, 180, 70, 0.85)",
-              borderRadius: 8,
-            }
-          : null),
         ...panelStyle,
       }}
     >
       <button
         type="button"
-        onClick={expanded || ephemeral ? undefined : expand}
+        onClick={expanded || ephemeral || forceExpanded ? undefined : expand}
         aria-expanded={expanded}
-        aria-label={expanded || ephemeral ? undefined : "Expand notification"}
+        aria-label={expanded || ephemeral || forceExpanded ? undefined : "Expand notification"}
         style={{
           display: "flex",
           alignItems: "center",
           flexShrink: 0,
-          padding:
-            wrapping || decisionExpanded
-              ? "0.1rem 0 0"
-              : highlightPeek && !expanded
-                ? "0.2rem"
-                : 0,
+          padding: wrapping || forceExpanded ? "0.1rem 0 0" : 0,
           margin: 0,
           border: "none",
-          background: highlightPeek && !expanded ? "rgba(255, 180, 70, 0.25)" : "transparent",
-          borderRadius: highlightPeek && !expanded ? 999 : 0,
+          background: "transparent",
+          borderRadius: 0,
           color: "inherit",
-          cursor: expanded || ephemeral ? "default" : "pointer",
+          cursor: expanded || ephemeral || forceExpanded ? "default" : "pointer",
           WebkitTapHighlightColor: "transparent",
         }}
-        tabIndex={expanded || ephemeral ? -1 : 0}
+        tabIndex={expanded || ephemeral || forceExpanded ? -1 : 0}
       >
         {icon != null ? <NotificationIconSlot icon={icon} /> : null}
       </button>
@@ -162,8 +146,8 @@ export function CollapsibleNotificationRow({
         style={{
           display: wrapping ? "block" : "flex",
           alignItems: wrapping ? undefined : "center",
-          flexWrap: decisionExpanded ? "wrap" : undefined,
-          rowGap: decisionExpanded ? "0.35rem" : undefined,
+          flexWrap: forceExpanded ? "wrap" : undefined,
+          rowGap: forceExpanded ? "0.35rem" : undefined,
           gap: wrapping ? undefined : "0.5rem",
           flex: "1 1 auto",
           minWidth: 0,
