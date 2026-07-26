@@ -117,16 +117,16 @@ This means a late-tier upgrade always costs a bit of everything you've unlocked 
 Four stockpile types, in ascending rarity: **food, wood, stone, steel**.
 
 Rarity determines two things:
-1. **Extraction yield** — common resources (food, wood) generate more per tick than rare ones (steel).
-2. **Noise** — rarer resources are noisier to gather. Steel mining attracts hordes faster than farming.
+1. **Extraction yield** — common resources (food, wood) generate more per tick than rare ones (stone). Steel is not gathered from extraction tiles (see Couriers & logistics / scrap stashes).
+2. **Noise** — rarer resources are noisier to gather. Steel logistics (Scrap Yard floor / Scrapper loop) still contribute ambient noise via the yard.
 
-**Starting amounts (first pass, untested):** food 100, wood 500, stone 400, steel 0. Sized so a fresh player can build exactly one food tile (150 wood), one wood tile (150 wood), and one stone tile (195 stone), each with a healthy buffer left over — per DESIGN.md §6. Revisit once there's a playable loop to test against.
+**Starting amounts (first pass, untested):** food 100, wood 500, stone 400, steel 0. Sized so a fresh player can build exactly one food tile (150 wood), one wood tile (150 wood), and one stone tile (195 stone), each with a healthy buffer left over — per DESIGN.md §6. Steel starts at 0 until scrap stashes / Scrap Yard come online.
 
 ---
 
 ## Extraction Tiles
 
-Each resource has 3 tiers: **small → mid → large**.
+**Food / wood / stone only** (steel extraction builds are retired — Milestone 26). Each has 3 levels: **L1 (small) → L2 (mid) → L3 (large)** in tweaks/`ExtractionTier`.
 
 **Yield formula:**
 ```
@@ -140,11 +140,10 @@ So mid = 1.5× small, large = 2.25× small (1.5²). This is Formula-independent 
 | Food | 22 |
 | Wood | 18 |
 | Stone | 9 |
-| Steel | 5 |
 
-CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12, playtesting feedback: early game pacing too slow) — raised ~50% across the board from the original 15/12/6/3, alongside a 1-minute cut to every build/upgrade timer in the file (see the relevant sections below). Power extraction yields were removed with Milestone 25 / #70.
+CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12, playtesting feedback: early game pacing too slow) — raised ~50% across the board from the original 15/12/6/3, alongside a 1-minute cut to every build/upgrade timer in the file (see the relevant sections below). Power extraction yields were removed with Milestone 25 / #70. Steel tile yields were removed with Milestone 26 / #36.
 
-**Build cost:** Formula A (each additional tile of that type built costs more). Food/wood/stone cost their own resource (or wood, for food) — bootstrappable from starting resources. **Steel build cost was fixed from an earlier pass**: it used to cost steel, which is unbuildable from a 0 starting balance. Now: steel tile = wood + stone. Tier upgrades stay self-referential (steel tiles upgrade using steel, etc.) since by then the tile is already producing that resource to reinvest. First pass, untested.
+**Build cost:** Formula A (each additional tile of that type built costs more). Food/wood/stone cost their own resource (or wood, for food) — bootstrappable from starting resources.
 
 ### Power stations (Milestone 25 / #70 — first pass, untested)
 
@@ -157,13 +156,13 @@ Top-level `power` block in `tweaks.jsonc` (not an extraction resource):
 | `cutoff_factor` | 0.5 |
 | `build_cost_base` | 400 wood + 300 stone + 150 steel |
 | `upgrade_cost_base` | 200 wood + 200 stone + 100 steel |
-| `draw_base` | extraction 2, tower 3, wall 1, barracks 4, dock 2 (× structure level) |
+| `draw_base` | extraction 2, tower 3, wall 1, barracks 4, dock 2, scrap_yard 2 (× structure level; L2+ on powered tiles only) |
 
 Union AoE + shared capacity pool; L1 structures exempt. See [Milestone25.md](Milestone25.md).
 **Tier upgrade cost (small→mid→large):** Formula B, plus the tech progression (mid tier adds stone; large tier adds stone + steel).
 
 **Noise:** two kinds —
-- *Passive*, ongoing while the tile operates (e.g. food: +2 noise/min, steel: +12 noise/min)
+- *Passive*, ongoing while the tile operates (e.g. food: +2 noise/min, stone: +6 noise/min)
 - *One-time*, when built (+20) or upgraded (+10)
 
 ---
@@ -311,7 +310,7 @@ Beyond the free starting 19 tiles (DESIGN.md §6), every other tile — adjacent
 
 ## Demolish
 
-Works the same way across every structure type — extraction tile, tower, wall, barracks, dock, or power station.
+Works the same way across every structure type — extraction tile, tower, wall, barracks, dock, power station, or Scrap Yard.
 
 - **Refund:** a fixed 60% of everything ever spent on the structure (every build + every upgrade + every wall repair), deterministic, no luck. ROADMAP.md already named this figure; it just hadn't been added to `tweaks.jsonc` until now.
 - Refunded resources are capped at whatever room is left in storage, same as any other resource gain.
@@ -324,10 +323,34 @@ Works the same way across every structure type — extraction tile, tower, wall,
 **Infrastructure path tiles removed** (goat track / stone road / highway). Automation is per-structure:
 
 - **L1:** manual collect pin only.
-- **L2+:** implied courier loops the structure ↔ main base. Travel duration = expedition route cost (`findExpeditionPath`) × `expeditions.travel_seconds_per_cost`.
+- **L2+:** implied courier loops the structure ↔ main base. Travel duration = expedition route cost (`findExpeditionPath`) × `expeditions.travel_seconds_per_cost`. Offline / below power cut-off clears the in-flight courier (extraction parity).
 - **L3:** production upgrade (docks: former fishing-boat bonus folds into this level).
 
-Steel moves via Scrap Yard + Scrapper + yard courier — see [Milestone26.md](Milestone26.md) / [ScrapperEconomy.md](ScrapperEconomy.md). Stash pools (`scrap_stashes.steel_pool_by_terrain`) are tuned so a sparse dump covers early steel sinks (power station = 150 steel): grassland L1 ≈ 1050, mountain L5 ≈ 7920. Wandering-scout sample is 36 steel. New worlds only: existing saves keep baked-in `remainingSteel`.
+### Scrap stashes (`scrap_stashes`)
+
+Finite steel pools on map hexes. Count scales with map size (`mapSize.ts`); ±1 from seed; early guarantee within ~10 tiles of base.
+
+| Key | Role |
+|-----|------|
+| `steel_pool_by_terrain` | Base pool: grassland 1050 / shore 1800 / forest 2400 / mountain 3300 |
+| `steel_pool_per_tile_level_pct` | +35% per hidden tile level above 1 (sparse grassland ≈ 1050; rich mountain ≈ 7920) |
+| `wandering_scout_sample_steel` | 36 steel skimmed when a wandering scout steps an active stash |
+| `terrain_placement_weight` | Favors mountain/forest/shore; rare on grassland |
+
+Pools bake into `remainingSteel` at world-gen — new worlds only for retunes.
+
+### Scrap yards (`scrap_yards`)
+
+| Key | Role |
+|-----|------|
+| `build_cost_base` | 400 wood + 300 stone (Formula A per additional yard) |
+| L2/L3 upgrade | Reuses steel mid/large extraction tier cost/time tables |
+| `noise_passive_per_level` | Ambient floor contribution × yard level |
+| `scrapper.capacity_by_level` | [0, 8, 14, 20, …] cargo per haul |
+| `scrapper.speed_multiplier_by_level` | [0, 0.7, 1.0, 1.25, …] |
+| `scrapper.auto_next_stash_min_level` | 3 |
+
+Yard courier at L2+; Scrapper freezes when the yard is power-offline. See [Milestone26.md](Milestone26.md) / [ScrapperEconomy.md](ScrapperEconomy.md).
 
 ---
 
@@ -339,7 +362,7 @@ A tech-tree skill per resource type — **no physical building required**. Incre
 ```
 capacity(L) = capacity(L-1) × 2
 ```
-Starting at 1000 for L1. This same 1000 baseline (not scaled by storage-skill level) also caps each extraction tile's own local stockpile — see Infrastructure Paths above.
+Starting at 1000 for L1. This same 1000 baseline (not scaled by storage-skill level) also caps each extraction tile’s and Scrap Yard’s local stockpile.
 
 **Upgrade cost:** Formula B, base costs increase with resource rarity (food cheapest, steel most expensive, each pulling in resources from every tier below it):
 
@@ -423,8 +446,8 @@ The core tension mechanic. Every action makes noise; noise attracts hordes.
 | Food | 2 |
 | Wood | 5 |
 | Stone | 9 |
-| Steel | 12 |
-| Power | 15 |
+
+Steel extraction tiles are retired — Scrap Yards use `scrap_yards.noise_passive_per_level` × yard level instead. (Legacy steel/power rows in older notes no longer apply.)
 
 **Tier scaling:** `floor_contribution(tile) = base × 3^tier_index` (small=0, mid=1, large=2) — steeper than the 1.5× yield curve on purpose. Small tier reads as "foraging for berries," large tier as "a loud, constant factory farm." First pass, untested.
 

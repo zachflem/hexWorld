@@ -14,7 +14,7 @@ Two transport roles replace path-tile auto-flow:
 | Role | Presentation | Loop | Unlocked by |
 |------|--------------|------|-------------|
 | **Scrapper** | Dedicated sprite (wandering-scout family) | Scrap Yard → scrap stash → Scrap Yard | Scrap Yard build (L1 Scrapper included) |
-| **Courier** | **Implied** unit (no train/assign UI; no dedicated scout-like sprite) | Resource structure → **base** → structure | Structure upgrade **L2** (food / wood / stone / dock); Scrap Yard also runs a courier for last-mile steel |
+| **Courier** | **Implied** unit (no train/assign UI; no dedicated scout-like sprite) | Resource structure → **base** → structure | Structure upgrade **L2** (food / wood / stone / dock / Scrap Yard last-mile) |
 
 **Path tiles (goat track / stone road / highway) are removed entirely** when this ships — no parallel path network.
 
@@ -74,7 +74,7 @@ Exact yield / speed multipliers and upgrade costs in tweaks when implemented. Ba
 
 ### Q69 — Scrap Yard last-mile
 
-**Decision (supersedes Q27 yard→hub path rule):** Steel delivered into the yard’s local stockpile enters the **shared global pool** via an **implied yard courier** to base, using the same `travel_seconds_per_cost` timing as resource couriers (Q67). Manual collect droplet on the yard remains available (Q59/Q60).
+**Decision (supersedes Q27 yard→hub path rule; revised for L2 parity):** Steel delivered into the yard’s local stockpile enters the **shared global pool** via an **implied yard courier** to base **at yard L2+**, using the same `travel_seconds_per_cost` timing and power gating as resource couriers (Q67). L1 yards are **manual collect only**. Manual collect droplet on the yard remains available at every level (Q59/Q60).
 
 ---
 
@@ -392,10 +392,10 @@ Linear progression L1→L5; exact speed/capacity numbers and upgrade costs in tw
 
 ## Open questions / remaining work
 
-**Design Q&A complete (Q1–Q70).** Remaining:
+**Design Q&A complete (Q1–Q70).** Impl shipped on Milestone 26 / #36. Remaining playtest:
 
-- **Tweaks tuning** — stash counts/weights, pool formulas, yard L4/L5 costs, banded hint copy, Scrapper speed/capacity, resource L2/L3 (and future L4/L5) costs and multipliers, courier load size / trip cadence.
-- **Impl** — see [Milestone26.md](Milestone26.md) checklist (not design-blocked).
+- **Tweaks tuning** — early steel costs vs stash pools, Scrapper speed/capacity, courier cadence, banded hint copy.
+- Finite food/wood/stone pools (#28) stay parallel / out of M26 scope.
 
 ---
 

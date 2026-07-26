@@ -65,13 +65,15 @@ Four stockpile types, in ascending rarity: **food → wood → stone → steel**
 
 Each resource has its own **storage cap** at your base (1000 at level 1, doubling per storage upgrade level — upgraded per-resource from the base tile sheet’s **Storage** tab; first upgrade takes **2 minutes**, each further level **+50%** on that timer, and progress shows in the notification tray). Separate from the global tech tree under [Research](#research). The base sheet’s **Info** tab shows how full each stockpile is against its current cap.
 
-**Power** is not stockpiled. Build a **power station** on owned land to cover nearby tiles with capacity. Upgrade the station for more capacity and a wider area. Level-1 buildings work anywhere without power; upgraded (level/tier 2+) buildings need coverage. If demand exceeds supply you’ll **brown out** (slower yield/DPS/etc.); past the cut-off they go offline (“No power”).
+**Power** is not stockpiled. Build a **power station** on owned land to cover nearby tiles with capacity. Upgrade the station for more capacity and a wider area. Level-1 buildings work anywhere without power; upgraded (level/tier 2+) buildings — including Scrap Yards — need coverage. If demand exceeds supply you’ll **brown out** (slower yield/DPS/etc.); past the cut-off they go offline (“No power”), which also freezes Scrapper progress and clears last-mile couriers.
 
 ---
 
 ## Extraction tiles
 
-Build one on suitable land (never on water) to generate a resource passively. Each has three tiers — **small → mid → large** — upgraded in place, not rebuilt; each tier yields substantially more than the last, but costs a wider mix of resources to reach (e.g. a large steel tile needs stone and wood investment too, not just steel).
+Build one on suitable land (never on water) to generate **food, wood, or stone** passively. Each has three levels — **L1 → L2 → L3** — upgraded in place, not rebuilt; higher levels yield substantially more, but cost a wider mix of resources to reach.
+
+**Steel has no extraction tile** — see [Steel: scrap stashes & Scrap Yard](#steel-scrap-stashes--scrap-yard).
 
 Building extraction tiles gets progressively more expensive the more of that type you already have (your 2nd food tile costs more than your 1st, and so on).
 
@@ -79,7 +81,19 @@ Building extraction tiles gets progressively more expensive the more of that typ
 - **Manual collection** is always free and always available — click the tile's collect pin and pull its local stockpile into storage by hand.
 - **Couriers** automate this once the structure is upgraded to **level 2+**. An implied courier hauls between the structure and your main base; travel time scales with route difficulty (farther / mountain-heavier sites take longer). Level 3 raises production. There are **no road / path tiles** to build.
 
-A tile can only hold one thing at a time — an extraction tile, a tower, a wall, a barracks, a dock, or a power station — never a combination.
+A tile can only hold one thing at a time — an extraction tile, a tower, a wall, a barracks, a dock, a power station, or a Scrap Yard — never a combination.
+
+---
+
+## Steel: scrap stashes & Scrap Yard
+
+Steel comes from the map, not from an extractor:
+
+1. **Scrap stashes** are placed at world-gen (at least one near your start). When scouted (Wandering Scout, tower intel, etc.) they show a grey ring and tell you remaining steel plus a vague richness hint (“sparse dump” … “looks rich”). Visiting scouts also skim a small sample into storage.
+2. Build a **Scrap Yard** on owned empty land (wood + stone — no steel required to start). A **Scrapper** comes with the yard: assign it to a known stash and it walks yard → stash → yard, dumping steel into the yard’s local stockpile. You can reassign mid-route when empty, or recall it home (loaded trips keep their cargo).
+3. **Collect** from the yard pin anytime, or upgrade the yard to **L2** so an implied courier hauls steel to base like other resources. L3 adds Auto (Scrapper picks the next closest known stash) and more capacity/speed. L2+ yards need power coverage like other upgraded structures.
+
+Empty stashes free their hex once the steel is gone.
 
 ---
 
@@ -179,7 +193,7 @@ Clearing a den is a two-step process:
 1. **Win the assault.** Beat the den's defense and you immediately claim the den tile plus a small ring around it — enough room to garrison and start building right away.
 2. **Survive the hold.** The den doesn't go down quietly — over the next several minutes it throws escalating last-stand waves at whatever you've built on that ring. Garrison the core tile and get a tower or wall or two up fast; each wave is bigger than the last, so a defense that worked on wave 1 won't necessarily hold by wave 4. Lose a wave and the den reverts to hostile (unchanged level) — you'll need to assault it again from scratch, garrison and all.
 
-Survive the full hold and the den converts into an **Outpost** — a second base. It comes with its own reinforcement HP, starting stronger if you cleared a tougher den — a real reward for a hard siege — and it can be garrisoned and built up just like your main base. Its resources aren't separate, though: an extraction tile connected to an outpost feeds the same shared stockpile as one connected to your main base — an outpost is another entry point into your one economy, not a second one. Reinforcement upgrades and repairs on an outpost still draw from that same shared stockpile.
+Survive the full hold and the den converts into an **Outpost** — a second base. It comes with its own reinforcement HP, starting stronger if you cleared a tougher den — a real reward for a hard siege — and it can be garrisoned and built up just like your main base. Its resources aren't separate, though: extraction tiles and Scrap Yards still courier into the **same shared stockpile** at the main base — an outpost is another foothold, not a second economy. Reinforcement upgrades and repairs on an outpost still draw from that same shared stockpile.
 
 Losing an outpost to a horde doesn't end the game — it just reverts back to a hostile den (one level weaker than what you originally cleared), ready to be sieged again.
 
@@ -219,7 +233,8 @@ On the map, any building with a timed job also shows a **circular progress ring*
 ## Quick tips
 
 - Build your first food/wood/stone extraction tiles immediately — you start with exactly enough for one of each.
-- Before upgrading extractors or towers past level 1, place a **power station** nearby — otherwise mid/large (and L2+) buildings go offline.
+- Steel starts at **0** — scout for a scrap stash, build a Scrap Yard (wood + stone), and run the Scrapper before you need steel for power stations or upgrades.
+- Before upgrading extractors, yards, or towers past level 1, place a **power station** nearby — otherwise L2+ buildings go offline.
 - Don't overbuild early — your build slot cap is tight at base level 1, and every structure (even a quiet one) raises your noise floor a little.
 - A tower's passive claim range is a cheap way to expand territory without spending militia.
 - Keep at least a little garrison on exposed tiles once hordes start showing up — a bare tile has almost no defense of its own.

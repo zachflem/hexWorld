@@ -88,11 +88,19 @@ The player owns their base tile plus the first two full rings around it (19 tile
 
 ## 7. Extraction Tiles
 
-Every stockpile resource type has three tiers — **small → mid → large** — built on suitable terrain, upgraded in place rather than rebuilt. Higher tiers yield disproportionately more (an exponential curve rewards investing in one location over spreading thin), but upgrade costs pull in a widening mix of resource types as you tier up, mirroring a believable "technology" progression (you need wood and stone before you can build the steel extraction and **power stations** that support bigger operations).
+**Food, wood, and stone** each use land extraction tiles with three shipped levels — **L1 → L2 → L3** (internally still small/mid/large in places). Higher levels yield more (an exponential curve rewards investing in one location over spreading thin), and upgrade costs pull in a widening mix of resource types as you tier up. Player-facing meaning:
 
-None of the four stockpile resource types can be built on water — all extraction happens on dry land. Water tiles instead host a distinct building type, the **Dock** (see §16) — a food-generating structure, not a fifth extraction-tile type, and the one exception to "no building on water."
+| Level | Effect |
+|-------|--------|
+| L1 | Manual collect pin only |
+| L2 | Implied courier auto-hauls to the main base |
+| L3 | Production increase (further L4/L5 are designed, not required yet) |
 
-Extraction tiles generate both passive noise (ongoing, scaled to resource rarity) and one-time noise on build/upgrade.
+**Steel is not an extraction tile.** It enters the economy only through world-gen **scrap stashes** and a **Scrap Yard** / **Scrapper** loop (see §8).
+
+None of the land extraction types can be built on water — those sit on dry land. Water tiles instead host a distinct building type, the **Dock** (see §16) — a food-generating structure, not a fifth extraction-tile type, and the one exception to "no building on water."
+
+Extraction tiles generate both passive noise (ongoing, scaled by resource rarity) and one-time noise on build/upgrade.
 
 ---
 
@@ -100,11 +108,11 @@ Extraction tiles generate both passive noise (ongoing, scaled to resource rarity
 
 **Manual collection is always free and always available** — click a claimed resource structure's collect pin to pull its local stockpile into the shared pool instantly. This never goes away; it's the L1 fallback, not a starter-tier mechanic to outgrow.
 
-**Couriers automate collection** once a food / wood / stone extraction tile or **dock** reaches **level 2+**. The courier is an *implied* unit (no train/assign UI, no dedicated map sprite for MVP): it loops structure → **main base** → structure. Round-trip travel time reuses expedition route math — Dijkstra path cost over owned∪scouted ground × `expeditions.travel_seconds_per_cost` — so farther or mountain-heavier sites take longer. That distance cost **is** the automation penalty. Level 3 (and later L4/L5) raise production / collection speed rather than inventing a parallel road network.
+**Couriers automate collection** once a food / wood / stone extraction tile, **dock**, or **Scrap Yard** reaches **level 2+**. The courier is an *implied* unit (no train/assign UI, no dedicated map sprite): it loops structure → **main base** → structure. Round-trip travel time reuses expedition route math — Dijkstra path cost over owned∪scouted ground × `expeditions.travel_seconds_per_cost` — so farther or mountain-heavier sites take longer. That distance cost **is** the automation penalty. Level 3 (and later L4/L5) raise production / collection speed rather than inventing a parallel road network. L2+ structures also draw power when covered (and go offline / brown out with the rest of the grid).
 
-**There are no infrastructure path tiles** (goat track / stone road / highway are removed). A hex still holds at most one structure — extraction, tower, wall, barracks, dock, power station, or (Milestone 26) Scrap Yard — never a combination.
+**There are no infrastructure path tiles** (goat track / stone road / highway are removed). A hex still holds at most one structure — extraction, tower, wall, barracks, dock, power station, or **Scrap Yard** — never a combination.
 
-**Steel** does not use land extraction tiles. World-gen **scrap stashes** are hauled by a visible **Scrapper** into a **Scrap Yard**; an implied yard courier then moves steel into the shared pool (same travel timing as resource couriers). Details: [Milestone26.md](Milestone26.md), [ScrapperEconomy.md](ScrapperEconomy.md).
+**Steel** does not use land extraction tiles. World-gen **scrap stashes** (finite steel pools, grey ring when known, banded richness hints) are hauled by a visible **Scrapper** into a **Scrap Yard** local stockpile. L1 yards are manual-collect only; L2+ yards run an implied last-mile courier into the shared pool. Yard level also gates Scrapper capacity/speed (Auto next-stash at L3). Details: [Milestone26.md](Milestone26.md), [ScrapperEconomy.md](ScrapperEconomy.md).
 
 Remote outposts as alternate courier destinations and bidirectional flow (base *supplying* far-flung structures) stay out of scope for MVP — resources only ever flow inward, structure → base.
 
@@ -126,7 +134,7 @@ The base is a **hub, not a combat unit** — storage, tech tree, and the seat of
 Combat against hordes is **fully deterministic** — no luck/RNG rolls (unlike the abandoned PvP design this project pivoted away from).
 
 - **Towers** deal damage at range, every tick a horde remains within reach. Damage output scales with tower level; range extends by one tile per level, plus a flat offset from the tower's build-tile terrain (mountain longer, forest shorter, grassland/shore unchanged — see `towers.range_terrain_offset`).
-- **Walls** (wood → rock → steel, an upgrade path rather than separate structures) absorb horde damage via durability rather than fighting back. A tile can hold at most one structure of any kind — a tower, a wall, an extraction tile, a barracks, a dock, or a **power station**, never a combination — but a tower's range can cover a wall (or anything else) on a neighboring tile.
+- **Walls** (wood → rock → steel, an upgrade path rather than separate structures) absorb horde damage via durability rather than fighting back. A tile can hold at most one structure of any kind — a tower, a wall, an extraction tile, a barracks, a dock, a **power station**, or a **Scrap Yard** — never a combination — but a tower's range can cover a wall (or anything else) on a neighboring tile.
 - **No tile can host unlimited defense** — the build slot cap forces players to choose which approaches to fortify and which to leave exposed.
 - **Walls can only be repaired during peacetime**, at a cost proportional to damage taken (and inclusive of every tier below the wall's current one), and repairing generates its own noise.
 - **Demolishing** any structure returns a fixed percentage of everything ever spent on it (build + all upgrades) — deterministic, no luck involved.
@@ -200,7 +208,7 @@ A successfully held den **converts into a player-usable Outpost** (`engine/outpo
 
 - Multiplayer / PvP (the original concept for this project — fully retired in favor of the single-player PvE design above)
 - **Trade caravan** — retired (#P4). Outposts feed the shared stockpile; no outpost↔base transfer layer needed.
-- Water-based transport of resources (moving cargo across water) — a dock's own food output still deposits straight to base, not via a path/highway network the way land tiles do
+- Water-based transport of resources (moving cargo across water) — docks use the same L1 manual / L2+ courier model as land extraction (not a water barge system)
 - Environmental map events
 - Auto-repair skill for walls (mentioned as a future possibility, slower than manual repair)
 *(Water-based resources — the "plausible future addition" this list used to defer — shipped during playtesting; see §16, Docks & Water Units. Remote outposts also shipped, with growth-over-time deliberately dropped from the original den concept; see §13. Default terrain pack swap shipped as legacy #P12 ([issue #66](https://github.com/zachflem/hexWorld/issues/66)); see [attribution.md](attribution.md). Per-level structure sprite lookup shipped as Milestone 24 / [#67](https://github.com/zachflem/hexWorld/issues/67).)*
@@ -211,10 +219,9 @@ A successfully held den **converts into a player-usable Outpost** (`engine/outpo
 
 Added during playtesting, outside the milestone sequence in `ROADMAP.md` — the one deliberate exception to §7's "no building on water" rule.
 
-**Docks** are a food-generating building, placed on a water tile that borders land, provided the player owns or has scouted that water tile (the ordinary ownership rule for any other structure would never be satisfiable on open water, since territory expansion is land-adjacency-driven — scouted-or-owned is the water-specific relaxation). A dock yields a flat fraction of a small food extraction tile's rate and deposits straight into base storage every tick — no path connection, since paths can't cross water either. Unlike every land structure, a dock cannot be captured by a horde (hordes can't reach water tiles), so it carries no `damaged` state.
+**Docks** are a food-generating building, placed on a water tile that borders land, provided the player owns or has scouted that water tile (the ordinary ownership rule for any other structure would never be satisfiable on open water, since territory expansion is land-adjacency-driven — scouted-or-owned is the water-specific relaxation). A dock yields a flat fraction of a small food extraction tile's rate into a **local stockpile**. At **L1** you collect manually; at **L2+** an implied courier hauls to the main base (same travel timing as land extraction). **L3** is the production upgrade (includes the old fishing-boat yield bonus). Unlike every land structure, a dock cannot be captured by a horde (hordes can't reach water tiles), so it carries no `damaged` state.
 
-Two dock-only upgrades:
-- **Fishing Boat** — a one-time, per-dock build that boosts that dock's yield by half. Purely a yield multiplier plus a cosmetic marker; it doesn't move or do anything else.
+Dock-only unit:
 - **Scout Skiff** — a mobile unit (capped at one per dock) that wanders randomly across its dock's connected body of water indefinitely, revealing every tile it drifts across — the water equivalent of the Wandering Scout, automatic and ongoing.
 
 A land counterpart exists too: the **Wandering Scout**, built at a barracks (also capped at one per barracks) for a flat mid-game resource cost. It wanders connected land the same way the Scout Skiff wanders water, continuously revealing tiles.
@@ -229,6 +236,6 @@ Both wandering units use the same movement rule: step to a random adjacent tile 
 - **Save files, not accounts** — IndexedDB holds the active session for crash/continue convenience, but the real save/load mechanism is an old-school, explicit save-to-file / load-from-file flow (Settings; also load from the continue prompt and onboarding cover). Files are plain JSON (`format: "hexworld-save"`, versioned envelope in `src/data/gamePersistence.ts`), human-editable, and untrusted by design — single-player game, so if someone wants to hand-edit their save, that's entirely their call.
 - **Procedural seed** determines the entire map at generation time — same seed reproduces the same world.
 - **Tweaks-file driven balance** — nearly every numeric value lives in per-profile `tweaks.jsonc` files under `public/profiles/{slug}/`, loaded from the URL slug or onboarding selection, validated at boot with Zod (`src/data/tweaksSchema.ts`).
-- **Difficulty profiles** — `public/profiles/index.json` registers shipped profiles (`default`, `hard`, …). Each folder contains `tweaks.jsonc` plus optional `assets/` (partial sprite overrides). Default art lives in `public/profiles/default/assets/` (`terrain/`, `structures/`, `resources/`, `units/`, `markers/`). Asset resolution: active profile → default profile → flat-colour fallback (`src/render/assetPaths.ts`). Structure icons also try level/tier variants before the unlevelled name ([issue #67](https://github.com/zachflem/hexWorld/issues/67) / [Milestone24.md](Milestone24.md)). `profileSlug` is persisted in IndexedDB with the save. Default terrain tiles were replaced under legacy #P12 (flat-hex sources → 256×384 via `scripts/convert-flat-terrain-hex.py`). **Milestone 26 in progress:** Couriers, path removal, Scrap Yard / Scrapper steel loop, and power-gated yard logistics are in; expedition mid-route parity + doc sync remain ([Milestone26.md](Milestone26.md) / [issue #36](https://github.com/zachflem/hexWorld/issues/36); design Q&A in [ScrapperEconomy.md](ScrapperEconomy.md)).
+- **Difficulty profiles** — `public/profiles/index.json` registers shipped profiles (`default`, `hard`, …). Each folder contains `tweaks.jsonc` plus optional `assets/` (partial sprite overrides). Default art lives in `public/profiles/default/assets/` (`terrain/`, `structures/`, `resources/`, `units/`, `markers/`). Asset resolution: active profile → default profile → flat-colour fallback (`src/render/assetPaths.ts`). Structure icons also try level/tier variants before the unlevelled name ([issue #67](https://github.com/zachflem/hexWorld/issues/67) / [Milestone24.md](Milestone24.md)). `profileSlug` is persisted in IndexedDB with the save. Default terrain tiles were replaced under legacy #P12 (flat-hex sources → 256×384 via `scripts/convert-flat-terrain-hex.py`). **Milestone 26 shipped on `goblin`:** couriers replace path auto-flow; steel via Scrap Yard / Scrapper / stashes; expedition mid-route parity (Q40–Q46). See [Milestone26.md](Milestone26.md) / [issue #36](https://github.com/zachflem/hexWorld/issues/36); design Q&A in [ScrapperEconomy.md](ScrapperEconomy.md).
 - **Domain split (planned deploy)** — marketing/wiki at `hexworld.seezed.net`; game PWA at `play.{domain}` with `/{slug}` deep links. Git workflow: personal branches `goblin` / `krunchee` → `dev` → `main` (`context/WORKFLOW.md`).
 

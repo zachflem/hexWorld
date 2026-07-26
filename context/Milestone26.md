@@ -1,7 +1,7 @@
 # Milestone 26 — Scrappers & Couriers (replace paths)
 
 **GitHub:** [issue #36](https://github.com/zachflem/hexWorld/issues/36) · [milestone M26](https://github.com/zachflem/hexWorld/milestone/25)  
-**Status:** Implementation in progress on `goblin` (#36 ACTIVE) — couriers, path strip, scrap stashes, Scrap Yard + Scrapper haul loop, power gating, and expedition mid-route parity (Q40–Q46) live; early steel cost balance + remaining doc/acceptance polish still open
+**Status:** Feature-complete on `goblin` (#36) — couriers, path strip, scrap stashes, Scrap Yard + Scrapper, power gating, expedition mid-route parity (Q40–Q46), docs synced. Remaining: playtest steel cost feel + close issue when happy.
 **Design Q&A:** [ScrapperEconomy.md](ScrapperEconomy.md) (Q1–Q70)
 
 Replace **infrastructure path tiles** and **passive steel extraction** with two logistics roles:
@@ -15,19 +15,17 @@ This file is the design + impl brief. Balance numbers stay in tweaks / playtest.
 
 ## Context
 
-**Today:**
+**Shipped (Milestone 26):**
 
-- Food / wood / stone / steel extraction tiles accrue a local stockpile; **path chains** drain into the shared pool (`engine/paths.ts`, `accrueResources` in `engine/tick.ts`).
-- Manual collect pins always work without paths.
-- Docks deposit food without paths.
-- Steel is a normal extraction resource.
+- Food / wood / stone / docks: local stockpile + **L1 manual / L2+ courier / L3 production**.
+- **No path tiles**; **no steel extraction**.
+- Steel: world-gen **scrap stashes** → **Scrapper** → **Scrap Yard** stockpile → yard courier (L2+) / collect pin.
+- Expedition / assault mid-route orders aligned with Q40–Q46.
 
-**Target:**
+**Historical (pre-M26):**
 
-- **No path tiles** (goat track / stone road / highway removed).
-- **No steel extraction tiles** — steel from world-gen **scrap stashes** + **Scrap Yard** + Scrapper.
-- Food / wood / stone / dock: **L1 manual → L2 courier auto → L3 production** (L4/L5 future).
-- Distance penalty = expedition route cost × `expeditions.travel_seconds_per_cost`.
+- Extraction tiles accrued a local stockpile; **path chains** drained into the shared pool.
+- Steel was a normal extraction resource.
 
 ```mermaid
 flowchart LR
@@ -133,8 +131,8 @@ Milestone 26 player model: **L1 manual / L2 courier / L3 production** (then futu
 - [x] Remove path tiles end-to-end (table above)
 - [x] Remove steel extraction build / gate new games (Civil sheet filters steel)
 - [x] Expedition mid-route parity with Scrapper redirect/recall (Q39–Q46)
-- [ ] Tweaks pass + early steel cost balance (Q1 follow-up)
-- [ ] Doc sync when code ships (below)
+- [ ] Tweaks pass + early steel cost balance (Q1 follow-up) — pools raised; costs still playtest
+- [x] Doc sync when code ships (below)
 
 **Precedents to reuse:**
 
@@ -178,12 +176,12 @@ Already holds Q&A; keep in sync if impl revises decisions.
 
 When implementation ships:
 
-- [ ] No path tiles in build menu / game state; no path-based auto-flow.
-- [ ] No steel extraction tiles on new games; steel from stashes via Scrapper → yard → yard courier / collect.
-- [ ] Food/wood/stone/dock: L1 manual only; L2+ courier delivers to base with travel time scaling by route cost × `travel_seconds_per_cost`.
-- [ ] Scrapper visible on map (scout-like sprite); courier is implied (no separate train/assign).
-- [ ] Farther / harder terrain routes are slower for couriers (and Scrapper legs use the same travel family).
-- [ ] DESIGN / PLAYER_GUIDE / TWEAKS updated per Doc sync.
+- [x] No path tiles in build menu / game state; no path-based auto-flow.
+- [x] No steel extraction tiles on new games; steel from stashes via Scrapper → yard → yard courier / collect.
+- [x] Food/wood/stone/dock: L1 manual only; L2+ courier delivers to base with travel time scaling by route cost × `travel_seconds_per_cost`.
+- [x] Scrapper visible on map (scout-like sprite); courier is implied (no separate train/assign).
+- [x] Farther / harder terrain routes are slower for couriers (and Scrapper legs use the same travel family).
+- [x] DESIGN / PLAYER_GUIDE / TWEAKS updated per Doc sync.
 
 ---
 
