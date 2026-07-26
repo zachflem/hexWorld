@@ -407,6 +407,9 @@
     "capacity_base_per_resource": 1000,   // L1 capacity. Bumped from 250, which a large-tier tile (2.25x yield) filled in ~74s unattended, and which was smaller than the starting wood amount.
     "capacity_scaling": "capacity(L) = capacity(L-1) * 2   (exponential, doubles per level)",
     "_tile_stockpile_note": "Also reused as the flat, storage-skill-independent cap on an extraction tile's own local stockpile (DESIGN.md §8's 'resource tile's own stockpile cap') — unconnected/uncollected tiles stop producing once they hold this much.",
+    "collect_pin_show_ratio": 0.6,
+    "collect_pin_courier_show_ratio": 1,
+    "_collect_pin_note": "Map collect pins stay hidden until local stockpile fill ≥ collect_pin_show_ratio (L1 manual). Courier-automated sites (L2+) wait until collect_pin_courier_show_ratio (full buffer) so mid-fill automation doesn't clutter the map; a full local + full hub also toasts. Upgrade level-badges are separate and unaffected. Manual collect via the tile sheet always works. Issue #82.",
 
     "upgrade_cost_scaling": "FORMULA_B",
     "upgrade_time_minutes_base": 2,

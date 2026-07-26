@@ -260,6 +260,14 @@ export const tweaksSchema = z.object({
     capacity_base_per_resource: z.number(),
     capacity_scaling: z.string(),
     _tile_stockpile_note: z.string(),
+    /** Manual-collect (L1) map pin appears at this local fill ratio. */
+    collect_pin_show_ratio: z.number(),
+    /**
+     * Courier-automated (L2+) map pin appears at this local fill ratio
+     * (default 1 = only when the local buffer is full — usually hub storage).
+     */
+    collect_pin_courier_show_ratio: z.number(),
+    _collect_pin_note: z.string().optional(),
     upgrade_cost_scaling: z.string(),
     upgrade_cost_base: z.record(z.string(), resourceCostMap),
     upgrade_time_minutes_base: z.number(),

@@ -31,6 +31,7 @@ import {
 } from "../engine/tiers";
 import { structureHasCourierAutomation } from "../engine/couriers";
 import { storageCapacity, storageUpgradeCost, storageUpgradeDurationMs } from "../engine/storage";
+import { collectPinVisible } from "../render/stockpileState";
 import {
   nextTowerLevel,
   towerBuildCost,
@@ -1761,8 +1762,19 @@ export function GameScreen({
   }, [tweaks, extractionTiles, docks, resources, storageLevels, units, world, powerNetwork, territory, scoutedTiles]);
   const collectableTiles = useMemo(() => {
     const stockpileCap = tweaks.storage.capacity_base_per_resource;
+    const manualShowRatio = tweaks.storage.collect_pin_show_ratio;
+    const courierShowRatio = tweaks.storage.collect_pin_courier_show_ratio;
     const fromExtraction = extractionTiles
-      .filter((tile) => !tile.damaged && isStructureActive(tile) && tile.stockpile > 0)
+      .filter((tile) => {
+        if (tile.damaged || !isStructureActive(tile)) return false;
+        return collectPinVisible(
+          tile.stockpile,
+          stockpileCap,
+          structureHasCourierAutomation(extractionTierLevel(tile.tier)),
+          manualShowRatio,
+          courierShowRatio,
+        );
+      })
       .map((tile) => ({
         coord: tile.coord,
         resource: tile.resource,
@@ -1772,16 +1784,34 @@ export function GameScreen({
       }));
     // Docks stockpile food the same way extraction tiles do — same pin, food icon.
     const fromDocks = docks
-      .filter((dock) => !dock.buildStartedAt && dock.stockpile > 0)
+      .filter((dock) => {
+        if (dock.buildStartedAt) return false;
+        return collectPinVisible(
+          dock.stockpile,
+          stockpileCap,
+          structureHasCourierAutomation(dockLevel(dock)),
+          manualShowRatio,
+          courierShowRatio,
+        );
+      })
       .map((dock) => ({
         coord: dock.coord,
         resource: "food" as const,
         stockpile: dock.stockpile,
         stockpileCap,
-        upgradeAvailable: false,
+        upgradeAvailable: dockUpgradeOptionFor(dock)?.affordable ?? false,
       }));
     const fromScrapYards = scrapYards
-      .filter((yard) => isStructureActive(yard) && yard.stockpile > 0)
+      .filter((yard) => {
+        if (!isStructureActive(yard)) return false;
+        return collectPinVisible(
+          yard.stockpile,
+          stockpileCap,
+          structureHasCourierAutomation(yard.level),
+          manualShowRatio,
+          courierShowRatio,
+        );
+      })
       .map((yard) => ({
         coord: yard.coord,
         resource: "steel" as const,
@@ -1834,6 +1864,10 @@ export function GameScreen({
     for (const t of extractionTiles) {
       if (t.buildStartedAt != null) continue;
       if (tierUpgradeFor(t)?.affordable) set.add(axialKey(t.coord));
+    }
+    for (const d of docks) {
+      if (d.buildStartedAt != null) continue;
+      if (dockUpgradeOptionFor(d)?.affordable) set.add(axialKey(d.coord));
     }
     return set;
   }

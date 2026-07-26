@@ -365,6 +365,8 @@ capacity(L) = capacity(L-1) × 2
 ```
 Starting at 1000 for L1. This same 1000 baseline (not scaled by storage-skill level) also caps each extraction tile’s and Scrap Yard’s local stockpile.
 
+**Collect pins** (`storage.collect_pin_show_ratio` / `collect_pin_courier_show_ratio`): map pins for local stockpiles appear at **60%** fill on L1 (manual) sites and only at **100%** on courier-automated (L2+) sites. Upgrade affordability uses level badges, not these pins. Manual collect via the tile sheet is always available. When hub storage and a courier site's local buffer are both full, a toast fires once per resource until hub room returns ([issue #82](https://github.com/zachflem/hexWorld/issues/82)).
+
 **Upgrade cost:** Formula B, base costs increase with resource rarity (food cheapest, steel most expensive, each pulling in resources from every tier below it):
 
 | Resource | L1→L2 base cost |

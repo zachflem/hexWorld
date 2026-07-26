@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Skull, Zap } from "lucide-react";
+import { Package, Skull, Zap } from "lucide-react";
 import { loadProfile, fetchProfileRegistry, resolveProfileSlug, DEFAULT_PROFILE_SLUG, type ProfileEntry } from "./data/profileRegistry";
 import type { Tweaks } from "./data/tweaksSchema";
 import { PROFILE_SLUG_DB_KEY } from "./data/profile";
@@ -127,8 +127,23 @@ import {
   stepCorridorWalk,
   type TombstoneCause,
 } from "./engine/expeditions";
-import { extractionTileBuildDurationMs, nextTier, tierUpgradeCost, tierUpgradeDurationMs } from "./engine/tiers";
-import { storageCapacity, storageUpgradeCost, storageUpgradeDurationMs } from "./engine/storage";
+import {
+  extractionTierLevel,
+  extractionTileBuildDurationMs,
+  nextTier,
+  tierUpgradeCost,
+  tierUpgradeDurationMs,
+} from "./engine/tiers";
+import { structureHasCourierAutomation } from "./engine/couriers";
+import {
+  emptyStorageFullAlertMemory,
+  reconcileStorageFullAlerts,
+  storageCapacity,
+  storageFullAlertToastText,
+  storageUpgradeCost,
+  storageUpgradeDurationMs,
+  type StorageFullAlertMemory,
+} from "./engine/storage";
 import {
   expeditionOwnRange,
   isResearchAvailable,
@@ -648,6 +663,7 @@ export default function App() {
   const hordeAlertedIdsRef = useRef<Set<string>>(new Set());
   /** Power-grid toast episode memory — brownout / 10% steps / blackout (engine/power.ts). */
   const powerAlertMemoryRef = useRef<PowerAlertMemory>(emptyPowerAlertMemory());
+  const storageFullAlertMemoryRef = useRef<StorageFullAlertMemory>(emptyStorageFullAlertMemory());
   const pushToast = useCallback((toast: Omit<ToastRecord, "id">) => {
     setToasts((prev) => [...prev, { ...toast, id: `toast-${Date.now()}-${toastSeqRef.current++}` }]);
   }, []);
@@ -914,6 +930,54 @@ export default function App() {
         elapsedSeconds,
       );
       let resources = { ...producedResourcesWithYards, food: foodAfterUpkeep };
+      {
+        const tileCap = current.tweaks.storage.capacity_base_per_resource;
+        const courierSites = [
+          ...extractionTilesAfterYield
+            .filter(
+              (tile) =>
+                !tile.damaged &&
+                isStructureActive(tile) &&
+                structureHasCourierAutomation(extractionTierLevel(tile.tier)),
+            )
+            .map((tile) => ({
+              resource: tile.resource,
+              stockpile: tile.stockpile,
+              stockpileCap: tileCap,
+            })),
+          ...docksAfterYield
+            .filter(
+              (dock) =>
+                dock.buildStartedAt == null && structureHasCourierAutomation(dockLevel(dock)),
+            )
+            .map((dock) => ({
+              resource: "food" as const,
+              stockpile: dock.stockpile,
+              stockpileCap: tileCap,
+            })),
+          ...scrapYardsAfterCourier
+            .filter((yard) => isStructureActive(yard) && structureHasCourierAutomation(yard.level))
+            .map((yard) => ({
+              resource: "steel" as const,
+              stockpile: yard.stockpile,
+              stockpileCap: tileCap,
+            })),
+        ];
+        const { next, alerts } = reconcileStorageFullAlerts(
+          current.tweaks,
+          resources,
+          current.game.storageLevels,
+          courierSites,
+          storageFullAlertMemoryRef.current,
+        );
+        storageFullAlertMemoryRef.current = next;
+        for (const resource of alerts) {
+          pushToast({
+            icon: <Package size={NOTIFICATION_ICON_SIZE} />,
+            message: storageFullAlertToastText(resource),
+          });
+        }
+      }
       const noise: NoiseRecord = {
         value: accrueNoise(
           current.tweaks,

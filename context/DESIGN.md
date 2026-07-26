@@ -92,7 +92,7 @@ The player owns their base tile plus the first two full rings around it (19 tile
 
 | Level | Effect |
 |-------|--------|
-| L1 | Manual collect pin only |
+| L1 | Manual collect (pin at ~60% local fill) |
 | L2 | Implied courier auto-hauls to the main base |
 | L3 | Production increase (further L4/L5 are designed, not required yet) |
 
@@ -106,7 +106,7 @@ Extraction tiles generate both passive noise (ongoing, scaled by resource rarity
 
 ## 8. Infrastructure & Automation
 
-**Manual collection is always free and always available** — click a claimed resource structure's collect pin to pull its local stockpile into the shared pool instantly. This never goes away; it's the L1 fallback, not a starter-tier mechanic to outgrow.
+**Manual collection is always free and always available** — open a claimed resource structure's tile sheet to pull its local stockpile into the shared pool instantly. This never goes away; it's the L1 fallback, not a starter-tier mechanic to outgrow. Map **collect pins** stay hidden until the local stockpile reaches a fill threshold (`storage.collect_pin_show_ratio`, default 60% on L1). Courier-automated sites (L2+) only show a pin when the local buffer is full (`storage.collect_pin_courier_show_ratio`, default 100%) — usually because hub storage can't take more — and toast when both hub storage and that local stockpile are full. Affordable **upgrade** hints use the orange level badge, not the collect pin.
 
 **Couriers automate collection** once a food / wood / stone extraction tile, **dock**, or **Scrap Yard** reaches **level 2+**. The courier is an *implied* unit (no train/assign UI, no dedicated map sprite): it loops structure → **main base** → structure. Round-trip travel time reuses expedition route math — Dijkstra path cost over owned∪scouted ground × `expeditions.travel_seconds_per_cost` — so farther or mountain-heavier sites take longer. That distance cost **is** the automation penalty. Level 3 (and later L4/L5) raise production / collection speed rather than inventing a parallel road network. L2+ structures also draw power when covered (and go offline / brown out with the rest of the grid).
 

@@ -11,6 +11,23 @@ export function stockpileVisualState(stockpile: number, cap: number): StockpileV
   return "normal";
 }
 
+/**
+ * Whether the map collect pin should render for a local stockpile.
+ * Upgrade affordability does not force the pin — level badges cover that.
+ * Thresholds come from `tweaks.storage.collect_pin_*_show_ratio`.
+ */
+export function collectPinVisible(
+  stockpile: number,
+  cap: number,
+  hasCourierAutomation: boolean,
+  manualShowRatio: number,
+  courierShowRatio: number,
+): boolean {
+  if (stockpile <= 0 || cap <= 0) return false;
+  const threshold = hasCourierAutomation ? courierShowRatio : manualShowRatio;
+  return stockpile / cap >= threshold;
+}
+
 export type CollectPinColorState = StockpileVisualState | "upgrade";
 
 /** Stockpile urgency wins over the upgrade-available orange. */

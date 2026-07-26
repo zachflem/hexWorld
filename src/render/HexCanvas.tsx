@@ -1321,6 +1321,13 @@ export const HexCanvas = forwardRef<
                 ctx.textBaseline = "middle";
                 ctx.fillText("⛵", screenCenter.x, screenCenter.y);
               }
+              if (!dock.buildStartedAt) {
+                drawLevelBadge(
+                  screenCenter,
+                  level,
+                  upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
+                );
+              }
             }
 
             const structureProgress = structureProgressByKey.get(coordKey);

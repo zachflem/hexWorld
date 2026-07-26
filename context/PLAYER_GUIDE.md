@@ -78,8 +78,9 @@ Build one on suitable land (never on water) to generate **food, wood, or stone**
 Building extraction tiles gets progressively more expensive the more of that type you already have (your 2nd food tile costs more than your 1st, and so on).
 
 **Collecting resources:**
-- **Manual collection** is always free and always available — click the tile's collect pin and pull its local stockpile into storage by hand.
-- **Couriers** automate this once the structure is upgraded to **level 2+**. An implied courier hauls between the structure and your main base; travel time scales with route difficulty (farther / mountain-heavier sites take longer). Level 3 raises production. There are **no road / path tiles** to build.
+- **Manual collection** is always free and always available from the tile sheet. Map collect pins stay quiet until a tile's local stockpile is about **60%** full (less clutter while extractors fill). Click a pin to pull that stockpile into storage by hand.
+- **Couriers** automate this once the structure is upgraded to **level 2+**. An implied courier hauls between the structure and your main base; travel time scales with route difficulty (farther / mountain-heavier sites take longer). Automated tiles hide their collect pin unless the local buffer is **full** — a nudge that base storage may need an upgrade (you'll also get a toast when hub storage and that stockpile are both full). Level 3 raises production. There are **no road / path tiles** to build.
+- Orange **level badges** on structures mean an upgrade is affordable — separate from collect pins.
 
 A tile can only hold one thing at a time — an extraction tile, a tower, a wall, a barracks, a dock, a power station, or a Scrap Yard — never a combination.
 
@@ -91,7 +92,7 @@ Steel comes from the map, not from an extractor:
 
 1. **Scrap stashes** are placed at world-gen (at least one near your start). When scouted (Wandering Scout, tower intel, etc.) they show a grey ring and tell you remaining steel plus a vague richness hint (“sparse dump” … “looks rich”). Visiting scouts also skim a small sample into storage.
 2. Build a **Scrap Yard** on owned empty land (wood + stone — no steel required to start). A **Scrapper** comes with the yard: assign it to a known stash and it walks yard → stash → yard, dumping steel into the yard’s local stockpile. You can reassign mid-route when empty, or recall it home (loaded trips keep their cargo).
-3. **Collect** from the yard pin anytime, or upgrade the yard to **L2** so an implied courier hauls steel to base like other resources. L3 adds Auto (Scrapper picks the next closest known stash) and more capacity/speed. L2+ yards need power coverage like other upgraded structures.
+3. **Collect** from the yard (tile sheet anytime; map pin once the local stockpile is ~60% full, or only when full if the yard has a courier), or upgrade the yard to **L2** so an implied courier hauls steel to base like other resources. L3 adds Auto (Scrapper picks the next closest known stash) and more capacity/speed. L2+ yards need power coverage like other upgraded structures.
 
 Empty stashes free their hex once the steel is gone.
 
