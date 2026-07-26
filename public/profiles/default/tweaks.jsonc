@@ -527,6 +527,12 @@
       "cost": { "wood": 450, "stone": 320, "steel": 120 },
       "duration_minutes": 15,
       "task_slots": 2
+    },
+    "improved_optics": {
+      "cost": { "wood": 400, "stone": 280, "steel": 100 },
+      "duration_minutes": 12,
+      "wandering_scout_reveal_radius": 1,
+      "expedition_own_range": 1
     }
   },
 

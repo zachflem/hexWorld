@@ -336,6 +336,14 @@ export const tweaksSchema = z.object({
       /** Timed-task slots per structure (and base hub) once researched — default cap is 1. */
       task_slots: z.number(),
     }),
+    improved_optics: z.object({
+      cost: resourceCostMap,
+      duration_minutes: z.number(),
+      /** Axial spiral radius revealed per wandering-scout step (land only). 0 without research. */
+      wandering_scout_reveal_radius: z.number(),
+      /** Axial spiral radius free-claimed around each territory-expedition path tile. 0 without research. */
+      expedition_own_range: z.number(),
+    }),
   }),
 
   noise: z.object({

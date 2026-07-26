@@ -9,6 +9,8 @@ export interface HexClusterSlot {
   title: string;
   /** Highlights this slot's hex — e.g. the panel it opens is currently open, or (hammer) build-mode is active. */
   active?: boolean;
+  /** Orange upgrade-available cue — takes precedence over `active` on HexButton. */
+  highlight?: string;
   onClick: () => void;
 }
 
@@ -21,6 +23,9 @@ export interface HexClusterSlot {
  * `pinnedSlots`, if given, sit to the left of the toggle — always visible,
  * unaffected by open/closed state. Production uses this for the playtest
  * speed cycle; dev-only tools live in the Dev tools panel instead.
+ *
+ * When any slot has a `highlight` and the menu is collapsed, the Menu toggle
+ * inherits that highlight so the cue remains visible.
  */
 export function GlobalHexCluster({ slots, pinnedSlots }: { slots: HexClusterSlot[]; pinnedSlots?: HexClusterSlot[] }) {
   const [open, setOpen] = useState(false);
@@ -36,6 +41,8 @@ export function GlobalHexCluster({ slots, pinnedSlots }: { slots: HexClusterSlot
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [open]);
+
+  const menuHighlight = !open ? slots.find((slot) => slot.highlight)?.highlight : undefined;
 
   return (
     <div
@@ -73,6 +80,7 @@ export function GlobalHexCluster({ slots, pinnedSlots }: { slots: HexClusterSlot
             icon={slot.icon}
             title={slot.title}
             active={slot.active}
+            highlight={slot.highlight}
             onClick={slot.onClick}
           />
         ))}
@@ -85,12 +93,14 @@ export function GlobalHexCluster({ slots, pinnedSlots }: { slots: HexClusterSlot
             icon={slot.icon}
             title={slot.title}
             active={slot.active}
+            highlight={slot.highlight}
             onClick={slot.onClick}
           />
         ))}
         <HexButton
           icon={open ? <X size={20} /> : <Menu size={20} />}
           title={open ? "Close menu" : "Menu"}
+          highlight={menuHighlight}
           onClick={() => setOpen((v) => !v)}
         />
       </div>

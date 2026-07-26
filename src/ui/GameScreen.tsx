@@ -126,7 +126,7 @@ import {
   reinforceProvisionsCost,
   reinforceTravelDurationMs,
 } from "../engine/expeditions";
-import { troopSpeedMultiplier, researchDurationMs } from "../engine/research";
+import { hasStartableResearch, troopSpeedMultiplier, researchDurationMs } from "../engine/research";
 import type { ResearchId, ResearchRecord } from "../data/research";
 import { denDefense } from "../engine/dens";
 import {
@@ -183,6 +183,7 @@ import type { BuildResult } from "../App";
 import {
   BASE_HEX_SIZE,
   HexCanvas,
+  UPGRADE_AVAILABLE_BADGE_COLOR,
   WALL_TIER_ICON_NAMES,
   type HexCanvasHandle,
 } from "../render/HexCanvas";
@@ -4086,6 +4087,8 @@ export function GameScreen({
             title: "Research",
             // Also lit up while a research is in progress, not just while the panel is open — mirrors the old floating button's "something's happening" cue.
             active: openPanel === "research" || Boolean(research.pending),
+            // Orange cue when a research is startable (affordable + slot free); takes precedence over green active.
+            highlight: hasStartableResearch(tweaks, research, resources) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
             onClick: () => toggleOpenPanel("research"),
           },
           {

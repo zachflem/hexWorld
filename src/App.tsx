@@ -129,7 +129,16 @@ import {
 } from "./engine/expeditions";
 import { extractionTileBuildDurationMs, nextTier, tierUpgradeCost, tierUpgradeDurationMs } from "./engine/tiers";
 import { storageCapacity, storageUpgradeCost, storageUpgradeDurationMs } from "./engine/storage";
-import { isResearchAvailable, isResearchBusy, researchCost, researchDurationMs, troopSpeedMultiplier, unlockedSpeedRates } from "./engine/research";
+import {
+  expeditionOwnRange,
+  isResearchAvailable,
+  isResearchBusy,
+  researchCost,
+  researchDurationMs,
+  troopSpeedMultiplier,
+  unlockedSpeedRates,
+  wanderingScoutRevealRadius,
+} from "./engine/research";
 import { isBuildableLand, isTransitionTile, terrainAt } from "./engine/terrain";
 import { accrueNoise, addActionNoise } from "./engine/noiseMeter";
 import {
@@ -1131,6 +1140,7 @@ export default function App() {
           signal: labWorking.watchtowerSignal ?? null,
           base: territoryAfterRelocation.base,
           labCoord: labWorking.coord,
+          revealRadius: wanderingScoutRevealRadius(current.tweaks, current.game.research),
         },
       );
       const scrapSample = applyWanderingScoutScrapSamples(
@@ -1439,6 +1449,11 @@ export default function App() {
       const gridSize = resolveWorldGridSize(current.game.world, current.tweaks);
       const worldSeed = current.game.world.seed;
       const scoutedForRecall = current.game.scoutedTiles;
+      const territoryCorridor: typeof TERRITORY_CORRIDOR & { ownRange: number; gridSize: number } = {
+        ...TERRITORY_CORRIDOR,
+        ownRange: expeditionOwnRange(current.tweaks, research),
+        gridSize,
+      };
 
       const applyHomeRecall = (expedition: Expedition): void => {
         const plan = planHomeRecall(
@@ -1497,7 +1512,7 @@ export default function App() {
           territoryAfterExpeditions.base,
           attackPower,
           hordeSizeByKey,
-          TERRITORY_CORRIDOR,
+          territoryCorridor,
         );
 
         if (step.claimedTiles.length > 0) {
@@ -1644,7 +1659,7 @@ export default function App() {
             territoryAfterExpeditions.base,
             attackPower,
             hordeSizeByKey,
-            TERRITORY_CORRIDOR,
+            territoryCorridor,
           );
           if (step.claimedTiles.length > 0) {
             territoryAfterExpeditions = {
@@ -1893,7 +1908,7 @@ export default function App() {
             territoryAfterExpeditions.base,
             attackPower,
             hordeSizeByKey,
-            TERRITORY_CORRIDOR,
+            territoryCorridor,
           );
           if (step.claimedTiles.length > 0) {
             territoryAfterExpeditions = {

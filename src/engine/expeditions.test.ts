@@ -415,6 +415,72 @@ describe("stepCorridorWalk territory mode", () => {
     expect(result.death).toEqual({ tile: path[1], cause: { kind: "horde_blocked", hordeSize: 50 } });
     expect(result.claimedTiles).toEqual([]);
   });
+
+  it("with ownRange 1, claims adjacent water when stepping onto shoreline land", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const gridSize = 128;
+    let shoreLand: Axial | null = null;
+    let waterNeighbor: Axial | null = null;
+    for (const coord of axialSpiral(mapCenter(gridSize), 60)) {
+      if (terrainAt(seed, coord) === "water") continue;
+      const water = axialNeighbors(coord).find((n) => terrainAt(seed, n) === "water");
+      if (!water) continue;
+      shoreLand = coord;
+      waterNeighbor = water;
+      break;
+    }
+    expect(shoreLand).not.toBeNull();
+    expect(waterNeighbor).not.toBeNull();
+
+    const path: Axial[] = [base, shoreLand!];
+    const withoutOptics = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      0,
+      noHordes,
+      TERRITORY_CORRIDOR,
+    );
+    expect(withoutOptics.claimedTiles.map(axialKey)).toEqual([axialKey(shoreLand!)]);
+    expect(withoutOptics.claimedTiles.some((c) => axialKey(c) === axialKey(waterNeighbor!))).toBe(false);
+
+    const withOptics = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      0,
+      noHordes,
+      { ...TERRITORY_CORRIDOR, ownRange: 1, gridSize },
+    );
+    expect(withOptics.claimedTiles.some((c) => axialKey(c) === axialKey(shoreLand!))).toBe(true);
+    expect(withOptics.claimedTiles.some((c) => axialKey(c) === axialKey(waterNeighbor!))).toBe(true);
+  });
+
+  it("with ownRange 1, skips horde-occupied neighbors", () => {
+    const tweaks = loadRealTweaks();
+    const path: Axial[] = [base, { q: 1, r: 0 }];
+    const neighbor = { q: 1, r: -1 };
+    const hordeSizeByKey = new Map([[axialKey(neighbor), 5]]);
+    const result = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      0,
+      hordeSizeByKey,
+      { ...TERRITORY_CORRIDOR, ownRange: 1, gridSize: 128 },
+    );
+    expect(result.claimedTiles.some((c) => axialKey(c) === axialKey(neighbor))).toBe(false);
+  });
 });
 
 describe("provisionsRefund", () => {

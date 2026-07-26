@@ -228,6 +228,41 @@ describe("watchtower signal bias", () => {
     expect(northDelta(biasedPath)).toBeGreaterThan(northDelta(control.path));
   });
 
+  it("with revealRadius 1, scouts the stepped tile plus its first land ring and skips water", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    // Shoreline land: at least one water neighbor so the disk would include water if not filtered.
+    let start: Axial | null = null;
+    for (const coord of axialSpiral({ q: 64, r: 64 }, 50)) {
+      if (terrainAt(seed, coord) === "water") continue;
+      const neighbors = axialNeighbors(coord);
+      if (!neighbors.some((n) => terrainAt(seed, n) !== "water")) continue;
+      if (!neighbors.some((n) => terrainAt(seed, n) === "water")) continue;
+      start = coord;
+      break;
+    }
+    expect(start).not.toBeNull();
+
+    const result = advanceWanderingScouts(
+      tweaks,
+      [makeScout(start!)],
+      [],
+      seed,
+      gridSize,
+      tweaks.units.wandering_scout.seconds_per_step,
+      { signal: null, base: start!, labCoord: start!, revealRadius: 1 },
+    );
+
+    const stepped = result.scouts[0].coord;
+    const expectedLand = axialSpiral(stepped, 1).filter(
+      (c) => isWithinMapBounds(c, gridSize) && terrainAt(seed, c) !== "water",
+    );
+    expect(result.scoutedTiles.map(axialKey).sort()).toEqual(expectedLand.map(axialKey).sort());
+    expect(result.scoutedTiles.every((c) => terrainAt(seed, c) !== "water")).toBe(true);
+    expect(result.scoutedTiles.length).toBeLessThanOrEqual(7);
+    expect(result.scoutedTiles.length).toBeGreaterThan(1);
+  });
+
   it("with a signal, prefers stepping onto an adjacent unscouted lab", () => {
     const tweaks = loadRealTweaks();
     const seed = 5;

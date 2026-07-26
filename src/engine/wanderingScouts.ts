@@ -2,7 +2,7 @@ import type { WatchtowerSignal } from "../data/lab";
 import type { WanderingScoutRecord } from "../data/wanderingScouts";
 import type { Tweaks } from "../data/tweaksSchema";
 import { bearingStepScore } from "./lab";
-import { axialDistance, axialKey, axialNeighbors, isWithinMapBounds, type Axial } from "./hexCoords";
+import { axialDistance, axialKey, axialNeighbors, axialSpiral, isWithinMapBounds, type Axial } from "./hexCoords";
 import { seededRandom } from "./noise";
 import { terrainAt } from "./terrain";
 
@@ -56,6 +56,11 @@ export type AdvanceWanderingScoutsOptions = {
   base: Axial;
   /** True lab tile — used only while a signal is active to pull scouts toward it. */
   labCoord: Axial;
+  /**
+   * Axial spiral radius revealed around each stepped hex (Improved Optics).
+   * 0 = stepped tile only. Water tiles in the disk are never revealed.
+   */
+  revealRadius?: number;
 };
 
 /**
@@ -67,8 +72,9 @@ export type AdvanceWanderingScoutsOptions = {
  * explicit flood-fill — the exact mirror of engine/scoutSkiffs.ts's water-only
  * confinement. Excludes the tile it just came from when another option exists,
  * so it doesn't just oscillate between two tiles forever. Each new tile visited
- * is appended to `scoutedTiles` if not already present — the same reveal
- * mechanism the scout skiff uses.
+ * (plus an optional reveal disk from Improved Optics) is appended to
+ * `scoutedTiles` if not already present — the same reveal mechanism the scout
+ * skiff uses.
  *
  * Wandering scouts never award lab clues (den clears do). An active watchtower
  * signal (#38) biases neighbor picks toward that compass sector and pulls
@@ -91,6 +97,7 @@ export function advanceWanderingScouts(
   const signal = options?.signal ?? null;
   const labCoord = options?.labCoord ?? null;
   const labKey = labCoord ? axialKey(labCoord) : null;
+  const revealRadius = options?.revealRadius ?? 0;
 
   const scoutedKeys = new Set(scoutedTiles.map(axialKey));
   const labAlreadyKnown = labKey != null && scoutedKeys.has(labKey);
@@ -128,10 +135,13 @@ export function advanceWanderingScouts(
       prevCoord = coord;
       coord = next;
 
-      const key = axialKey(coord);
-      if (!scoutedKeys.has(key)) {
+      for (const reveal of axialSpiral(coord, revealRadius)) {
+        if (!isWithinMapBounds(reveal, gridSize)) continue;
+        if (terrainAt(seed, reveal) === "water") continue;
+        const key = axialKey(reveal);
+        if (scoutedKeys.has(key)) continue;
         scoutedKeys.add(key);
-        newlyScouted.push(coord);
+        newlyScouted.push(reveal);
         if (labKey != null && key === labKey && !labAlreadyKnown) {
           labRevealed = true;
         }

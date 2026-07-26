@@ -7,7 +7,7 @@ import type { Tower } from "../data/towers";
 import type { Tweaks } from "../data/tweaksSchema";
 import { garrisonAttackPower, mergeIntoGarrison } from "./garrisons";
 import { isStructureActive } from "./formulas";
-import { axialDistance, axialKey, type Axial } from "./hexCoords";
+import { axialDistance, axialKey, axialSpiral, isWithinMapBounds, type Axial } from "./hexCoords";
 import { findExpeditionPath } from "./pathfinding";
 import { resolveHordeTileFight } from "./hordes";
 import { tileDefense } from "./territory";
@@ -25,6 +25,13 @@ export interface CorridorWalkOptions {
   freeClaimUnowned: boolean;
   /** When true, party fights hordes (win clears, lose wipes). When false, any horde wipes (legacy assaults). */
   engageHordes: boolean;
+  /**
+   * Axial spiral radius free-claimed around each stepped tile when `freeClaimUnowned`
+   * (Improved Optics). Includes water; skips horde-occupied tiles. Requires `gridSize`.
+   */
+  ownRange?: number;
+  /** Map bounds for `ownRange` neighbor claims. */
+  gridSize?: number;
 }
 
 export const TERRITORY_CORRIDOR: CorridorWalkOptions = { freeClaimUnowned: true, engageHordes: true };
@@ -162,8 +169,9 @@ export interface CorridorStepResult {
  * Advances a party from `resolvedIndex` toward `targetIndex`.
  *
  * Territory mode (`TERRITORY_CORRIDOR`): horde fight-or-wipe; unowned tiles
- * free-claim. Assault mode (`ASSAULT_CORRIDOR`): any horde wipes; unowned
- * tiles still require beating tileDefense (legacy den/lab corridor).
+ * free-claim (plus optional Improved Optics own-range ring). Assault mode
+ * (`ASSAULT_CORRIDOR`): any horde wipes; unowned tiles still require beating
+ * tileDefense (legacy den/lab corridor).
  */
 export function stepCorridorWalk(
   tweaks: Tweaks,
@@ -180,6 +188,8 @@ export function stepCorridorWalk(
   const claimedTiles: Axial[] = [];
   const clearedHordeKeys: string[] = [];
   const remainingHordes = new Map(hordeSizeByKey);
+  const ownRange = options.ownRange ?? 0;
+  const gridSize = options.gridSize;
 
   for (let i = resolvedIndex + 1; i <= targetIndex; i++) {
     const tile = path[i];
@@ -199,9 +209,8 @@ export function stepCorridorWalk(
       remainingHordes.delete(key);
     }
 
-    if (ownedKeys.has(key)) continue;
-
     if (!options.freeClaimUnowned) {
+      if (ownedKeys.has(key)) continue;
       const defense = tileDefense(tweaks, axialDistance(tile, base));
       if (!resolveHordeTileFight(attackPower, defense)) {
         return {
@@ -211,10 +220,26 @@ export function stepCorridorWalk(
           clearedHordeKeys,
         };
       }
+      claimedTiles.push(tile);
+      ownedKeys.add(key);
+      continue;
     }
 
-    claimedTiles.push(tile);
-    ownedKeys.add(key);
+    if (!ownedKeys.has(key)) {
+      claimedTiles.push(tile);
+      ownedKeys.add(key);
+    }
+
+    // Improved Optics: claim unowned neighbors of every stepped tile (incl. water).
+    if (ownRange > 0 && gridSize != null) {
+      for (const neighbor of axialSpiral(tile, ownRange)) {
+        if (!isWithinMapBounds(neighbor, gridSize)) continue;
+        const neighborKey = axialKey(neighbor);
+        if (ownedKeys.has(neighborKey) || remainingHordes.has(neighborKey)) continue;
+        claimedTiles.push(neighbor);
+        ownedKeys.add(neighborKey);
+      }
+    }
   }
   return { resolvedIndex: targetIndex, claimedTiles, death: null, clearedHordeKeys };
 }
