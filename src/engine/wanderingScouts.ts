@@ -1,8 +1,8 @@
 import type { WatchtowerSignal } from "../data/lab";
 import type { WanderingScoutRecord } from "../data/wanderingScouts";
 import type { Tweaks } from "../data/tweaksSchema";
-import { bearingStepScore, rollScoutClue } from "./lab";
-import { axialKey, axialNeighbors, isWithinMapBounds, type Axial } from "./hexCoords";
+import { bearingStepScore } from "./lab";
+import { axialDistance, axialKey, axialNeighbors, isWithinMapBounds, type Axial } from "./hexCoords";
 import { seededRandom } from "./noise";
 import { terrainAt } from "./terrain";
 
@@ -11,10 +11,16 @@ function wanderingScoutRollIndex(coord: Axial, spawnedAt: number, step: number):
   return coord.q * 51_263 + coord.r * 37_649 + spawnedAt + step;
 }
 
+/** +1 when stepping closer to lab, 0 equal, -1 farther — neighbors only change distance by at most 1. */
+function labApproachScore(from: Axial, to: Axial, lab: Axial): number {
+  return axialDistance(from, lab) - axialDistance(to, lab);
+}
+
 function pickWeightedNeighbor(
   candidates: Axial[],
   from: Axial,
   bearing: WatchtowerSignal["bearing"] | null,
+  labCoord: Axial | null,
   seed: number,
   rollIndex: number,
 ): Axial {
@@ -24,9 +30,17 @@ function pickWeightedNeighbor(
     return candidates[Math.min(candidates.length - 1, Math.floor(roll * candidates.length))];
   }
 
-  // Soft-but-noticeable bias: score ∈ [-1, 1] → weight via exp so aligned
-  // steps dominate without zeroing opposite neighbors.
-  const weights = candidates.map((c) => Math.exp(2.5 * bearingStepScore(from, c, bearing)));
+  // Active watchtower signal: sector bias + pull toward the true lab so guided
+  // scouts are more likely to step onto it (they never award clues — dens do).
+  const labKey = labCoord ? axialKey(labCoord) : null;
+  const weights = candidates.map((c) => {
+    let score = 2.5 * bearingStepScore(from, c, bearing);
+    if (labCoord) {
+      score += 3.5 * labApproachScore(from, c, labCoord);
+      if (labKey && axialKey(c) === labKey) score += 4;
+    }
+    return Math.exp(score);
+  });
   const total = weights.reduce((sum, w) => sum + w, 0);
   let cursor = seededRandom(seed, rollIndex) * total;
   for (let i = 0; i < candidates.length; i++) {
@@ -37,11 +51,11 @@ function pickWeightedNeighbor(
 }
 
 export type AdvanceWanderingScoutsOptions = {
-  /** Active watchtower listening focus — biases steps toward that sector. */
+  /** Active watchtower listening focus — biases steps toward that sector + the lab. */
   signal: WatchtowerSignal | null;
   base: Axial;
-  /** Current lab clue count — passive rolls stop once at the cap. */
-  cluesCollected: number;
+  /** True lab tile — used only while a signal is active to pull scouts toward it. */
+  labCoord: Axial;
 };
 
 /**
@@ -56,9 +70,9 @@ export type AdvanceWanderingScoutsOptions = {
  * is appended to `scoutedTiles` if not already present — the same reveal
  * mechanism the scout skiff uses.
  *
- * Newly scouted tiles roll a passive lab clue (`per_scout_action_chance`);
- * at most one clue per advance. An active watchtower signal (#38) only biases
- * neighbor picks toward that compass sector (it does not gate the clue roll).
+ * Wandering scouts never award lab clues (den clears do). An active watchtower
+ * signal (#38) biases neighbor picks toward that compass sector and pulls
+ * toward the lab tile so guided search is more likely to reveal it.
  */
 export function advanceWanderingScouts(
   tweaks: Tweaks,
@@ -68,20 +82,20 @@ export function advanceWanderingScouts(
   gridSize: number,
   elapsedSeconds: number,
   options?: AdvanceWanderingScoutsOptions,
-): { scouts: WanderingScoutRecord[]; scoutedTiles: Axial[]; clueAwarded: boolean } {
+): { scouts: WanderingScoutRecord[]; scoutedTiles: Axial[]; labRevealed: boolean } {
   if (elapsedSeconds <= 0 || scouts.length === 0) {
-    return { scouts, scoutedTiles, clueAwarded: false };
+    return { scouts, scoutedTiles, labRevealed: false };
   }
 
   const secondsPerStep = tweaks.units.wandering_scout.seconds_per_step;
   const signal = options?.signal ?? null;
-  const cluesCollected = options?.cluesCollected ?? 0;
-  const canRollClue = cluesCollected < tweaks.lab_clues.total_clues;
+  const labCoord = options?.labCoord ?? null;
+  const labKey = labCoord ? axialKey(labCoord) : null;
 
   const scoutedKeys = new Set(scoutedTiles.map(axialKey));
+  const labAlreadyKnown = labKey != null && scoutedKeys.has(labKey);
   const newlyScouted: Axial[] = [];
-  let clueAwarded = false;
-  let scoutCount = scoutedTiles.length;
+  let labRevealed = false;
   let anyChanged = false;
 
   const nextScouts = scouts.map((scout) => {
@@ -106,6 +120,7 @@ export function advanceWanderingScouts(
         candidates,
         coord,
         signal?.bearing ?? null,
+        signal && labCoord ? labCoord : null,
         seed,
         wanderingScoutRollIndex(coord, scout.spawnedAt, step),
       );
@@ -117,10 +132,8 @@ export function advanceWanderingScouts(
       if (!scoutedKeys.has(key)) {
         scoutedKeys.add(key);
         newlyScouted.push(coord);
-        scoutCount += 1;
-
-        if (canRollClue && !clueAwarded && rollScoutClue(tweaks, seed, coord, scoutCount)) {
-          clueAwarded = true;
+        if (labKey != null && key === labKey && !labAlreadyKnown) {
+          labRevealed = true;
         }
       }
     }
@@ -139,6 +152,6 @@ export function advanceWanderingScouts(
   return {
     scouts: anyChanged ? nextScouts : scouts,
     scoutedTiles: newlyScouted.length > 0 ? [...scoutedTiles, ...newlyScouted] : scoutedTiles,
-    clueAwarded,
+    labRevealed,
   };
 }

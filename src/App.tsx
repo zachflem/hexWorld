@@ -1119,7 +1119,7 @@ export default function App() {
       const {
         scouts: wanderingScouts,
         scoutedTiles: scoutedTilesAfterWander,
-        clueAwarded: wanderingClueAwarded,
+        labRevealed: wanderingLabRevealed,
       } = advanceWanderingScouts(
         current.tweaks,
         wanderingScoutsAfterBuild,
@@ -1130,7 +1130,7 @@ export default function App() {
         {
           signal: labWorking.watchtowerSignal ?? null,
           base: territoryAfterRelocation.base,
-          cluesCollected: labWorking.cluesCollected,
+          labCoord: labWorking.coord,
         },
       );
       const scrapSample = applyWanderingScoutScrapSamples(
@@ -1147,16 +1147,11 @@ export default function App() {
           steel: Math.min(steelCap, resources.steel + scrapSample.steelGained),
         };
       }
-      if (wanderingClueAwarded) {
-        labWorking = {
-          ...labWorking,
-          cluesCollected: labWorking.cluesCollected + 1,
-          watchtowerSignal: null,
-        };
-        const clueText = labClueText(labWorking.cluesCollected, territoryAfterRelocation.base, labWorking.coord);
-        pushToast({
-          message: `New lab clue (${labWorking.cluesCollected}/${current.tweaks.lab_clues.total_clues}): ${clueText}`,
-        });
+      // Scouts never award clues — dens do. Finding the lab clears the active
+      // watchtower search pulse (signal already did its job).
+      if (wanderingLabRevealed) {
+        labWorking = { ...labWorking, watchtowerSignal: null };
+        pushToast({ message: "Scouts found the hidden lab!" });
       }
 
       // Scrapper yard↔stash hauls (after yard construction + scrap samples).

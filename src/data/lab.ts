@@ -16,7 +16,10 @@ export interface LabRecord {
   coord: Axial;
   /** True once a party has beaten the guardian (engine/lab.ts:resolveLabAssault) — permanent, this is the entire win condition (DESIGN.md §13). */
   secured: boolean;
-  /** 0..tweaks.lab_clues.total_clues — see engine/lab.ts:labClueText for how this turns into a directional hint. */
+  /**
+   * 0..tweaks.lab_clues.total_clues — den-clear awards only (wandering scouts
+   * never increment this). See engine/lab.ts:labClueText for directional text.
+   */
   cluesCollected: number;
   /**
    * Active watchtower listening focus (#38). Vague 4-point bearing toward the lab;

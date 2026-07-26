@@ -46,7 +46,9 @@ export function ScoutingPanel({
           {lab.secured ? (
             <SheetListItem title="Lab secured" detail="You win." />
           ) : clueHistory.length === 0 ? (
-            <p style={{ margin: 0, opacity: 0.7, fontSize: "0.85rem" }}>No clues collected yet.</p>
+            <p style={{ margin: 0, opacity: 0.7, fontSize: "0.85rem" }}>
+              No clues yet — clear dens to gather directional lab clues. Watchtower signals guide scouts separately.
+            </p>
           ) : (
             clueHistory.map(({ n, text }) => (
               <SheetListItem key={n} title={`Clue ${n}`} detail={text ?? undefined} />

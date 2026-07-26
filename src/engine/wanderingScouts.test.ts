@@ -4,7 +4,7 @@ import stripJsonComments from "strip-json-comments";
 import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
 import type { WanderingScoutRecord } from "../data/wanderingScouts";
-import { axialKey, axialNeighbors, axialSpiral, axialToPixel, type Axial } from "./hexCoords";
+import { axialKey, axialNeighbors, axialSpiral, axialToPixel, isWithinMapBounds, type Axial } from "./hexCoords";
 import { terrainAt } from "./terrain";
 import { advanceWanderingScouts } from "./wanderingScouts";
 import { bearingStepScore } from "./lab";
@@ -158,7 +158,28 @@ describe("advanceWanderingScouts", () => {
 
     expect(result.scouts).toEqual(scouts);
     expect(result.scoutedTiles).toEqual([]);
-    expect(result.clueAwarded).toBe(false);
+    expect(result.labRevealed).toBe(false);
+  });
+
+  it("never awards lab clues — reveals tiles only", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+    const result = advanceWanderingScouts(
+      tweaks,
+      [makeScout(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.units.wandering_scout.seconds_per_step * 40,
+      {
+        signal: null,
+        base: start,
+        labCoord: { q: 0, r: 0 },
+      },
+    );
+    expect(result.scoutedTiles.length).toBeGreaterThan(0);
+    expect(result).not.toHaveProperty("clueAwarded");
   });
 });
 
@@ -176,6 +197,8 @@ describe("watchtower signal bias", () => {
     const start = findLandCoord(seed);
     const steps = 80;
     const stepSec = tweaks.units.wandering_scout.seconds_per_step;
+    // Lab far north so sector bias and lab-approach pull reinforce each other.
+    const farNorthLab = { q: start.q, r: start.r - 40 };
 
     function northDelta(path: Axial[]): number {
       let sum = 0;
@@ -195,7 +218,7 @@ describe("watchtower signal bias", () => {
       const result = advanceWanderingScouts(tweaks, scouts, scoutedTiles, seed, gridSize, stepSec, {
         signal: { bearing: "north", setAt: 0 },
         base: start,
-        cluesCollected: 0,
+        labCoord: farNorthLab,
       });
       scouts = result.scouts;
       scoutedTiles = result.scoutedTiles;
@@ -205,35 +228,34 @@ describe("watchtower signal bias", () => {
     expect(northDelta(biasedPath)).toBeGreaterThan(northDelta(control.path));
   });
 
-  it("awards a clue on a newly scouted tile when chance is 100%, even without a signal", () => {
-    const baseTweaks = loadRealTweaks();
-    const tweaks = {
-      ...baseTweaks,
-      lab_clues: {
-        ...baseTweaks.lab_clues,
-        passive_surfacing: {
-          ...baseTweaks.lab_clues.passive_surfacing,
-          per_scout_action_chance: 1,
-        },
-      },
-    };
+  it("with a signal, prefers stepping onto an adjacent unscouted lab", () => {
+    const tweaks = loadRealTweaks();
     const seed = 5;
     const start = findLandCoord(seed);
-    const scouts = [makeScout(start)];
-    const result = advanceWanderingScouts(
-      tweaks,
-      scouts,
-      [],
-      seed,
-      gridSize,
-      tweaks.units.wandering_scout.seconds_per_step * 40,
-      {
-        signal: null,
-        base: start,
-        cluesCollected: 0,
-      },
+    const labNeighbor = axialNeighbors(start).find(
+      (n) => isWithinMapBounds(n, gridSize) && terrainAt(seed, n) !== "water",
     );
-    expect(result.scoutedTiles.length).toBeGreaterThan(0);
-    expect(result.clueAwarded).toBe(true);
+    expect(labNeighbor).toBeDefined();
+
+    // Many single-step trials — guided search should land on the lab often.
+    let hits = 0;
+    const trials = 40;
+    for (let i = 0; i < trials; i++) {
+      const result = advanceWanderingScouts(
+        tweaks,
+        [makeScout(start, { spawnedAt: i })],
+        [],
+        seed,
+        gridSize,
+        tweaks.units.wandering_scout.seconds_per_step,
+        {
+          signal: { bearing: "north", setAt: 0 },
+          base: start,
+          labCoord: labNeighbor!,
+        },
+      );
+      if (result.labRevealed) hits += 1;
+    }
+    expect(hits).toBeGreaterThan(trials * 0.5);
   });
 });

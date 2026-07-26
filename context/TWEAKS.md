@@ -519,19 +519,18 @@ A converted den becomes a second, independent economic/defensive hub — a real 
 
 - **Placement:** one fixed tile, deterministic per world seed (`data/lab.ts:createLab`, same spiral-candidate-then-pick shape as `createDens`), never on water, at least `lab.min_distance_from_base` (20) tiles out — farther than any den ever spawns (`dens.min_distance_from_base` is 14), so the lab reads as the map's ultimate destination rather than something found incidentally early on.
 - **Guardian:** a single static defense value (`lab.guardian_defense`, 300) — doesn't scale with anything, unlike a den's level-based defense. Securing it is an all-or-nothing fight exactly like a regular expedition or tile attack (not a den assault's proportional-attrition shape, and no siege/hold period) — win and the whole party comes home, lab secured for good; lose and the whole committed party is gone, guardian unchanged, retry any time.
-- **Win condition:** securing the lab is the *entire* win condition (DESIGN.md §13) — clearing dens is never required. A player who finds and secures the lab without ever touching a den still wins. Den-clearing stays valuable for its own reasons (guaranteed clue below, outposts, economy, army size) but doesn't gate the win screen.
+- **Win condition:** securing the lab is the *entire* win condition (DESIGN.md §13) — clearing dens is never required. A player who finds and secures the lab without ever touching a den still wins. Den-clearing stays valuable for its own reasons (the five clues that unlock the search-cluster hint, outposts, economy, army size) but doesn't gate the win screen.
 
 ## Hidden Lab — Rumor/Clue System
 
-**Total clues:** 5, fixed (`lab_clues.total_clues`). Each clue is a directional hint relative to base — early clues give a coarse compass quadrant ("something calls from the north"), later clues refine that into a narrower arc.
+**Total clues:** 5, fixed (`lab_clues.total_clues`) — **den-clear awards only**. Each clue is a directional hint relative to base — early clues give a coarse compass quadrant ("something calls from the north"), later clues refine that into a narrower arc. Wandering scouts never increment `cluesCollected`.
 
-**Final search cluster:** once all clues are collected, the map highlights a jittered cluster of radius `final_search_area_radius_tiles` (6) around `labSearchZoneCenter` (never the exact lab tile). Scouted tiles in the cluster get a light player-color wash (~10% opacity); unscouted heavy/light/hidden fog in the cluster is eased by ~10% opacity so the area peeks through. Wandering Scouts / Scout Skiffs still have to reveal the true lab hex inside that cluster. Cleared when the lab is secured.
+**Final search cluster:** once all 5 den clues are collected, the map highlights a jittered cluster of radius `final_search_area_radius_tiles` (6) around `labSearchZoneCenter` (never the exact lab tile). Scouted tiles in the cluster get a light player-color wash (~10% opacity); unscouted heavy/light/hidden fog in the cluster is eased by ~10% opacity so the area peeks through. Wandering Scouts / Scout Skiffs still have to reveal the true lab hex (with or without the cluster). Cleared when the lab is secured.
 
 **Surfacing:**
-- Passive scout: 2% chance per newly revealed wandering-scout tile (`per_scout_action_chance`, applied in `advanceWanderingScouts` — not gated on a watchtower signal).
-- Watchtower signal (#38 / M15 leftover closed): L2–L3 towers roll `per_watchtower_tick_base_chance` (0.1%/tick); L4 multiplies by `watchtower_intel_tier_multiplier` (2×). A success sets a vague 4-point **signal** (not a clue) that biases wandering-scout steps toward that sector. Signal clears when a wandering scout awards a clue.
-- Guaranteed: clearing a den always awards exactly one clue.
-- Stops once all 5 clues are collected (no further clues or signals).
+- Guaranteed: clearing a den always awards exactly one clue (`den_clear_bonus.guaranteed_clue_per_den_clear`).
+- Watchtower signal (#38): L2–L3 towers roll `per_watchtower_tick_base_chance` (0.1%/tick); L4 multiplies by `watchtower_intel_tier_multiplier` (2×). A success sets a vague 4-point **signal** (not a clue) that biases wandering-scout steps toward that sector **and** pulls toward the true lab tile. Signal clears when a wandering scout reveals the lab (or is overwritten by a newer signal).
+- Stops once all 5 den clues are collected (`stops_once_all_clues_collected` — no further signals).
 - Horde alert: toast when a horde first enters an active tower's combat range.
 
 ---

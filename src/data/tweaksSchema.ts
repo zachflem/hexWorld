@@ -506,9 +506,9 @@ export const tweaksSchema = z.object({
     clue_form: z.string(),
     final_search_area_radius_tiles: z.number(),
     passive_surfacing: z.object({
-      per_scout_action_chance: z.number(),
       per_watchtower_tick_base_chance: z.number(),
       watchtower_intel_tier_multiplier: z.number(),
+      /** When true, watchtower signals stop after all den-clear clues are in. */
       stops_once_all_clues_collected: z.boolean(),
     }),
     den_clear_bonus: z.object({

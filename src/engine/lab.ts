@@ -23,19 +23,6 @@ export function resolveLabAssault(tweaks: Tweaks, lab: LabRecord, attackPower: n
   return { lab: { ...lab, secured: true }, won: true };
 }
 
-/**
- * Passive clue roll for a newly revealed tile (DESIGN.md §13 — wandering scout
- * steps and similar reveal actions carry a small passive chance to surface a
- * clue). Deterministic via seededRandom, same style as engine/hordes.ts:denRollIndex —
- * the index mixes the scouted coord with `scoutCount` (a running total of
- * revealed tiles so far) so repeat reveals of the same tile, or two different
- * players on the same seed, don't collapse onto the same roll.
- */
-export function rollScoutClue(tweaks: Tweaks, seed: number, coord: Axial, scoutCount: number): boolean {
-  const rollIndex = coord.q * 74_207 + coord.r * 51_991 + scoutCount;
-  return seededRandom(seed, rollIndex) < tweaks.lab_clues.passive_surfacing.per_scout_action_chance;
-}
-
 const COMPASS_4: Compass4[] = ["north", "east", "south", "west"];
 const COMPASS_8 = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"];
 const COMPASS_16 = [

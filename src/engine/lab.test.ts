@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { LabRecord } from "../data/lab";
 import { tweaksSchema } from "../data/tweaksSchema";
 import { axialDistance, axialKey } from "./hexCoords";
-import { labClueText, labSearchZoneCenter, labSearchZoneTileKeys, resolveLabAssault, rollScoutClue, rollWatchtowerSignal, watchtowerSignalChance, compass4Bearing, coordInCompass4Sector, makeWatchtowerSignal, WATCHTOWER_SIGNAL_MIN_LEVEL } from "./lab";
+import { labClueText, labSearchZoneCenter, labSearchZoneTileKeys, resolveLabAssault, rollWatchtowerSignal, watchtowerSignalChance, compass4Bearing, coordInCompass4Sector, makeWatchtowerSignal, WATCHTOWER_SIGNAL_MIN_LEVEL } from "./lab";
 
 function loadRealTweaks() {
   const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
@@ -56,25 +56,6 @@ describe("labClueText", () => {
     const coarse = labClueText(1, base, { q: 10, r: -4 })!;
     const precise = labClueText(5, base, { q: 10, r: -4 })!;
     expect(precise.split("-").length).toBeGreaterThanOrEqual(coarse.split("-").length);
-  });
-});
-
-describe("rollScoutClue", () => {
-  it("is deterministic for a given seed/coord/scoutCount", () => {
-    const tweaks = loadRealTweaks();
-    const coord = { q: 12, r: -7 };
-    const first = rollScoutClue(tweaks, 42, coord, 3);
-    const second = rollScoutClue(tweaks, 42, coord, 3);
-    expect(second).toBe(first);
-  });
-
-  it("varies across scoutCount (not the same roll reused every time)", () => {
-    // per_scout_action_chance is ~2%, so 1000 draws makes both outcomes
-    // appearing a near-certainty (chance of all-false is ~1 in 500 million).
-    const tweaks = loadRealTweaks();
-    const coord = { q: 12, r: -7 };
-    const rolls = Array.from({ length: 1000 }, (_, i) => rollScoutClue(tweaks, 42, coord, i));
-    expect(new Set(rolls).size).toBe(2);
   });
 });
 

@@ -20,7 +20,7 @@ Also closed the M15 leftover [#37](https://github.com/zachflem/hexWorld/issues/3
 - L1 towers: combat only.
 - L2–L3: rare tick roll → vague 4-point **signal** toast (does not increment `cluesCollected`).
 - L4: higher signal chance via `watchtower_intel_tier_multiplier`.
-- Active signal biases [`advanceWanderingScouts`](../src/engine/wanderingScouts.ts) step picks toward that sector. Passive lab clues still roll on **any** newly revealed wandering-scout tile (`per_scout_action_chance`); awarding a clue clears the signal.
+- Active signal biases [`advanceWanderingScouts`](../src/engine/wanderingScouts.ts) step picks toward that sector and pulls toward the lab. *(2026-07-26: wandering scouts no longer award clues — den clears only; revealing the lab clears the signal.)*
 - Horde entering an active tower’s combat range → early-warning toast (session dedupe until leave).
 
 Out of scope for this pass: DESIGN §11 twelve-tier intel-depth / progressive tile-info UI.
@@ -29,13 +29,13 @@ Out of scope for this pass: DESIGN §11 twelve-tier intel-depth / progressive ti
 
 - `src/data/lab.ts` — `watchtowerSignal` on `LabRecord`
 - `src/engine/lab.ts` — `rollWatchtowerSignal`, compass helpers, toast copy
-- `src/engine/wanderingScouts.ts` — bearing-weighted steps + passive clue rolls on reveal
+- `src/engine/wanderingScouts.ts` — bearing-weighted steps + lab pull while signal active
 - `src/App.tsx` — tick wiring + horde alerts
 - `src/ui/panels/ScoutingPanel.tsx` — active signal line
 
 ### Acceptance
 
 - [x] L2+ tower can produce a distant-signal toast; L1 never does
-- [x] Wandering scouts drift into the signal sector; clues can surface from wandering reveals
+- [x] Wandering scouts drift into the signal sector (lab pull while guided; clues are den-clear only)
 - [x] Den-clear clues unchanged
 - [x] Horde entering tower range shows an alert toast

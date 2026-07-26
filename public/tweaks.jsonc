@@ -780,17 +780,17 @@
   // HIDDEN LAB — RUMOR/CLUE SYSTEM
   // --------------------------------------------------------------------------
   "lab_clues": {
-    "_status": "first pass, untested",
+    "_status": "retargeted 2026-07-26 — clues are den-clear only; towers signal; scouts reveal",
     "total_clues": 5,
     "clue_form": "directional hint relative to base; precision narrows from coarse compass quadrant to a narrow arc as more clues are collected",
     "final_search_area_radius_tiles": 6, // approximate cluster size the last clue narrows down to
 
     "passive_surfacing": {
-      "per_scout_action_chance": 0.02,
-      // L2–L3 per tick; L1 never rolls. Rare — towers point scouts, they don't drip clues.
+      // L2–L3 per tick; L1 never rolls. Towers point scouts at a sector — they never award clues.
       "per_watchtower_tick_base_chance": 0.001,
       // Applied at tower level 4 only (chance = base * this).
       "watchtower_intel_tier_multiplier": 2.0,
+      // After 5 den-clear clues the search cluster is on the map; stop new signals.
       "stops_once_all_clues_collected": true
     },
 

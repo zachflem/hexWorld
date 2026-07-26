@@ -203,15 +203,18 @@ Losing an outpost to a horde doesn't end the game — it just reverts back to a 
 
 Somewhere out past every zombie den — deliberately farther out than any of them — sits a **hidden lab**, guarded, and finding + securing it is the win condition. There's nothing else to do to win; you don't need to clear every den or build a particular economy size, just reach the lab and beat its guardian.
 
-**Finding it** takes clues — 5 total, each a directional hint relative to your base that narrows the search area, from a rough compass quadrant down to a small cluster of hexes on the last one. Clues surface from a small passive chance when a **Wandering Scout** newly reveals a tile, and a **guaranteed clue every time you successfully clear a den's hold**. **Watchtowers (level 2+)** sometimes pick up a vague distant signal ("something in the north — send the scouts"); that does not count as a clue, but it steers wandering scouts toward that direction. Level 4 towers hear signals more often.
+**Finding it** has two tracks that work together:
 
-Once you've collected all 5, the map marks that **search cluster**: scouted hexes inside it get a light tint in your chosen color, and unscouted hexes there show a little more through the fog — still not the exact lab tile. Send scouts through the cluster to find and assault the lab.
+- **Watchtowers (level 2+)** sometimes pick up a vague distant **signal** ("something in the north — send the scouts"). That is not a clue — it steers **Wandering Scouts** toward that sector and makes them more likely to actually step the lab hex. Level 4 towers hear signals more often. Scouts can also stumble onto the lab with no signal at all.
+- **Clearing a den** always awards one directional **clue** (5 total). Clues refine from a rough compass quadrant relative to your base down to a narrower arc. Wandering scouts never collect clues.
+
+Once you've secured **5 dens' worth of clues**, the map marks a **search cluster**: scouted hexes inside it get a light tint in your chosen color, and unscouted hexes there show a little more through the fog — still not the exact lab tile. Send scouts through the cluster (or keep exploring earlier) to find and assault the lab.
 
 Watchtowers also **alert** when a horde first enters their combat range.
 
 **Securing it** works like assaulting a den — commit a party of militia/knights/snipers. The guardian is by far the toughest fight in the game (its defense is set well above even a max-level den, deliberately — this is meant to demand a real, late-game army), and unlike a den there's no hold period afterward: win the fight and the game ends immediately in victory.
 
-Clearing dens is never *required* to win — a lucky, exploration-heavy game could find and secure the lab without ever sieging one. But den-clearing stays valuable in its own right: a guaranteed clue per clear, a new outpost, and the economy/army growth needed to eventually take on the guardian.
+Clearing dens is never *required* to win — a lucky scout run can reveal the lab without any den clues — but dens are how you unlock the search-cluster hint, plus outposts and the army growth you'll want for the guardian.
 
 ---
 
