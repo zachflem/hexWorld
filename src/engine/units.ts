@@ -1,5 +1,15 @@
+import type { DenAssaultsRecord } from "../data/denAssaults";
+import type { ExpeditionsRecord } from "../data/expeditions";
+import type { GarrisonsRecord } from "../data/garrisons";
+import type { GarrisonRecallsRecord } from "../data/garrisonRecalls";
+import type { LabAssaultsRecord } from "../data/labAssaults";
 import type { UnitsRecord } from "../data/units";
 import type { Tweaks } from "../data/tweaksSchema";
+import {
+  availableCrossBowSnipers,
+  availableJunkyardKnights,
+  availableMilitia,
+} from "./garrisons";
 
 export function militiaTrainCost(tweaks: Tweaks): Record<string, number> {
   return tweaks.units.militia.train_cost;
@@ -88,39 +98,114 @@ export function crossBowSniperDefensePower(tweaks: Tweaks, count: number): numbe
   return count * tweaks.units.cross_bow_sniper.defense_per_unit;
 }
 
-export function totalUpkeepPerSecond(tweaks: Tweaks, units: UnitsRecord): number {
-  const militiaPerMin = units.militiaCount * tweaks.units.militia.upkeep_food_per_min;
-  const junkyardKnightPerMin = units.junkyardKnightCount * tweaks.units.junkyard_knight.upkeep_food_per_min;
-  const crossBowSniperPerMin = units.crossBowSniperCount * tweaks.units.cross_bow_sniper.upkeep_food_per_min;
+/** Commitment records that remove troops from the barracks-idle upkeep pool. */
+export type UnitCommitments = {
+  garrisons: GarrisonsRecord;
+  expeditions: ExpeditionsRecord;
+  denAssaults: DenAssaultsRecord;
+  garrisonRecalls: GarrisonRecallsRecord;
+  labAssaults: LabAssaultsRecord;
+};
+
+const NO_COMMITMENTS: UnitCommitments = {
+  garrisons: [],
+  expeditions: [],
+  denAssaults: [],
+  garrisonRecalls: [],
+  labAssaults: [],
+};
+
+/**
+ * Food upkeep for barracks-idle troops only — garrisoned / expedition /
+ * assault / recall commitments already paid their way (provisions) or are
+ * stationed outside the barracks.
+ */
+export function totalUpkeepPerSecond(
+  tweaks: Tweaks,
+  units: UnitsRecord,
+  commitments: UnitCommitments = NO_COMMITMENTS,
+): number {
+  const idleMilitia = availableMilitia(
+    units,
+    commitments.garrisons,
+    commitments.expeditions,
+    commitments.denAssaults,
+    commitments.garrisonRecalls,
+    commitments.labAssaults,
+  );
+  const idleKnights = availableJunkyardKnights(
+    units,
+    commitments.garrisons,
+    commitments.expeditions,
+    commitments.denAssaults,
+    commitments.garrisonRecalls,
+    commitments.labAssaults,
+  );
+  const idleSnipers = availableCrossBowSnipers(
+    units,
+    commitments.garrisons,
+    commitments.expeditions,
+    commitments.denAssaults,
+    commitments.garrisonRecalls,
+    commitments.labAssaults,
+  );
+  const militiaPerMin = idleMilitia * tweaks.units.militia.upkeep_food_per_min;
+  const junkyardKnightPerMin = idleKnights * tweaks.units.junkyard_knight.upkeep_food_per_min;
+  const crossBowSniperPerMin = idleSnipers * tweaks.units.cross_bow_sniper.upkeep_food_per_min;
   return (militiaPerMin + junkyardKnightPerMin + crossBowSniperPerMin) / 60;
 }
 
 /**
- * Advances food upkeep for every standing unit type by `elapsedSeconds`. If
- * food can't cover the full upkeep, food is clamped at 0 and exactly one unit
- * deserts — cheapest/most-replaceable first (militia, then junkyard knight,
- * then cross-bow sniper) — a simple first-pass penalty, not proportional to
- * the shortfall size.
+ * Advances food upkeep for barracks-idle units by `elapsedSeconds`. If food
+ * can't cover the full upkeep, food is clamped at 0 and exactly one idle
+ * unit deserts — cheapest first (militia, then junkyard knight, then
+ * cross-bow sniper). Committed troops are never deserted.
  */
 export function applyUpkeepTick(
   tweaks: Tweaks,
   units: UnitsRecord,
   food: number,
   elapsedSeconds: number,
+  commitments: UnitCommitments = NO_COMMITMENTS,
 ): { food: number; units: UnitsRecord } {
   if (elapsedSeconds <= 0) return { food, units };
 
-  const upkeep = totalUpkeepPerSecond(tweaks, units) * elapsedSeconds;
+  const upkeep = totalUpkeepPerSecond(tweaks, units, commitments) * elapsedSeconds;
   if (food >= upkeep) {
     return { food: food - upkeep, units };
   }
 
+  const idleMilitia = availableMilitia(
+    units,
+    commitments.garrisons,
+    commitments.expeditions,
+    commitments.denAssaults,
+    commitments.garrisonRecalls,
+    commitments.labAssaults,
+  );
+  const idleKnights = availableJunkyardKnights(
+    units,
+    commitments.garrisons,
+    commitments.expeditions,
+    commitments.denAssaults,
+    commitments.garrisonRecalls,
+    commitments.labAssaults,
+  );
+  const idleSnipers = availableCrossBowSnipers(
+    units,
+    commitments.garrisons,
+    commitments.expeditions,
+    commitments.denAssaults,
+    commitments.garrisonRecalls,
+    commitments.labAssaults,
+  );
+
   const nextUnits = { ...units };
-  if (nextUnits.militiaCount > 0) {
+  if (idleMilitia > 0) {
     nextUnits.militiaCount -= 1;
-  } else if (nextUnits.junkyardKnightCount > 0) {
+  } else if (idleKnights > 0) {
     nextUnits.junkyardKnightCount -= 1;
-  } else if (nextUnits.crossBowSniperCount > 0) {
+  } else if (idleSnipers > 0) {
     nextUnits.crossBowSniperCount -= 1;
   }
   return { food: 0, units: nextUnits };

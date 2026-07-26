@@ -510,11 +510,19 @@ export const tweaksSchema = z.object({
     }),
   }),
 
-  lab: z.object({
-    _status: z.string(),
-    min_distance_from_base: z.number(),
-    guardian_defense: z.number(),
-  }),
+  lab: z
+    .object({
+      _status: z.string(),
+      min_distance_from_base: z.number(),
+      /** Inclusive floor for per-seed guardian roll (LabRecord.guardianDefense). */
+      guardian_defense_min: z.number(),
+      /** Inclusive ceiling for per-seed guardian roll. */
+      guardian_defense_max: z.number(),
+    })
+    .refine((lab) => lab.guardian_defense_max >= lab.guardian_defense_min, {
+      message: "lab.guardian_defense_max must be >= guardian_defense_min",
+      path: ["guardian_defense_max"],
+    }),
 
   lab_clues: z.object({
     _status: z.string(),

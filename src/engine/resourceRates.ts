@@ -8,7 +8,7 @@ import type { UnitsRecord } from "../data/units";
 import type { Tweaks } from "../data/tweaksSchema";
 import { isStructureActive } from "./formulas";
 import { storageCapacity } from "./storage";
-import { totalUpkeepPerSecond } from "./units";
+import { totalUpkeepPerSecond, type UnitCommitments } from "./units";
 import { yieldPerSecond } from "./tick";
 import { dockLevel, dockYieldPerSecond } from "./docks";
 import { extractionTierLevel } from "./tiers";
@@ -34,6 +34,13 @@ export function computeResourceRates(
   territory: TerritoryRecord,
   scoutedTiles: Axial[],
   gridSize: number,
+  commitments: UnitCommitments = {
+    garrisons: [],
+    expeditions: [],
+    denAssaults: [],
+    garrisonRecalls: [],
+    labAssaults: [],
+  },
 ): ResourceAmounts {
   const grossInflow: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0 };
 
@@ -78,7 +85,7 @@ export function computeResourceRates(
     netRates[type] = resources[type] >= cap ? 0 : grossInflow[type];
   }
 
-  netRates.food -= totalUpkeepPerSecond(tweaks, units);
+  netRates.food -= totalUpkeepPerSecond(tweaks, units, commitments);
 
   return netRates;
 }

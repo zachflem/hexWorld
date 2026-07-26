@@ -13,8 +13,9 @@ export type ExpeditionPhase = "marching" | "awaitingOrders" | "recalling" | "rei
  * A party dispatched to claim tiles along `path` (from the origin
  * barracks/tower/outpost that offered the cheapest owned-preferring route,
  * through the destination inclusive). Committed units stay counted in
- * UnitsRecord the whole time (upkeep keeps applying) — an Expedition only
- * marks them unavailable until it resolves.
+ * UnitsRecord the whole time — an Expedition only marks them unavailable
+ * until it resolves. Idle food upkeep skips committed troops (provisions
+ * already paid for the march).
  *
  * Corridor resolution (engine/expeditions.ts:stepCorridorWalk) advances
  * `resolvedIndex` tile-by-tile: owned/scouted ground is free passage with

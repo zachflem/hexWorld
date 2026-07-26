@@ -13,25 +13,25 @@ function loadRealTweaks() {
 }
 
 describe("resolveLabAssault", () => {
-  const lab: LabRecord = { coord: { q: 5, r: 5 }, secured: false, cluesCollected: 0 };
+  const lab: LabRecord = { coord: { q: 5, r: 5 }, secured: false, cluesCollected: 0, guardianDefense: 200 };
 
   it("secures the lab on a win, all-or-nothing (no partial state)", () => {
     const tweaks = loadRealTweaks();
-    const { lab: after, won } = resolveLabAssault(tweaks, lab, tweaks.lab.guardian_defense + 1);
+    const { lab: after, won } = resolveLabAssault(tweaks, lab, lab.guardianDefense + 1);
     expect(won).toBe(true);
     expect(after.secured).toBe(true);
   });
 
   it("leaves the lab untouched on a loss", () => {
     const tweaks = loadRealTweaks();
-    const { lab: after, won } = resolveLabAssault(tweaks, lab, tweaks.lab.guardian_defense - 1);
+    const { lab: after, won } = resolveLabAssault(tweaks, lab, lab.guardianDefense - 1);
     expect(won).toBe(false);
     expect(after).toEqual(lab);
   });
 
   it("wins on an exact tie (resolveHordeTileFight's >=, same as every other fight)", () => {
     const tweaks = loadRealTweaks();
-    const { won } = resolveLabAssault(tweaks, lab, tweaks.lab.guardian_defense);
+    const { won } = resolveLabAssault(tweaks, lab, lab.guardianDefense);
     expect(won).toBe(true);
   });
 });
@@ -86,6 +86,7 @@ describe("labSearchZoneTileKeys", () => {
       coord: labCoord,
       secured: false,
       cluesCollected: tweaks.lab_clues.total_clues - 1,
+      guardianDefense: 200,
     };
     expect(labSearchZoneTileKeys(42, lab, tweaks, 128)).toBeNull();
   });
@@ -96,6 +97,7 @@ describe("labSearchZoneTileKeys", () => {
       coord: labCoord,
       secured: false,
       cluesCollected: 0,
+      guardianDefense: 200,
     };
     const keys = labSearchZoneTileKeys(42, lab, tweaks, 128, { force: true });
     expect(keys).not.toBeNull();
@@ -108,6 +110,7 @@ describe("labSearchZoneTileKeys", () => {
       coord: labCoord,
       secured: false,
       cluesCollected: tweaks.lab_clues.total_clues,
+      guardianDefense: 200,
     };
     const keys = labSearchZoneTileKeys(42, lab, tweaks, 128);
     expect(keys).not.toBeNull();
@@ -120,6 +123,7 @@ describe("labSearchZoneTileKeys", () => {
       coord: labCoord,
       secured: true,
       cluesCollected: tweaks.lab_clues.total_clues,
+      guardianDefense: 200,
     };
     expect(labSearchZoneTileKeys(42, lab, tweaks, 128)).toBeNull();
   });

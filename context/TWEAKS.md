@@ -276,13 +276,13 @@ A tile-based structure (exclusive with extraction tiles, towers, and walls — s
 **Militia — standing army:**
 - Trained at a barracks for a flat, cheaper cost: 15 food + 10 wood.
 - Not consumed on use — stands indefinitely once trained, up to militia capacity.
-- Upkeep: 3.5 food/min per militia, continuously, for as long as it stands.
+- Upkeep: 1.75 food/min per **barracks-idle** militia (garrisoned / expedition / assault / recall commitments skip idle upkeep — the march already paid provisions).
 - **Attack:** `militia_count × 2` (attack_per_unit) — this is the assault power used both to claim unowned tiles (Milestone 10) and against zombie dens (Milestone 14), resolving the previously-undefined "assault stats vs den defense" formula.
 - **Defense:** `militia_count × 2` (defense_per_unit) — contributes to base last-stand defense alongside base reinforcement HP (Milestone 12).
 
-**Upkeep and desertion:** every tick, total upkeep (standing militia + junkyard knights + cross-bow snipers, summed) is deducted from food. If food can't cover it for that tick's elapsed time, food clamps to 0 and exactly one unit deserts — cheapest-upkeep unit first (militia, then junkyard knight, then cross-bow sniper). A simple first-pass penalty, not proportional to the shortfall size.
+**Upkeep and desertion:** every tick, total upkeep for **barracks-idle** troops only (standing totals minus garrisoned / expedition / den-assault / lab-assault / garrison-recall commitments) is deducted from food. If food can't cover it for that tick's elapsed time, food clamps to 0 and exactly one *idle* unit deserts — cheapest-upkeep first (militia, then junkyard knight, then cross-bow sniper). Committed troops never desert from upkeep shortfall.
 
-**CORRECTION (2026-07-21 balance pass, playtesting feedback):** food reserves sat permanently full at the original upkeep rates — a single small grassland food tile alone yields ~2.25 food/sec, while even a 20-30 unit standing army cost only ~0.3-0.6 food/sec total upkeep, two orders of magnitude below what one tile produces. `upkeep_food_per_min` raised roughly 10x across standing unit types, then walked back to roughly 7x (militia 5→3.5, junkyard_knight 8→5.5, cross_bow_sniper 10→7). Stockpile scout upkeep removed with the unit (#76).
+**CORRECTION (2026-07-21):** food sat permanently full — upkeep raised ~7x (militia 3.5, knight 5.5, sniper 7). **CORRECTION (2026-07-26 playtesting):** lab-sized armies still starved players — halved idle rates (militia 1.75, knight 2.75, sniper 3.5) and charge only the idle pool. Stockpile scout upkeep removed with the unit (#76).
 
 **Noise:** build noise 20 (`build_barracks`, same weight as a wall or extraction tile). Upgrade noise reuses `upgrade_extraction_tile` (10), same generic "any structure tier-up" value as towers and walls. Training a militia unit makes a small amount of noise (`train_militia`: 3). First pass, untested.
 
@@ -520,7 +520,7 @@ A converted den becomes a second, independent economic/defensive hub — a real 
 *Shipped with M15 — numbers still first-pass / tune when playtesting demands it.*
 
 - **Placement:** one fixed tile, deterministic per world seed (`data/lab.ts:createLab`, same spiral-candidate-then-pick shape as `createDens`), never on water, at least `lab.min_distance_from_base` (20) tiles out — farther than any den ever spawns (`dens.min_distance_from_base` is 14), so the lab reads as the map's ultimate destination rather than something found incidentally early on.
-- **Guardian:** a single static defense value (`lab.guardian_defense`, 300) — doesn't scale with anything, unlike a den's level-based defense. Securing it is an all-or-nothing fight exactly like a regular expedition or tile attack (not a den assault's proportional-attrition shape, and no siege/hold period) — win and the whole party comes home, lab secured for good; lose and the whole committed party is gone, guardian unchanged, retry any time.
+- **Guardian:** rolled once per world seed into `LabRecord.guardianDefense` from `lab.guardian_defense_min`..`max` (160–240) — same seed → same strength, different games vary. Doesn't scale mid-game, unlike a den's level-based defense. Securing it is an all-or-nothing fight exactly like a regular expedition or tile attack (not a den assault's proportional-attrition shape, and no siege/hold period) — win and the whole party comes home, lab secured for good; lose and the whole committed party is gone, guardian unchanged, retry any time.
 - **Win condition:** securing the lab is the *entire* win condition (DESIGN.md §13) — clearing dens is never required. A player who finds and secures the lab without ever touching a den still wins. Den-clearing stays valuable for its own reasons (the five clues that unlock the search-cluster hint, outposts, economy, army size) but doesn't gate the win screen.
 
 ## Hidden Lab — Rumor/Clue System

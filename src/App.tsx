@@ -58,7 +58,7 @@ import {
   type ScrapStashesRecord,
 } from "./data/scrapStashes";
 import { idleScrapperTrip, SCRAP_YARDS_DB_KEY, type ScrapYardsRecord } from "./data/scrapYards";
-import { LAB_DB_KEY, createLab, type LabRecord } from "./data/lab";
+import { LAB_DB_KEY, createLab, ensureLabGuardianDefense, type LabRecord } from "./data/lab";
 import { LAB_ASSAULTS_DB_KEY, normalizeLabAssault, type LabAssaultRecord, type LabAssaultsRecord } from "./data/labAssaults";
 import { GARRISON_RECALLS_DB_KEY, type GarrisonRecallRecord, type GarrisonRecallsRecord } from "./data/garrisonRecalls";
 import { OUTPOSTS_DB_KEY, createOutpostFromDen, type OutpostRecord, type OutpostsRecord } from "./data/outposts";
@@ -432,11 +432,15 @@ function buildGameState(
   const gridSize = resolveWorldGridSize(data.world, tweaks);
   // dens → lab → scrapStashes (same order as resetGame). Old saves without
   // scrapStashes get a deterministic regenerate from the world seed.
-  const lab = data.lab ?? createLab(
+  const lab = ensureLabGuardianDefense(
+    data.lab ?? createLab(
+      data.world.seed,
+      gridSize,
+      data.territory.base,
+      resolvedDens,
+      tweaks,
+    ),
     data.world.seed,
-    gridSize,
-    data.territory.base,
-    resolvedDens,
     tweaks,
   );
   const scrapStashes =
@@ -928,6 +932,13 @@ export default function App() {
         current.game.units,
         producedResourcesWithYards.food,
         elapsedSeconds,
+        {
+          garrisons: current.game.garrisons,
+          expeditions: current.game.expeditions,
+          denAssaults: current.game.denAssaults,
+          garrisonRecalls: current.game.garrisonRecalls,
+          labAssaults: current.game.labAssaults,
+        },
       );
       let resources = { ...producedResourcesWithYards, food: foodAfterUpkeep };
       {
@@ -2050,7 +2061,7 @@ export default function App() {
               "labAssault",
               assault.target,
               assault.target,
-              { kind: "tile_defense", attackPower, defense: current.tweaks.lab.guardian_defense },
+              { kind: "tile_defense", attackPower, defense: labAfterClues.guardianDefense },
               assault,
               attackPower,
             ),

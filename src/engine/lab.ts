@@ -16,8 +16,8 @@ export const WATCHTOWER_SIGNAL_MIN_LEVEL = 2;
  * entire win condition (DESIGN.md §13) — a loss leaves the lab untouched,
  * retryable any time once a stronger party is available.
  */
-export function resolveLabAssault(tweaks: Tweaks, lab: LabRecord, attackPower: number): { lab: LabRecord; won: boolean } {
-  if (!resolveHordeTileFight(attackPower, tweaks.lab.guardian_defense)) {
+export function resolveLabAssault(_tweaks: Tweaks, lab: LabRecord, attackPower: number): { lab: LabRecord; won: boolean } {
+  if (!resolveHordeTileFight(attackPower, lab.guardianDefense)) {
     return { lab, won: false };
   }
   return { lab: { ...lab, secured: true }, won: true };

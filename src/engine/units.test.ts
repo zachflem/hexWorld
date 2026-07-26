@@ -4,6 +4,8 @@ import stripJsonComments from "strip-json-comments";
 import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
 import type { UnitsRecord } from "../data/units";
+import type { Expedition } from "../data/expeditions";
+import type { Garrison } from "../data/garrisons";
 import {
   applyUpkeepTick,
   crossBowSniperAttackPower,
@@ -16,6 +18,7 @@ import {
   militiaDefensePower,
   militiaTrainDurationMs,
   resolveTrainingQueue,
+  totalUpkeepPerSecond,
   type TrainingQueueProgress,
 } from "./units";
 
@@ -82,6 +85,53 @@ describe("applyUpkeepTick", () => {
     expect(result.units).toEqual(units);
   });
 
+  it("charges only barracks-idle troops — garrisoned and expedition units skip upkeep", () => {
+    const tweaks = loadRealTweaks();
+    const units: UnitsRecord = {
+      militiaCount: 10,
+      junkyardKnightCount: 0,
+      crossBowSniperCount: 0,
+    };
+    const garrisons: Garrison[] = [
+      { coord: { q: 0, r: 0 }, militiaCount: 4, junkyardKnightCount: 0, crossBowSniperCount: 0 },
+    ];
+    const expeditions: Expedition[] = [
+      {
+        id: "e1",
+        origin: { q: 0, r: 0 },
+        path: [
+          { q: 0, r: 0 },
+          { q: 1, r: 0 },
+        ],
+        target: { q: 1, r: 0 },
+        militiaCommitted: 3,
+        junkyardKnightCommitted: 0,
+        crossBowSniperCommitted: 0,
+        departedAt: 0,
+        arriveAt: 60_000,
+        resolvedIndex: 0,
+        phase: "marching",
+        provisionsPaid: 0,
+        outboundTileCount: 1,
+        decisionDeadlineAt: null,
+        joinExpeditionId: null,
+      },
+    ];
+    const commitments = {
+      garrisons,
+      expeditions,
+      denAssaults: [],
+      garrisonRecalls: [],
+      labAssaults: [],
+    };
+    // 10 total − 4 garrisoned − 3 marching = 3 idle
+    expect(totalUpkeepPerSecond(tweaks, units, commitments)).toBeCloseTo(
+      (3 * tweaks.units.militia.upkeep_food_per_min) / 60,
+    );
+    const result = applyUpkeepTick(tweaks, units, 1000, 60, commitments);
+    expect(result.food).toBeCloseTo(1000 - 3 * tweaks.units.militia.upkeep_food_per_min);
+  });
+
   it("clamps food at 0 and deserts one militia when upkeep can't be covered", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
@@ -94,6 +144,46 @@ describe("applyUpkeepTick", () => {
 
     expect(result.food).toBe(0);
     expect(result.units.militiaCount).toBe(2);
+  });
+
+  it("never deserts a unit that is fully committed (all on expedition)", () => {
+    const tweaks = loadRealTweaks();
+    const units: UnitsRecord = {
+      militiaCount: 5,
+      junkyardKnightCount: 0,
+      crossBowSniperCount: 0,
+    };
+    const expeditions: Expedition[] = [
+      {
+        id: "e1",
+        origin: { q: 0, r: 0 },
+        path: [
+          { q: 0, r: 0 },
+          { q: 1, r: 0 },
+        ],
+        target: { q: 1, r: 0 },
+        militiaCommitted: 5,
+        junkyardKnightCommitted: 0,
+        crossBowSniperCommitted: 0,
+        departedAt: 0,
+        arriveAt: 60_000,
+        resolvedIndex: 0,
+        phase: "marching",
+        provisionsPaid: 0,
+        outboundTileCount: 1,
+        decisionDeadlineAt: null,
+        joinExpeditionId: null,
+      },
+    ];
+    const result = applyUpkeepTick(tweaks, units, 0, 60, {
+      garrisons: [],
+      expeditions,
+      denAssaults: [],
+      garrisonRecalls: [],
+      labAssaults: [],
+    });
+    expect(result.food).toBe(0);
+    expect(result.units.militiaCount).toBe(5);
   });
 
   it("deserts a junkyard knight before a cross-bow sniper, once militia is gone", () => {

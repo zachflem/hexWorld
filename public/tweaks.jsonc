@@ -356,7 +356,7 @@
     "militia": {
       "train_cost": { "food": 15, "wood": 10 },
       "train_time_seconds": 30,
-      "upkeep_food_per_min": 3.5,
+      "upkeep_food_per_min": 1.75,
       "attack_per_unit": 2,
       "defense_per_unit": 2,
       "_note": "Standing army — not consumed on use. attack_per_unit feeds den assault power (§13); defense_per_unit adds to base last-stand defense alongside base reinforcement HP (§9). Training trickles in one at a time via a queue (engine/units.ts:resolveTrainingQueue) — the whole batch's cost is paid upfront when the queue starts, and queued-but-undelivered units cost no upkeep. First pass, untested."
@@ -364,7 +364,7 @@
     "junkyard_knight": {
       "train_cost": { "food": 25, "wood": 15, "stone": 15 },
       "train_time_seconds": 45,
-      "upkeep_food_per_min": 5.5,
+      "upkeep_food_per_min": 2.75,
       "attack_per_unit": 4,
       "defense_per_unit": 5,
       "min_barracks_level": 2,
@@ -373,7 +373,7 @@
     "cross_bow_sniper": {
       "train_cost": { "food": 30, "wood": 20, "steel": 10 },
       "train_time_seconds": 60,
-      "upkeep_food_per_min": 7,
+      "upkeep_food_per_min": 3.5,
       "attack_per_unit": 3,
       "defense_per_unit": 2,
       "range_tiles": 3,
@@ -389,7 +389,7 @@
       "_note": "Land counterpart of the water-bound scout skiff (docks.scout_skiff) — built at a Barracks for a flat resource cost equal to 10× the old one-shot scout train_cost (300 food + 200 wood). No scout stockpile / retire gate (#76). Wanders randomly across connected land at one tile per seconds_per_step, revealing every tile it visits (engine/wanderingScouts.ts). Capped at max_per_barracks per barracks. build_time_minutes lowered 9→5 (2026-07-25 pacing)."
     },
     "_desertion_note": "If food can't cover total upkeep for a tick's elapsed time, food is clamped at 0 and exactly one unit deserts (lowest-upkeep-priority standing unit first: militia, then junkyard knight, then cross-bow sniper) — a simple first-pass penalty, not proportional to the shortfall size.",
-    "_upkeep_balance_note": "CORRECTION (2026-07-21 balance pass, playtesting feedback: food reserves sat permanently full). upkeep_food_per_min raised roughly 10x across standing unit types, then walked back to roughly 7x (militia 5->3.5, junkyard_knight 8->5.5, cross_bow_sniper 10->7). Stockpile scout upkeep removed with the unit (#76). First pass at these numbers, still subject to further tuning."
+    "_upkeep_balance_note": "CORRECTION (2026-07-21): food sat permanently full — upkeep raised ~7x (militia 3.5, knight 5.5, sniper 7). CORRECTION (2026-07-26 playtesting): lab-sized armies still starved players — halved idle upkeep (militia 1.75, knight 2.75, sniper 3.5) and charge only barracks-idle troops (available*), not garrisoned/expedition/assault commitments. Stockpile scout upkeep removed with the unit (#76)."
   },
 
   // --------------------------------------------------------------------------
@@ -781,8 +781,9 @@
     "_status": "first pass, untested — new system (2026-07-21). Win condition is securing this tile ALONE (DESIGN.md §13) — clearing dens is not a win requirement, just a source of guaranteed clues/outposts/army-building along the way.",
     "min_distance_from_base": 20,
     "_min_distance_note": "Farther out than dens.min_distance_from_base (14) — the lab should read as the map's ultimate destination, found only after real exploration, not something a fresh player stumbles onto in the first few scouting actions.",
-    "guardian_defense": 300,
-    "_guardian_defense_note": "Static — doesn't scale with anything (DESIGN.md §13: 'tougher than anything else encountered'). Set well above a max-level (5) den's defense (dens.siege.den_defense_base + den_defense_per_level*4 = 80) so securing the lab demands a real, late-game army — roughly 150 militia at attack_per_unit=2, or an equivalent knight/sniper mix."
+    "guardian_defense_min": 160,
+    "guardian_defense_max": 240,
+    "_guardian_defense_note": "Rolled once per world seed into LabRecord.guardianDefense (data/lab.ts:createLab) — inclusive [min, max]. Doesn't scale mid-game (DESIGN.md §13: 'tougher than anything else encountered'). Range sits well above a max-level (5) den's defense (~80) so securing the lab still demands a late-game army — roughly 80–120 militia at attack_per_unit=2, or an equivalent knight/sniper mix. CORRECTION (2026-07-26): was a fixed 300; lowered + ranged so games vary and food upkeep can keep pace."
   },
 
   // --------------------------------------------------------------------------

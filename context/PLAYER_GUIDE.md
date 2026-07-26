@@ -125,7 +125,7 @@ There's no way to wall off everything — your build slot cap forces real choice
 
 Barracks (levels 1–4, same one-structure-per-tile rule as everything else) train combat units and build land explorers:
 
-- **Militia** — a standing army. Feeds both your **attack power** (used to claim unowned tiles and to fight hordes automatically from a garrison) and your **defense** (adds to the base's last-stand HP pool). Costs ongoing food upkeep; units desert if you can't pay it.
+- **Militia** — a standing army. Feeds both your **attack power** (used to claim unowned tiles and to fight hordes automatically from a garrison) and your **defense** (adds to the base's last-stand HP pool). Idle troops at the barracks cost ongoing food upkeep; units out on expeditions/assaults or garrisoned do not (you've already paid provisions for the march). Idle units desert if you can't pay.
 - **Junkyard Knights** (barracks level 2+) and **Cross-Bow Snipers** (barracks level 3+) — tougher/pricier units with their own attack/defense stats. Snipers additionally deal ranged damage to any horde within range of wherever they're garrisoned.
 - **Wandering Scout** — a persistent land explorer (max 1 per barracks) built for **300 food + 200 wood** (about the cost of ten old one-shot scouts). It wanders your connected land automatically, forever, quietly revealing tiles as it roams. Shown on the map as a walking icon. There is no trainable stockpile scout and no manual one-tile reveal — fog on land clears only via Wandering Scouts (and water via Scout Skiffs).
 
@@ -214,7 +214,7 @@ Once you've secured **5 dens' worth of clues**, the map marks a **search cluster
 
 Watchtowers also **alert** when a horde first enters their combat range.
 
-**Securing it** works like assaulting a den — commit a party of militia/knights/snipers. The guardian is by far the toughest fight in the game (its defense is set well above even a max-level den, deliberately — this is meant to demand a real, late-game army), and unlike a den there's no hold period afterward: win the fight and the game ends immediately in victory.
+**Securing it** works like assaulting a den — commit a party of militia/knights/snipers. The guardian is by far the toughest fight in the game (defense rolled per world in a high band, well above even a max-level den — meant to demand a real late-game army, and different each seed), and unlike a den there's no hold period afterward: win the fight and the game ends immediately in victory.
 
 Clearing dens is never *required* to win — a lucky scout run can reveal the lab without any den clues — but dens are how you unlock the search-cluster hint, plus outposts and the army growth you'll want for the guardian.
 

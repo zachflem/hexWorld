@@ -1152,7 +1152,7 @@ export function GameScreen({
       provisionsCost,
       affordable: affordable(provisionsCost),
       etaMs: expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, research)),
-      guardianDefense: tweaks.lab.guardian_defense,
+      guardianDefense: lab.guardianDefense,
     };
   }
 
@@ -1758,8 +1758,31 @@ export function GameScreen({
       territory,
       scoutedTiles,
       gridSize,
+      {
+        garrisons,
+        expeditions,
+        denAssaults,
+        garrisonRecalls,
+        labAssaults,
+      },
     );
-  }, [tweaks, extractionTiles, docks, resources, storageLevels, units, world, powerNetwork, territory, scoutedTiles]);
+  }, [
+    tweaks,
+    extractionTiles,
+    docks,
+    resources,
+    storageLevels,
+    units,
+    world,
+    powerNetwork,
+    territory,
+    scoutedTiles,
+    garrisons,
+    expeditions,
+    denAssaults,
+    garrisonRecalls,
+    labAssaults,
+  ]);
   const collectableTiles = useMemo(() => {
     const stockpileCap = tweaks.storage.capacity_base_per_resource;
     const manualShowRatio = tweaks.storage.collect_pin_show_ratio;
@@ -3498,7 +3521,7 @@ export function GameScreen({
       const status = lab.secured ? "Secured" : "Guarded";
       return (
         <HoverPanel icon={<FlaskConical size={22} />} title="Research lab" status={status}>
-          {!lab.secured && <span>Guardian defense: {tweaks.lab.guardian_defense.toFixed(0)}</span>}
+          {!lab.secured && <span>Guardian defense: {lab.guardianDefense.toFixed(0)}</span>}
         </HoverPanel>
       );
     }
