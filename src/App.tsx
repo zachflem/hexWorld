@@ -49,7 +49,7 @@ import { UNITS_DB_KEY, initialUnits, type LegacyUnitsRecord, type UnitsRecord } 
 import { GARRISONS_DB_KEY, type GarrisonsRecord } from "./data/garrisons";
 import { SCOUTED_TILES_DB_KEY, type ScoutedTiles } from "./data/scoutedTiles";
 import { DENS_DB_KEY, createDens, resolveDen, type DenRecord, type DensRecord } from "./data/dens";
-import { DEN_ASSAULTS_DB_KEY, type DenAssaultRecord, type DenAssaultsRecord } from "./data/denAssaults";
+import { DEN_ASSAULTS_DB_KEY, normalizeDenAssault, type DenAssaultRecord, type DenAssaultsRecord } from "./data/denAssaults";
 import {
   SCRAP_STASHES_DB_KEY,
   applyWanderingScoutScrapSamples,
@@ -59,7 +59,7 @@ import {
 } from "./data/scrapStashes";
 import { idleScrapperTrip, SCRAP_YARDS_DB_KEY, type ScrapYardsRecord } from "./data/scrapYards";
 import { LAB_DB_KEY, createLab, type LabRecord } from "./data/lab";
-import { LAB_ASSAULTS_DB_KEY, type LabAssaultRecord, type LabAssaultsRecord } from "./data/labAssaults";
+import { LAB_ASSAULTS_DB_KEY, normalizeLabAssault, type LabAssaultRecord, type LabAssaultsRecord } from "./data/labAssaults";
 import { GARRISON_RECALLS_DB_KEY, type GarrisonRecallRecord, type GarrisonRecallsRecord } from "./data/garrisonRecalls";
 import { OUTPOSTS_DB_KEY, createOutpostFromDen, type OutpostRecord, type OutpostsRecord } from "./data/outposts";
 import { HORDES_DB_KEY, type HordesRecord } from "./data/hordes";
@@ -113,13 +113,13 @@ import {
   ASSAULT_CORRIDOR,
   TERRITORY_CORRIDOR,
   expeditionPathIndexAt,
+  expeditionCurrentTile,
   expeditionProvisionsCost,
   expeditionTravelDurationMs,
   findBestExpeditionRoute,
   findExpeditionRouteFrom,
   partyAttackPower,
   planHomeRecall,
-  provisionsRefund,
   recallDurationMs,
   reinforceProvisionsCost,
   reinforceTravelDurationMs,
@@ -492,11 +492,11 @@ function buildGameState(
     docks,
     scoutSkiffs: data.scoutSkiffs ?? [],
     wanderingScouts: data.wanderingScouts ?? [],
-    denAssaults: (data.denAssaults ?? []).map((a) => ({ ...a, resolvedIndex: a.resolvedIndex ?? 0 })),
+    denAssaults: (data.denAssaults ?? []).map((a) => normalizeDenAssault(a as DenAssaultRecord)),
     outposts: data.outposts ?? [],
     garrisonRecalls: data.garrisonRecalls ?? [],
     lab,
-    labAssaults: (data.labAssaults ?? []).map((a) => ({ ...a, resolvedIndex: a.resolvedIndex ?? 0 })),
+    labAssaults: (data.labAssaults ?? []).map((a) => normalizeLabAssault(a as LabAssaultRecord)),
     research: data.research ?? initialResearch(),
     tombstones: data.tombstones ?? [],
   };
@@ -1445,7 +1445,7 @@ export default function App() {
       const worldSeed = current.game.world.seed;
       const scoutedForRecall = current.game.scoutedTiles;
 
-      const applyHomeRecall = (expedition: Expedition, applyRefund: boolean): void => {
+      const applyHomeRecall = (expedition: Expedition): void => {
         const plan = planHomeRecall(
           current.tweaks,
           worldSeed,
@@ -1455,14 +1455,7 @@ export default function App() {
           gridSize,
           speedMult,
           virtualNow,
-          applyRefund,
         );
-        if (plan.foodRefund > 0) {
-          resourcesAfterExpeditions = {
-            ...resourcesAfterExpeditions,
-            food: resourcesAfterExpeditions.food + plan.foodRefund,
-          };
-        }
         if (plan.next) {
           nextExpeditions.push({ ...expedition, ...plan.next });
         }
@@ -1483,7 +1476,7 @@ export default function App() {
             expedition.decisionDeadlineAt ??
             virtualNow + current.tweaks.expeditions.arrival_decision_minutes * 60_000;
           if (virtualNow >= deadline) {
-            applyHomeRecall({ ...expedition, decisionDeadlineAt: deadline }, false);
+            applyHomeRecall({ ...expedition, decisionDeadlineAt: deadline });
             pushToast({
               message: "Expedition returning home — no new orders received",
               coord: expedition.target,
@@ -1630,17 +1623,64 @@ export default function App() {
 
       const nextDenAssaults: DenAssaultRecord[] = [];
 
-      for (const assault of [...current.game.denAssaults].sort((a, b) => a.departedAt - b.departedAt)) {
-        const den = densAfterAssaults.find((d) => d.id === assault.denId);
-        const outpost = !den ? outpostsAfterSieges.find((o) => o.id === `outpost-${assault.denId}`) : null;
-        if (!den && !outpost) continue; // gone with no outpost either — shouldn't happen, but a harmless no-op if it does
-
+      for (const raw of [...current.game.denAssaults].sort((a, b) => a.departedAt - b.departedAt)) {
+        const assault = normalizeDenAssault(raw);
         const attackPower = partyAttackPower(
           current.tweaks,
           assault.militiaCommitted,
           assault.junkyardKnightCommitted,
           assault.crossBowSniperCommitted,
         );
+
+        // Mid-march cancel: march home to dispatch origin; no den fight (Q42–Q44).
+        if (assault.phase === "recalling") {
+          const targetIndex = expeditionPathIndexAt(
+            assault.departedAt,
+            assault.arriveAt,
+            virtualNow,
+            assault.path.length,
+          );
+          const step = stepCorridorWalk(
+            current.tweaks,
+            assault.path,
+            assault.resolvedIndex,
+            targetIndex,
+            territoryAfterExpeditions.owned,
+            territoryAfterExpeditions.base,
+            attackPower,
+            hordeSizeByKey,
+            TERRITORY_CORRIDOR,
+          );
+          if (step.claimedTiles.length > 0) {
+            territoryAfterExpeditions = {
+              ...territoryAfterExpeditions,
+              owned: [...territoryAfterExpeditions.owned, ...step.claimedTiles],
+            };
+          }
+          if (step.clearedHordeKeys.length > 0) {
+            const cleared = new Set(step.clearedHordeKeys);
+            for (const key of cleared) hordeSizeByKey.delete(key);
+            hordesAfterCorridor = hordesAfterCorridor.filter(
+              (h) => !cleared.has(axialKey(h.path[h.pathIndex])),
+            );
+          }
+          if (step.death) {
+            unitsAfterExpeditions = debitParty(unitsAfterExpeditions, assault);
+            tombstonesFromThisTick.push(
+              makeTombstone("denAssault", assault.target, step.death.tile, step.death.cause, assault, attackPower),
+            );
+            continue;
+          }
+          if (step.resolvedIndex >= assault.path.length - 1) {
+            continue; // home — standing army free again
+          }
+          nextDenAssaults.push({ ...assault, resolvedIndex: step.resolvedIndex });
+          continue;
+        }
+
+        const den = densAfterAssaults.find((d) => d.id === assault.denId);
+        const outpost = !den ? outpostsAfterSieges.find((o) => o.id === `outpost-${assault.denId}`) : null;
+        if (!den && !outpost) continue; // gone with no outpost either — shouldn't happen, but a harmless no-op if it does
 
         // The den itself is fought separately from the corridor leading to
         // it (last path element = the den's own coord) — stepCorridorWalk
@@ -1833,13 +1873,59 @@ export default function App() {
       // simply return home safely — nothing left to fight.
       const nextLabAssaults: LabAssaultRecord[] = [];
 
-      for (const assault of [...current.game.labAssaults].sort((a, b) => a.departedAt - b.departedAt)) {
+      for (const raw of [...current.game.labAssaults].sort((a, b) => a.departedAt - b.departedAt)) {
+        const assault = normalizeLabAssault(raw);
         const attackPower = partyAttackPower(
           current.tweaks,
           assault.militiaCommitted,
           assault.junkyardKnightCommitted,
           assault.crossBowSniperCommitted,
         );
+
+        if (assault.phase === "recalling") {
+          const targetIndex = expeditionPathIndexAt(
+            assault.departedAt,
+            assault.arriveAt,
+            virtualNow,
+            assault.path.length,
+          );
+          const step = stepCorridorWalk(
+            current.tweaks,
+            assault.path,
+            assault.resolvedIndex,
+            targetIndex,
+            territoryAfterExpeditions.owned,
+            territoryAfterExpeditions.base,
+            attackPower,
+            hordeSizeByKey,
+            TERRITORY_CORRIDOR,
+          );
+          if (step.claimedTiles.length > 0) {
+            territoryAfterExpeditions = {
+              ...territoryAfterExpeditions,
+              owned: [...territoryAfterExpeditions.owned, ...step.claimedTiles],
+            };
+          }
+          if (step.clearedHordeKeys.length > 0) {
+            const cleared = new Set(step.clearedHordeKeys);
+            for (const key of cleared) hordeSizeByKey.delete(key);
+            hordesAfterCorridor = hordesAfterCorridor.filter(
+              (h) => !cleared.has(axialKey(h.path[h.pathIndex])),
+            );
+          }
+          if (step.death) {
+            unitsAfterExpeditions = debitParty(unitsAfterExpeditions, assault);
+            tombstonesFromThisTick.push(
+              makeTombstone("labAssault", assault.target, step.death.tile, step.death.cause, assault, attackPower),
+            );
+            continue;
+          }
+          if (step.resolvedIndex >= assault.path.length - 1) {
+            continue;
+          }
+          nextLabAssaults.push({ ...assault, resolvedIndex: step.resolvedIndex });
+          continue;
+        }
 
         const corridorEndIndex = assault.path.length - 2;
         const targetIndex = Math.min(
@@ -4253,7 +4339,7 @@ export default function App() {
     return { ok: true };
   }
 
-  /** Mid-march or arrival recall — pro-rata food refund only while still outbound. */
+  /** Mid-march or arrival recall — outbound provisions stay sunk; return leg is free (Q45). */
   async function handleRecallExpedition(expeditionId: string): Promise<BuildResult> {
     if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
     const { tweaks, game } = boot;
@@ -4263,7 +4349,6 @@ export default function App() {
       return { ok: false, reason: "Already returning or reinforcing" };
     }
 
-    const applyRefund = expedition.phase === "marching";
     const plan = planHomeRecall(
       tweaks,
       game.world.seed,
@@ -4273,21 +4358,15 @@ export default function App() {
       resolveWorldGridSize(game.world, tweaks),
       troopSpeedMultiplier(tweaks, game.research),
       game.clock.virtualNow,
-      applyRefund,
     );
-
-    const resources =
-      plan.foodRefund > 0
-        ? { ...game.resources, food: game.resources.food + plan.foodRefund }
-        : game.resources;
 
     const expeditions: ExpeditionsRecord = plan.next
       ? game.expeditions.map((e) => (e.id === expeditionId ? { ...normalizeExpedition(e), ...plan.next! } : e))
       : game.expeditions.filter((e) => e.id !== expeditionId);
 
-    await Promise.all([set(RESOURCES_DB_KEY, resources), set(EXPEDITIONS_DB_KEY, expeditions)]);
+    await set(EXPEDITIONS_DB_KEY, expeditions);
     setBoot((prev) =>
-      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, expeditions } } : prev,
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, expeditions } } : prev,
     );
     return { ok: true };
   }
@@ -4348,7 +4427,7 @@ export default function App() {
     return { ok: true };
   }
 
-  /** From awaitingOrders (or mid-march via UI), start a new outbound leg from the party's current hex. */
+  /** From awaitingOrders or mid-march, start a new outbound leg from the party's current hex (Q40–41). */
   async function handleRedeployExpedition(
     expeditionId: string,
     target: Axial,
@@ -4371,10 +4450,7 @@ export default function App() {
     }
 
     const normalized = normalizeExpedition(expedition);
-    const from =
-      normalized.phase === "awaitingOrders"
-        ? normalized.path[normalized.path.length - 1]!
-        : normalized.path[Math.min(normalized.resolvedIndex, normalized.path.length - 1)]!;
+    const from = expeditionCurrentTile(normalized, game.clock.virtualNow);
 
     const route = findExpeditionRouteFrom(
       tweaks,
@@ -4390,19 +4466,8 @@ export default function App() {
     const partySize =
       normalized.militiaCommitted + normalized.junkyardKnightCommitted + normalized.crossBowSniperCommitted;
     const provisionsCost = expeditionProvisionsCost(tweaks, partySize, route.cost);
+    // Q41: full re-quote for the new leg; no refund of already-spent outbound food.
     if (game.resources.food < provisionsCost) return { ok: false, reason: "Not enough food" };
-
-    // Mid-march redeploy: refund unused outbound, then charge the new leg.
-    let food = game.resources.food;
-    if (normalized.phase === "marching") {
-      food += provisionsRefund(
-        normalized.provisionsPaid,
-        normalized.resolvedIndex,
-        normalized.outboundTileCount,
-      );
-    }
-    food -= provisionsCost;
-    if (food < 0) return { ok: false, reason: "Not enough food" };
 
     const departedAt = game.clock.virtualNow;
     const updated: Expedition = {
@@ -4418,7 +4483,7 @@ export default function App() {
       decisionDeadlineAt: null,
       joinExpeditionId: null,
     };
-    const resources = { ...game.resources, food };
+    const resources = { ...game.resources, food: game.resources.food - provisionsCost };
     const expeditions = game.expeditions.map((e) => (e.id === expeditionId ? updated : e));
     await Promise.all([set(RESOURCES_DB_KEY, resources), set(EXPEDITIONS_DB_KEY, expeditions)]);
     setBoot((prev) =>
@@ -4564,6 +4629,7 @@ export default function App() {
     const assault: DenAssaultRecord = {
       id: `denAssault-${denId}-${departedAt}`,
       denId,
+      origin: route.origin,
       target: den.coord,
       path: route.path,
       militiaCommitted: party.militiaCommitted,
@@ -4572,6 +4638,7 @@ export default function App() {
       departedAt,
       arriveAt: departedAt + expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, game.research)),
       resolvedIndex: 0,
+      phase: "marching",
     };
     const denAssaults: DenAssaultsRecord = [...game.denAssaults, assault];
 
@@ -4645,6 +4712,7 @@ export default function App() {
     const departedAt = game.clock.virtualNow;
     const assault: LabAssaultRecord = {
       id: `labAssault-${departedAt}`,
+      origin: route.origin,
       target: game.lab.coord,
       path: route.path,
       militiaCommitted: party.militiaCommitted,
@@ -4653,12 +4721,99 @@ export default function App() {
       departedAt,
       arriveAt: departedAt + expeditionTravelDurationMs(tweaks, route.cost, troopSpeedMultiplier(tweaks, game.research)),
       resolvedIndex: 0,
+      phase: "marching",
     };
     const labAssaults: LabAssaultsRecord = [...game.labAssaults, assault];
 
     await Promise.all([set(RESOURCES_DB_KEY, resources), set(LAB_ASSAULTS_DB_KEY, labAssaults)]);
     setBoot((prev) =>
       prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, resources, labAssaults } } : prev,
+    );
+    return { ok: true };
+  }
+
+  /** Mid-march cancel for a den assault — march home to dispatch origin; no extra food (Q42–Q44). */
+  async function handleRecallDenAssault(assaultId: string): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+    const raw = game.denAssaults.find((a) => a.id === assaultId);
+    if (!raw) return { ok: false, reason: "Assault not found" };
+    const assault = normalizeDenAssault(raw);
+    if (assault.phase === "recalling") return { ok: false, reason: "Already returning" };
+
+    const plan = planHomeRecall(
+      tweaks,
+      game.world.seed,
+      assault,
+      game.territory,
+      game.scoutedTiles,
+      resolveWorldGridSize(game.world, tweaks),
+      troopSpeedMultiplier(tweaks, game.research),
+      game.clock.virtualNow,
+    );
+
+    const denAssaults: DenAssaultsRecord = plan.next
+      ? game.denAssaults.map((a) =>
+          a.id === assaultId
+            ? {
+                ...normalizeDenAssault(a),
+                path: plan.next!.path,
+                target: plan.next!.target,
+                departedAt: plan.next!.departedAt,
+                arriveAt: plan.next!.arriveAt,
+                resolvedIndex: 0,
+                phase: "recalling",
+              }
+            : normalizeDenAssault(a),
+        )
+      : game.denAssaults.filter((a) => a.id !== assaultId);
+
+    await set(DEN_ASSAULTS_DB_KEY, denAssaults);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, denAssaults } } : prev,
+    );
+    return { ok: true };
+  }
+
+  /** Mid-march cancel for a lab assault — march home to dispatch origin; no extra food (Q42–Q44). */
+  async function handleRecallLabAssault(assaultId: string): Promise<BuildResult> {
+    if (boot.status !== "ready" || !boot.game) return { ok: false, reason: "Not ready" };
+    const { tweaks, game } = boot;
+    const raw = game.labAssaults.find((a) => a.id === assaultId);
+    if (!raw) return { ok: false, reason: "Assault not found" };
+    const assault = normalizeLabAssault(raw);
+    if (assault.phase === "recalling") return { ok: false, reason: "Already returning" };
+
+    const plan = planHomeRecall(
+      tweaks,
+      game.world.seed,
+      assault,
+      game.territory,
+      game.scoutedTiles,
+      resolveWorldGridSize(game.world, tweaks),
+      troopSpeedMultiplier(tweaks, game.research),
+      game.clock.virtualNow,
+    );
+
+    const labAssaults: LabAssaultsRecord = plan.next
+      ? game.labAssaults.map((a) =>
+          a.id === assaultId
+            ? {
+                ...normalizeLabAssault(a),
+                path: plan.next!.path,
+                target: plan.next!.target,
+                departedAt: plan.next!.departedAt,
+                arriveAt: plan.next!.arriveAt,
+                resolvedIndex: 0,
+                phase: "recalling",
+              }
+            : normalizeLabAssault(a),
+        )
+      : game.labAssaults.filter((a) => a.id !== assaultId);
+
+    await set(LAB_ASSAULTS_DB_KEY, labAssaults);
+    setBoot((prev) =>
+      prev.status === "ready" && prev.game ? { ...prev, game: { ...prev.game, labAssaults } } : prev,
     );
     return { ok: true };
   }
@@ -4917,6 +5072,8 @@ export default function App() {
       onReinforceExpedition={handleReinforceExpedition}
       onAssaultDen={handleAssaultDen}
       onSecureLab={handleSecureLab}
+      onRecallDenAssault={handleRecallDenAssault}
+      onRecallLabAssault={handleRecallLabAssault}
       onGarrisonUnits={handleGarrisonUnits}
       onRecallMilitia={handleRecallMilitia}
       onBuildDock={handleBuildDock}

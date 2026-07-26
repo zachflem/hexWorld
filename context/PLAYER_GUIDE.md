@@ -116,13 +116,15 @@ Barracks (levels 1–4, same one-structure-per-tile rule as everything else) tra
 
 You can **garrison** militia/knights/snipers on any owned tile — a garrison automatically attacks any horde on its own tile or a neighboring one, and stacks additively with whatever structure is on that tile. **Recalling** a garrison marches it home along the same route at half the travel time and no provisions cost — it's walking back through ground you already hold, not fighting, so nothing can be lost or tombstoned along the way.
 
-**Expeditions:** the way you claim any unowned tile, adjacent or distant — dispatch a mixed party of militia/knights/snipers along a route through **owned or scouted** ground only (routes prefer owned corridors). Provisions are paid up front (return trip implied). The party walks tile by tile in real time and **auto-claims** each unowned scouted hex it crosses — there is no tile-defense wipe. The only full wipe on the road is a **horde** the party cannot beat (`party power < horde size`); a stronger party clears the horde with no losses. Pre-dispatch UI shows party power and wipe risk from known path hordes. You can **Recall** mid-march (pro-rata food refund for unused outbound tiles). On arrival the party waits (~3 minutes) with these **options** (pick one — or none):
+**Expeditions:** the way you claim any unowned tile, adjacent or distant — dispatch a mixed party of militia/knights/snipers along a route through **owned or scouted** ground only (routes prefer owned corridors). Provisions are paid up front (return trip implied). The party walks tile by tile in real time and **auto-claims** each unowned scouted hex it crosses — there is no tile-defense wipe. The only full wipe on the road is a **horde** the party cannot beat (`party power < horde size`); a stronger party clears the horde with no losses. Pre-dispatch UI shows party power and wipe risk from known path hordes. Mid-march you can **Redeploy** (new destination from the party’s current hex — pay full provisions for that new leg; food already spent on the old route is not refunded) or **Recall** (march home; outbound food stays sunk, return leg free). On arrival the party waits (~3 minutes) with these **options** (pick one — or none):
 
 - **Redeploy** — pick a new destination; the current party marches on from here (new provisions for the new leg).
 - **Reinforce** — send more units from home (barracks/tower/outpost); they travel out and join the waiting party (half cost/time).
 - **Garrison** — cancel the wait timer and station the party on this hex.
 - **Recall** — cancel the wait timer and march home now (return already prepaid — no extra food).
 - **No selection** — when the timer expires, the party is auto-recalled home the same way.
+
+**Den / lab assaults** cannot retarget mid-march, but you can **Recall** them home to the barracks/hub they launched from (outbound food sunk; return free). Already-claimed tiles stay owned.
 
 Those same options also appear on the destination tile’s bottom sheet under **Party orders** (click the hex). The arrival decision notification stays open until you choose or **Dismiss** it (collapses to an icon peek like other timers; the countdown still runs until auto-recall). A wipe leaves a **tombstone** showing units lost, power, and cause.
 

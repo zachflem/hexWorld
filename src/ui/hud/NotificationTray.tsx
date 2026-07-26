@@ -133,6 +133,8 @@ export function NotificationTray({
   onGarrisonExpedition,
   onBeginRedeploy,
   onBeginReinforce,
+  onRecallDenAssault,
+  onRecallLabAssault,
 }: {
   expeditions: ExpeditionsRecord;
   denAssaults: DenAssaultsRecord;
@@ -146,6 +148,8 @@ export function NotificationTray({
   onGarrisonExpedition?: (expeditionId: string) => void;
   onBeginRedeploy?: (expeditionId: string) => void;
   onBeginReinforce?: (expeditionId: string) => void;
+  onRecallDenAssault?: (assaultId: string) => void;
+  onRecallLabAssault?: (assaultId: string) => void;
 }) {
   return (
     <>
@@ -221,8 +225,15 @@ export function NotificationTray({
             remaining={remainingMs(expedition.departedAt, expedition.arriveAt - expedition.departedAt, now)}
             onGoToTile={onGoToTile}
             actions={
-              phase === "marching" && onRecallExpedition
-                ? [{ label: "Recall", onClick: () => onRecallExpedition(expedition.id) }]
+              phase === "marching"
+                ? [
+                    ...(onBeginRedeploy
+                      ? [{ label: "Redeploy", onClick: () => onBeginRedeploy(expedition.id) }]
+                      : []),
+                    ...(onRecallExpedition
+                      ? [{ label: "Recall", onClick: () => onRecallExpedition(expedition.id) }]
+                      : []),
+                  ]
                 : undefined
             }
           />
@@ -233,10 +244,15 @@ export function NotificationTray({
           key={assault.id}
           rowKey={assault.id}
           icon={<Skull size={NOTIFICATION_ICON_SIZE} />}
-          label="Den assault"
+          label={assault.phase === "recalling" ? "Den assault returning" : "Den assault"}
           coord={assault.target}
           remaining={remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now)}
           onGoToTile={onGoToTile}
+          actions={
+            (assault.phase ?? "marching") === "marching" && onRecallDenAssault
+              ? [{ label: "Recall", onClick: () => onRecallDenAssault(assault.id) }]
+              : undefined
+          }
         />
       ))}
       {labAssaults.map((assault) => (
@@ -244,10 +260,15 @@ export function NotificationTray({
           key={assault.id}
           rowKey={assault.id}
           icon={<FlaskConical size={NOTIFICATION_ICON_SIZE} />}
-          label="Lab assault"
+          label={assault.phase === "recalling" ? "Lab assault returning" : "Lab assault"}
           coord={assault.target}
           remaining={remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now)}
           onGoToTile={onGoToTile}
+          actions={
+            (assault.phase ?? "marching") === "marching" && onRecallLabAssault
+              ? [{ label: "Recall", onClick: () => onRecallLabAssault(assault.id) }]
+              : undefined
+          }
         />
       ))}
       {garrisonRecalls.map((recall) => (

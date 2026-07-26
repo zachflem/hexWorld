@@ -62,6 +62,7 @@ function makeDenAssault(overrides: Partial<DenAssaultRecord> = {}): DenAssaultRe
   return {
     id: "denAssault-test",
     denId: "den-1",
+    origin: { q: 0, r: 0 },
     target: { q: 9, r: 9 },
     path: [],
     militiaCommitted: 0,
@@ -70,6 +71,7 @@ function makeDenAssault(overrides: Partial<DenAssaultRecord> = {}): DenAssaultRe
     departedAt: 0,
     arriveAt: 0,
     resolvedIndex: 0,
+    phase: "marching",
     ...overrides,
   };
 }
@@ -77,6 +79,7 @@ function makeDenAssault(overrides: Partial<DenAssaultRecord> = {}): DenAssaultRe
 function makeLabAssault(overrides: Partial<LabAssaultRecord> = {}): LabAssaultRecord {
   return {
     id: "labAssault-test",
+    origin: { q: 0, r: 0 },
     target: { q: 9, r: 9 },
     path: [],
     militiaCommitted: 0,
@@ -85,6 +88,7 @@ function makeLabAssault(overrides: Partial<LabAssaultRecord> = {}): LabAssaultRe
     departedAt: 0,
     arriveAt: 0,
     resolvedIndex: 0,
+    phase: "marching",
     ...overrides,
   };
 }

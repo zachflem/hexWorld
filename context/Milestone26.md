@@ -1,7 +1,7 @@
 # Milestone 26 — Scrappers & Couriers (replace paths)
 
 **GitHub:** [issue #36](https://github.com/zachflem/hexWorld/issues/36) · [milestone M26](https://github.com/zachflem/hexWorld/milestone/25)  
-**Status:** Implementation in progress on `goblin` (#36 ACTIVE) — couriers, path strip, scrap stashes, Scrap Yard + Scrapper haul loop live; expedition mid-route parity + steel cost balance + doc sync still open 
+**Status:** Implementation in progress on `goblin` (#36 ACTIVE) — couriers, path strip, scrap stashes, Scrap Yard + Scrapper haul loop, power gating, and expedition mid-route parity (Q40–Q46) live; early steel cost balance + remaining doc/acceptance polish still open
 **Design Q&A:** [ScrapperEconomy.md](ScrapperEconomy.md) (Q1–Q70)
 
 Replace **infrastructure path tiles** and **passive steel extraction** with two logistics roles:
@@ -129,10 +129,10 @@ Milestone 26 player model: **L1 manual / L2 courier / L3 production** (then futu
 - [x] World-gen scrap stashes + discovery/UI (grey ring, remaining steel, banded hints if minor lift — Q54) + seeded `scrap-#` marker art (Q70)
 - [x] Scrap Yard structure + Scrapper unit record, sprite, yard↔stash loop, Auto L3+
 - [x] Yard stockpile + collect pin + **yard courier** to base
-- [ ] Resource L1–L3 upgrade track (food/wood/stone/dock); courier travel via `travel_seconds_per_cost`
+- [x] Resource L1–L3 upgrade track (food/wood/stone/dock); courier travel via `travel_seconds_per_cost`
 - [x] Remove path tiles end-to-end (table above)
 - [x] Remove steel extraction build / gate new games (Civil sheet filters steel)
-- [ ] Expedition mid-route parity with Scrapper redirect/recall (Q39–Q46)
+- [x] Expedition mid-route parity with Scrapper redirect/recall (Q39–Q46)
 - [ ] Tweaks pass + early steel cost balance (Q1 follow-up)
 - [ ] Doc sync when code ships (below)
 

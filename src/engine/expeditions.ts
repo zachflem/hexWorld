@@ -132,7 +132,7 @@ export function recallDurationMs(tweaks: Tweaks, pathCost: number, speedMultipli
   return expeditionTravelDurationMs(tweaks, pathCost, speedMultiplier) / 2;
 }
 
-/** Pro-rata food refund for mid-march cancel: paid × (tiles remaining / outbound total). */
+/** Pro-rata food helper (unused by live Q41/Q45 paths — outbound provisions are sunk). */
 export function provisionsRefund(paid: number, tilesResolved: number, outboundTileCount: number): number {
   if (outboundTileCount <= 0 || paid <= 0) return 0;
   const remaining = Math.max(0, outboundTileCount - tilesResolved);
@@ -292,7 +292,6 @@ export interface HomeRecallPlan {
     decisionDeadlineAt: null;
     joinExpeditionId: null;
   } | null;
-  foodRefund: number;
 }
 
 /**
@@ -320,8 +319,8 @@ export function stationExpeditionAsGarrison(
 }
 
 /**
- * Plan a march home to `origin`. Mid-march cancel sets `applyRefund`; arrival
- * auto-return / recall after destination does not (return already prepaid).
+ * Plan a march home to `origin`. Return leg is free — outbound provisions stay
+ * sunk (ScrapperEconomy Q41/Q44/Q45). No food refund.
  */
 export function planHomeRecall(
   tweaks: Tweaks,
@@ -330,8 +329,6 @@ export function planHomeRecall(
     origin: Axial;
     path: Axial[];
     resolvedIndex: number;
-    provisionsPaid: number;
-    outboundTileCount: number;
     phase?: string;
     departedAt: number;
     arriveAt: number;
@@ -341,14 +338,10 @@ export function planHomeRecall(
   gridSize: number,
   speedMultiplier: number,
   now: number,
-  applyRefund: boolean,
 ): HomeRecallPlan {
-  const foodRefund = applyRefund
-    ? provisionsRefund(expedition.provisionsPaid, expedition.resolvedIndex, expedition.outboundTileCount)
-    : 0;
   const current = expeditionCurrentTile(expedition, now);
   if (axialKey(current) === axialKey(expedition.origin)) {
-    return { next: null, foodRefund };
+    return { next: null };
   }
   const route = findExpeditionRouteFrom(
     tweaks,
@@ -360,7 +353,7 @@ export function planHomeRecall(
     gridSize,
   );
   if (!route) {
-    return { next: null, foodRefund };
+    return { next: null };
   }
   return {
     next: {
@@ -375,6 +368,5 @@ export function planHomeRecall(
       decisionDeadlineAt: null,
       joinExpeditionId: null,
     },
-    foodRefund,
   };
 }

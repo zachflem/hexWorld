@@ -11,9 +11,12 @@ import type { Axial } from "../engine/hexCoords";
  * LabRecord.secured and the party returns home intact (all-or-nothing, same
  * shape as a regular expedition — see engine/lab.ts:resolveLabAssault),
  * triggered once `resolvedIndex` reaches the corridor's end (path.length-2).
+ * Mid-march cancel recalls to `origin` (ScrapperEconomy Q42–Q44); no redeploy.
  */
 export interface LabAssaultRecord {
   id: string;
+  /** Dispatch hub — home for cancel/recall (Q43). */
+  origin: Axial;
   target: Axial;
   path: Axial[];
   militiaCommitted: number;
@@ -22,10 +25,22 @@ export interface LabAssaultRecord {
   /** ms, against game.clock.virtualNow — not Date.now(), same as every other timer in this game. */
   departedAt: number;
   arriveAt: number;
-  /** Index into `path` already resolved — 0 at dispatch. Corridor is path[0..length-2]; path[length-1] is the lab's own coord, fought separately (engine/lab.ts) once this reaches length-2. */
+  /** Index into `path` already resolved — 0 at dispatch. Outbound corridor is path[0..length-2]; path[length-1] is the lab. Recalling walks the full home path. */
   resolvedIndex: number;
+  /** `marching` outbound; `recalling` after mid-march cancel (Q42). */
+  phase: "marching" | "recalling";
 }
 
 export type LabAssaultsRecord = LabAssaultRecord[];
 
 export const LAB_ASSAULTS_DB_KEY = "labAssaults";
+
+/** Backfill origin/phase for saves from before Q42–Q44. */
+export function normalizeLabAssault(assault: LabAssaultRecord): LabAssaultRecord {
+  return {
+    ...assault,
+    resolvedIndex: assault.resolvedIndex ?? 0,
+    origin: assault.origin ?? assault.path[0] ?? assault.target,
+    phase: assault.phase ?? "marching",
+  };
+}

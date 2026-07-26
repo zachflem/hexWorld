@@ -447,6 +447,8 @@ export function GameScreen({
   onReinforceExpedition,
   onAssaultDen,
   onSecureLab,
+  onRecallDenAssault,
+  onRecallLabAssault,
   onGarrisonUnits,
   onRecallMilitia,
   onBuildDock,
@@ -559,6 +561,8 @@ export function GameScreen({
     junkyardKnightCommitted: number,
     crossBowSniperCommitted: number,
   ) => Promise<BuildResult>;
+  onRecallDenAssault: (assaultId: string) => Promise<BuildResult>;
+  onRecallLabAssault: (assaultId: string) => Promise<BuildResult>;
   onGarrisonUnits: (
     coord: Axial,
     militiaCount: number,
@@ -4187,6 +4191,12 @@ export function GameScreen({
               const tile = host.path[host.path.length - 1] ?? host.target;
               goToTile(tile);
             }
+          }}
+          onRecallDenAssault={(id) => {
+            void onRecallDenAssault(id).then(applyActionResult);
+          }}
+          onRecallLabAssault={(id) => {
+            void onRecallLabAssault(id).then(applyActionResult);
           }}
         />
       </div>
