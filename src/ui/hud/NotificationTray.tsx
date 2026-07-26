@@ -1,10 +1,9 @@
-import { FlaskConical, Footprints, ShieldAlert, Skull, Undo2 } from "lucide-react";
+import { Footprints, ShieldAlert, Skull, Undo2 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Axial } from "../../engine/hexCoords";
 import { remainingMs } from "../../engine/timers";
 import type { ExpeditionsRecord } from "../../data/expeditions";
 import type { DenAssaultsRecord } from "../../data/denAssaults";
-import type { LabAssaultsRecord } from "../../data/labAssaults";
 import type { GarrisonRecallsRecord } from "../../data/garrisonRecalls";
 import { CollapsibleNotificationRow, NOTIFICATION_ICON_SIZE } from "./CollapsibleNotificationRow";
 import { CoordLink, coordLinkStyle } from "./CoordLink";
@@ -112,14 +111,14 @@ export type NotificationCountdownRow = {
 };
 
 /**
- * Compact rows, one per active expedition/den-assault/lab-assault/garrison-recall.
+ * Compact rows for active expeditions / den assaults / garrison recalls / timers.
+ * Lab assaults are elevated into {@link LabAssaultCeremony} — never a tray row.
  * Arrival decisions stay fully expanded (with action buttons) until the player
  * picks an order or auto-recall fires.
  */
 export function NotificationTray({
   expeditions,
   denAssaults,
-  labAssaults,
   garrisonRecalls,
   siegedDens,
   countdowns,
@@ -130,11 +129,9 @@ export function NotificationTray({
   onBeginRedeploy,
   onBeginReinforce,
   onRecallDenAssault,
-  onRecallLabAssault,
 }: {
   expeditions: ExpeditionsRecord;
   denAssaults: DenAssaultsRecord;
-  labAssaults: LabAssaultsRecord;
   garrisonRecalls: GarrisonRecallsRecord;
   siegedDens: { coord: Axial; holdRemainingMs: number }[];
   countdowns: NotificationCountdownRow[];
@@ -145,7 +142,6 @@ export function NotificationTray({
   onBeginRedeploy?: (expeditionId: string) => void;
   onBeginReinforce?: (expeditionId: string) => void;
   onRecallDenAssault?: (assaultId: string) => void;
-  onRecallLabAssault?: (assaultId: string) => void;
 }) {
   return (
     <>
@@ -246,22 +242,6 @@ export function NotificationTray({
           actions={
             (assault.phase ?? "marching") === "marching" && onRecallDenAssault
               ? [{ label: "Recall", onClick: () => onRecallDenAssault(assault.id) }]
-              : undefined
-          }
-        />
-      ))}
-      {labAssaults.map((assault) => (
-        <TrayRow
-          key={assault.id}
-          rowKey={assault.id}
-          icon={<FlaskConical size={NOTIFICATION_ICON_SIZE} />}
-          label={assault.phase === "recalling" ? "Lab assault returning" : "Lab assault"}
-          coord={assault.target}
-          remaining={remainingMs(assault.departedAt, assault.arriveAt - assault.departedAt, now)}
-          onGoToTile={onGoToTile}
-          actions={
-            (assault.phase ?? "marching") === "marching" && onRecallLabAssault
-              ? [{ label: "Recall", onClick: () => onRecallLabAssault(assault.id) }]
               : undefined
           }
         />

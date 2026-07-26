@@ -37,6 +37,7 @@ import type { HordeRecord } from "../data/hordes";
 import type { Expedition, ExpeditionsRecord } from "../data/expeditions";
 import { expeditionMarkerIndex, expeditionPathIndexAt } from "../engine/expeditions";
 import type { DenAssaultRecord, DenAssaultsRecord } from "../data/denAssaults";
+import type { LabAssaultRecord, LabAssaultsRecord } from "../data/labAssaults";
 import type { TombstoneRecord, TombstonesRecord } from "../data/tombstones";
 import type { DockRecord, DocksRecord } from "../data/docks";
 import type { ScoutSkiffRecord, ScoutSkiffsRecord } from "../data/scoutSkiffs";
@@ -263,6 +264,28 @@ function colorWithAlpha(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/**
+ * Soft player-color disc under mobile unit sprites (expeditions, scouts, skiffs)
+ * so they stay readable on busy terrain. `radius` ≈ one hex size → roughly a
+ * tile-wide footprint; sprite is drawn on top afterward.
+ */
+function drawPlayerUnitHalo(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  playerColor: string,
+) {
+  const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+  gradient.addColorStop(0, colorWithAlpha(playerColor, 0.55));
+  gradient.addColorStop(0.4, colorWithAlpha(playerColor, 0.28));
+  gradient.addColorStop(1, colorWithAlpha(playerColor, 0));
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 /** Imperative handle exposed via ref, since pan/zoom are internal state here — lets a parent (e.g. a "recenter" button in the header) drive the view without lifting that state up. */
 export interface HexCanvasHandle {
   recenterOnBase: () => void;
@@ -298,6 +321,7 @@ export const HexCanvas = forwardRef<
     hordes: HordeRecord[];
     expeditions: ExpeditionsRecord;
     denAssaults: DenAssaultsRecord;
+    labAssaults: LabAssaultsRecord;
     tombstones: TombstonesRecord;
     /** The virtual clock (data/clock.ts:ClockRecord.virtualNow) — used to interpolate each in-flight expedition's current position along its route, same units as Expedition.departedAt/arriveAt. */
     now: number;
@@ -388,6 +412,7 @@ export const HexCanvas = forwardRef<
     hordes,
     expeditions,
     denAssaults,
+    labAssaults,
     tombstones,
     now,
     docks,
@@ -538,6 +563,21 @@ export const HexCanvas = forwardRef<
     }
     return map;
   }, [denAssaults, now]);
+  // Destination of an in-flight lab assault — same corner badge as den assaults.
+  const labAssaultTargetKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const assault of labAssaults) set.add(axialKey(assault.target));
+    return set;
+  }, [labAssaults]);
+  // Live en-route position — LabAssaultRecord mirrors DenAssaultRecord's path timers.
+  const labAssaultsByKey = useMemo(() => {
+    const map = new Map<string, LabAssaultRecord>();
+    for (const assault of labAssaults) {
+      const index = expeditionPathIndexAt(assault.departedAt, assault.arriveAt, now, assault.path.length);
+      map.set(axialKey(assault.path[index]), assault);
+    }
+    return map;
+  }, [labAssaults, now]);
   const fogByKey = useMemo(() => computeFogTiers(owned, scoutedTiles), [owned, scoutedTiles]);
   const labSearchZoneKeys = useMemo(
     () => labSearchZoneTileKeys(seed, lab, tweaks, gridSize, { force: devLabMode === "hint" }),
@@ -1381,6 +1421,7 @@ export const HexCanvas = forwardRef<
           // Hide while training — tray shows the build timer; drawing the unit
           // on the dock made unfinished skiffs look idle/stuck.
           if (scoutSkiff && scoutSkiff.buildStartedAt == null) {
+            drawPlayerUnitHalo(ctx, screenCenter.x, screenCenter.y, size, playerColor);
             const skiffIcon = getUnitIconTexture("skiff");
             if (skiffIcon) {
               drawImageAtWidth(ctx, skiffIcon, screenCenter.x, screenCenter.y, size);
@@ -1396,6 +1437,7 @@ export const HexCanvas = forwardRef<
           // transient-marker treatment.
           const wanderingScout = wanderingScoutsByKey.get(coordKey);
           if (wanderingScout && wanderingScout.buildStartedAt == null) {
+            drawPlayerUnitHalo(ctx, screenCenter.x, screenCenter.y, size, playerColor);
             const wanderingScoutImg = getUnitIconTexture("wandering-scout");
             if (wanderingScoutImg) {
               drawImageAtWidth(ctx, wanderingScoutImg, screenCenter.x, screenCenter.y, size);
@@ -1433,6 +1475,7 @@ export const HexCanvas = forwardRef<
           // "where is this headed"; this answers "how far along is it."
           const expedition = expeditionsByKey.get(coordKey);
           if (expedition) {
+            drawPlayerUnitHalo(ctx, screenCenter.x, screenCenter.y, size, playerColor);
             const expeditionIcon = getUnitIconTexture("expedition");
             if (expeditionIcon) {
               drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size * 2.0);
@@ -1450,6 +1493,23 @@ export const HexCanvas = forwardRef<
           // one (data/denAssaults.ts).
           const denAssault = denAssaultsByKey.get(coordKey);
           if (denAssault) {
+            drawPlayerUnitHalo(ctx, screenCenter.x, screenCenter.y, size, playerColor);
+            const expeditionIcon = getUnitIconTexture("expedition");
+            if (expeditionIcon) {
+              drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size * 2.0);
+            } else {
+              ctx.font = `${Math.max(10, size * 0.55)}px sans-serif`;
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText("🎒", screenCenter.x, screenCenter.y);
+            }
+          }
+
+          // Lab assault party — same expedition sprite / path interpolation as
+          // den assaults (was missing from the canvas until the ceremony HUD).
+          const labAssault = labAssaultsByKey.get(coordKey);
+          if (labAssault) {
+            drawPlayerUnitHalo(ctx, screenCenter.x, screenCenter.y, size, playerColor);
             const expeditionIcon = getUnitIconTexture("expedition");
             if (expeditionIcon) {
               drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size * 2.0);
@@ -1599,6 +1659,22 @@ export const HexCanvas = forwardRef<
             ctx.fillText("⛺", badgeX, badgeY);
           }
 
+          // Lab destination badge while the assault party is still in transit.
+          if (labAssaultTargetKeys.has(coordKey)) {
+            const badgeX = screenCenter.x - size * 0.55;
+            const badgeY = screenCenter.y - size * 0.55;
+            ctx.beginPath();
+            ctx.arc(badgeX, badgeY, size * 0.3, 0, Math.PI * 2);
+            ctx.fillStyle = EXPEDITION_TARGET_COLOR;
+            ctx.fill();
+            ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+            ctx.stroke();
+            ctx.font = `${Math.max(10, size * 0.4)}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText("⛺", badgeX, badgeY);
+          }
+
           // Bottom-right corner — the other three are taken by the garrison
           // badge (top-right) and expedition badge (top-left), with the
           // horde triangle and 💀 overlay both centered on the tile.
@@ -1664,6 +1740,8 @@ export const HexCanvas = forwardRef<
     expeditionsByKey,
     denAssaultTargetKeys,
     denAssaultsByKey,
+    labAssaultTargetKeys,
+    labAssaultsByKey,
     relocationDestination,
     baseLevel,
     baseCurrentHp,

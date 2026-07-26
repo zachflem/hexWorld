@@ -214,7 +214,7 @@ Once you've secured **5 dens' worth of clues**, the map marks a **search cluster
 
 Watchtowers also **alert** when a horde first enters their combat range.
 
-**Securing it** works like assaulting a den — commit a party of militia/knights/snipers. The guardian is by far the toughest fight in the game (defense rolled per world in a high band, well above even a max-level den — meant to demand a real late-game army, and different each seed), and unlike a den there's no hold period afterward: win the fight and the game ends immediately in victory.
+**Securing it** works like assaulting a den — commit a party of militia/knights/snipers. The guardian is by far the toughest fight in the game (defense rolled per world in a high band, well above even a max-level den — meant to demand a real late-game army, and different each seed), and unlike a den there's no hold period afterward: win the fight and the game ends immediately in victory. While the party is marching, a **ceremony banner** takes the top of the screen (resource bar drops below it) and a gold highlight rings the viewport — this is not a normal tray notification.
 
 Clearing dens is never *required* to win — a lucky scout run can reveal the lab without any den clues — but dens are how you unlock the search-cluster hint, plus outposts and the army growth you'll want for the guardian.
 
@@ -224,7 +224,7 @@ Clearing dens is never *required* to win — a lucky scout run can reveal the la
 
 The **top-right** of the screen shows active timers and short event messages:
 
-- **Timer rows** — one per in-flight build, upgrade, repair, training queue, expedition, assault, recall, or den siege hold. Each shows an icon, what it is, coordinates, and time remaining. **Rush** (where offered) finishes militia training early for a **noise spike** — it does not spend a power currency.
+- **Timer rows** — one per in-flight build, upgrade, repair, training queue, expedition, den assault, recall, or den siege hold. Each shows an icon, what it is, coordinates, and time remaining. **Rush** (where offered) finishes militia training early for a **noise spike** — it does not spend a power currency. **Lab assaults** do not appear here — they get the top-of-screen ceremony banner instead.
 - **Toasts** — brief one-off notices (e.g. base upgraded, den cleared, new lab clue).
 
 When a row appears it stays **fully expanded for 5 seconds**, then the text/countdown slides away and only the **icon** remains as a small peek along the right edge. **Tap the icon** to expand it again. Timer rows keep peeking until that action finishes; toasts fade out on their own after a short peek.

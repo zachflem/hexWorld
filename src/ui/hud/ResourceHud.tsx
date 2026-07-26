@@ -99,11 +99,14 @@ export function ResourceHud({
   resources,
   resourceRates,
   noiseValue,
+  topOffset = 0,
   onLayoutMetrics,
 }: {
   resources: ResourceAmounts;
   resourceRates: ResourceAmounts;
   noiseValue: number;
+  /** Extra px below the safe-area top inset — e.g. when the lab-assault ceremony banner is up. */
+  topOffset?: number;
   /** Fired when the bar's scaled height or shrink factor changes — used to tuck notifications below the HUD on narrow viewports. */
   onLayoutMetrics?: (metrics: { height: number; scale: number }) => void;
 }) {
@@ -145,7 +148,10 @@ export function ResourceHud({
       ref={frameRef}
       style={{
         position: "fixed",
-        top: "max(0.65rem, env(safe-area-inset-top, 0px))",
+        top:
+          topOffset > 0
+            ? `calc(${topOffset}px + 0.45rem)`
+            : "max(0.65rem, env(safe-area-inset-top, 0px))",
         left: "max(0.65rem, env(safe-area-inset-left, 0px))",
         zIndex: 40,
         width:

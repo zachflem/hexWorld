@@ -225,6 +225,7 @@ import { structureProgressByKey } from "./structureProgress";
 import { NOTIFICATION_ICON_SIZE } from "./hud/CollapsibleNotificationRow";
 import { RESEARCH_LABEL } from "./researchLabels";
 import { ResourceHud } from "./hud/ResourceHud";
+import { LabAssaultCeremony } from "./hud/LabAssaultCeremony";
 import { MapControls } from "./hud/MapControls";
 import { ToastStack, type ToastRecord } from "./hud/Toast";
 import { Panel } from "./primitives/Panel";
@@ -620,6 +621,11 @@ export function GameScreen({
   const [resourceHudLayout, setResourceHudLayout] = useState({ height: 0, scale: 1 });
   const handleResourceHudLayout = useCallback((metrics: { height: number; scale: number }) => {
     setResourceHudLayout(metrics);
+  }, []);
+  /** Lab-assault ceremony banner height — resource HUD + tray sit below it. */
+  const [labAssaultBannerHeight, setLabAssaultBannerHeight] = useState(0);
+  const handleLabAssaultBannerHeight = useCallback((height: number) => {
+    setLabAssaultBannerHeight(height);
   }, []);
 
   /** Open a global cluster panel (or toggle the same slot closed). Clears any tile sheet so only one BottomSheet is up. */
@@ -4053,6 +4059,8 @@ export function GameScreen({
   // floating panels would otherwise visually collide.
   const hoverInfoContent =
     hoveredCoord && !(selected && axialEquals(hoveredCoord, selected)) ? hoverInfoFor(hoveredCoord) : null;
+  /** Only one lab — at most one assault; elevate it out of the notification tray. */
+  const activeLabAssault = labAssaults[0] ?? null;
 
   return (
     <div style={{ position: "fixed", inset: 0 }}>
@@ -4085,6 +4093,7 @@ export function GameScreen({
           hordes={hordes}
           expeditions={expeditions}
           denAssaults={denAssaults}
+          labAssaults={labAssaults}
           tombstones={tombstones}
           now={now}
           docks={docks}
@@ -4100,10 +4109,22 @@ export function GameScreen({
           devLabMode={import.meta.env.DEV ? devLabMode : "off"}
         />
       </div>
+      {activeLabAssault && (
+        <LabAssaultCeremony
+          assault={activeLabAssault}
+          now={now}
+          onGoToTile={goToTile}
+          onRecall={(id) => {
+            void onRecallLabAssault(id).then(applyActionResult);
+          }}
+          onBannerHeight={handleLabAssaultBannerHeight}
+        />
+      )}
       <ResourceHud
         resources={resources}
         resourceRates={resourceRates}
         noiseValue={noise.value}
+        topOffset={labAssaultBannerHeight}
         onLayoutMetrics={handleResourceHudLayout}
       />
       {actionError && (
@@ -4111,7 +4132,10 @@ export function GameScreen({
           onClick={() => setActionError(null)}
           style={{
             position: "fixed",
-            top: "4.5rem",
+            top:
+              labAssaultBannerHeight > 0
+                ? `calc(${labAssaultBannerHeight}px + 4.5rem)`
+                : "4.5rem",
             left: "50%",
             transform: "translateX(-50%)",
             zIndex: 60,
@@ -4269,10 +4293,18 @@ export function GameScreen({
         style={{
           position: "fixed",
           right: "1rem",
-          top:
-            resourceHudLayout.scale < 1 && resourceHudLayout.height > 0
-              ? `calc(max(0.65rem, env(safe-area-inset-top, 0px)) + ${resourceHudLayout.height}px + 0.35rem)`
-              : "max(0.65rem, env(safe-area-inset-top, 0px))",
+          top: (() => {
+            const belowHud =
+              resourceHudLayout.scale < 1 && resourceHudLayout.height > 0
+                ? resourceHudLayout.height + 0.35 * 16
+                : 0;
+            if (labAssaultBannerHeight > 0) {
+              return `${labAssaultBannerHeight + belowHud + 0.45 * 16}px`;
+            }
+            return belowHud > 0
+              ? `calc(max(0.65rem, env(safe-area-inset-top, 0px)) + ${belowHud}px)`
+              : "max(0.65rem, env(safe-area-inset-top, 0px))";
+          })(),
           display: "flex",
           flexDirection: "column",
           alignItems: "flex-end",
@@ -4286,7 +4318,6 @@ export function GameScreen({
         <NotificationTray
           expeditions={expeditions}
           denAssaults={denAssaults}
-          labAssaults={labAssaults}
           garrisonRecalls={garrisonRecalls}
           siegedDens={dens
             .filter((d) => d.siege)
@@ -4318,9 +4349,6 @@ export function GameScreen({
           }}
           onRecallDenAssault={(id) => {
             void onRecallDenAssault(id).then(applyActionResult);
-          }}
-          onRecallLabAssault={(id) => {
-            void onRecallLabAssault(id).then(applyActionResult);
           }}
         />
       </div>
