@@ -4,6 +4,7 @@ import stripJsonComments from "strip-json-comments";
 import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
 import type { ScrapYardRecord } from "../data/scrapYards";
+import type { PowerNetworkSnapshot } from "./power";
 import {
   advanceScrapYardCouriers,
   collectScrapYard,
@@ -34,6 +35,29 @@ function yard(partial: Partial<ScrapYardRecord> = {}): ScrapYardRecord {
     ...partial,
   };
 }
+
+/** Every tile always reads as powered — these tests aren't about AoE coverage. */
+class AlwaysPoweredSet extends Set<string> {
+  override has(): boolean {
+    return true;
+  }
+}
+
+const UNLIMITED_POWER: PowerNetworkSnapshot = {
+  poweredTiles: new AlwaysPoweredSet(),
+  totalCapacity: 1e9,
+  totalDraw: 0,
+  factor: 1,
+  cutoff: 0.5,
+};
+
+const OFFLINE_POWER: PowerNetworkSnapshot = {
+  poweredTiles: new Set(),
+  totalCapacity: 0,
+  totalDraw: 10,
+  factor: 0,
+  cutoff: 0.5,
+};
 
 describe("scrapYards", () => {
   it("build cost scales with Formula A from scrap_yards.build_cost_base", () => {
@@ -80,6 +104,7 @@ describe("scrapYards", () => {
       { base, owned: [base, yardCoord] },
       [],
       32,
+      UNLIMITED_POWER,
     );
     expect(result.resources.steel).toBe(0);
     expect(result.scrapYards[0]!.courier).toBeNull();
@@ -106,6 +131,7 @@ describe("scrapYards", () => {
       territory,
       [],
       32,
+      UNLIMITED_POWER,
     );
     expect(started.resources.steel).toBe(0);
     expect(started.scrapYards[0]!.courier?.phase).toBe("toBase");
@@ -126,8 +152,38 @@ describe("scrapYards", () => {
       territory,
       [],
       32,
+      UNLIMITED_POWER,
     );
     expect(delivered.resources.steel).toBeCloseTo(cargo);
     expect(delivered.scrapYards[0]!.courier?.phase).toBe("returning");
+  });
+
+  it("L2+ yards without power clear the courier and leave stockpile", () => {
+    const tweaks = loadRealTweaks();
+    const base = { q: 0, r: 0 };
+    const yardCoord = { q: 1, r: 0 };
+    const result = advanceScrapYardCouriers(
+      tweaks,
+      [
+        yard({
+          coord: yardCoord,
+          level: 2,
+          stockpile: 25,
+          courier: { phase: "toBase", departedAt: 0, arriveAt: 5_000, cargo: 10 },
+        }),
+      ],
+      { food: 0, wood: 0, stone: 0, steel: 0 },
+      { food: 1, wood: 1, stone: 1, steel: 1 },
+      60_000,
+      1,
+      base,
+      { base, owned: [base, yardCoord] },
+      [],
+      32,
+      OFFLINE_POWER,
+    );
+    expect(result.resources.steel).toBe(0);
+    expect(result.scrapYards[0]!.courier).toBeNull();
+    expect(result.scrapYards[0]!.stockpile).toBe(25);
   });
 });

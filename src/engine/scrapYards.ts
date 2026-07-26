@@ -6,6 +6,7 @@ import type { TerritoryRecord } from "../data/territory";
 import type { Tweaks } from "../data/tweaksSchema";
 import type { Axial } from "./hexCoords";
 import { isStructureActive, scaledCostMap } from "./formulas";
+import { powerPerformanceFactor, type PowerNetworkSnapshot } from "./power";
 import { storageCapacity } from "./storage";
 import { tierUpgradeCost, tierUpgradeDurationMs } from "./tiers";
 import { advanceCourierSite, structureHasCourierAutomation } from "./couriers";
@@ -59,6 +60,7 @@ export function collectScrapYard(
 /**
  * Yard last-mile courier unlocks at L2+ — same pattern as food/wood/stone/docks
  * (`structureHasCourierAutomation`). L1 is manual collect only.
+ * L2+ yards outside power / below cutoff clear the courier (extraction parity).
  */
 export function advanceScrapYardCouriers(
   tweaks: Tweaks,
@@ -71,12 +73,16 @@ export function advanceScrapYardCouriers(
   territory: TerritoryRecord,
   scoutedTiles: Axial[],
   gridSize: number,
+  powerNetwork: PowerNetworkSnapshot,
 ): { resources: ResourceAmounts; scrapYards: ScrapYardRecord[] } {
   if (yards.length === 0) return { resources, scrapYards: yards };
 
   let nextResources = { ...resources };
   const nextYards = yards.map((yard) => {
     if (!isStructureActive(yard)) return yard;
+
+    const powerMul = powerPerformanceFactor(powerNetwork, yard.level, yard.coord);
+    if (powerMul <= 0) return { ...yard, courier: null };
 
     const { site, resources: afterCourier } = advanceCourierSite(
       tweaks,

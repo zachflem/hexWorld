@@ -896,6 +896,7 @@ export default function App() {
           current.game.territory,
           current.game.scoutedTiles,
           economyGridSize,
+          powerNetwork,
         );
       const { food: foodAfterUpkeep, units: unitsAfterUpkeep } = applyUpkeepTick(
         current.tweaks,
@@ -1159,6 +1160,7 @@ export default function App() {
       }
 
       // Scrapper yard↔stash hauls (after yard construction + scrap samples).
+      // L2+ yards freeze without power — same gate as extraction couriers.
       const scrapperAdvance = advanceScrappers(
         current.tweaks,
         current.game.world.seed,
@@ -1168,6 +1170,7 @@ export default function App() {
         scoutedTilesAfterWander,
         economyGridSize,
         virtualNow,
+        powerNetwork,
       );
       scrapYards = scrapperAdvance.scrapYards;
       scrapStashes = scrapperAdvance.scrapStashes;

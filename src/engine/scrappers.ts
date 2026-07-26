@@ -11,6 +11,7 @@ import {
   stepCorridorWalk,
 } from "./expeditions";
 import { isStructureActive } from "./formulas";
+import { powerPerformanceFactor, type PowerNetworkSnapshot } from "./power";
 
 export function scrapperCapacity(tweaks: Tweaks, yardLevel: number): number {
   const table = tweaks.scrap_yards.scrapper.capacity_by_level;
@@ -181,6 +182,8 @@ export type AdvanceScrappersResult = {
 /**
  * Advance in-flight Scrappers: pickup at stash, deliver to yard stockpile,
  * Auto L3+ picks next closest known stash (Q58).
+ * L2+ yards with no power / below cutoff freeze mid-route (keep cargo); L1 is
+ * power-exempt like other structures.
  */
 export function advanceScrappers(
   tweaks: Tweaks,
@@ -191,6 +194,7 @@ export function advanceScrappers(
   scoutedTiles: Axial[],
   gridSize: number,
   now: number,
+  powerNetwork: PowerNetworkSnapshot,
 ): AdvanceScrappersResult {
   let nextStashes = stashes;
   let nextTerritory = territory;
@@ -198,6 +202,8 @@ export function advanceScrappers(
 
   const nextYards = yards.map((yard) => {
     if (!yard.scrapperReady || !isStructureActive(yard)) return yard;
+    if (powerPerformanceFactor(powerNetwork, yard.level, yard.coord) <= 0) return yard;
+
     let trip = yard.scrapper ?? idleScrapperTrip();
     let stockpile = yard.stockpile;
     const speed = scrapperSpeedMultiplier(tweaks, yard.level);
