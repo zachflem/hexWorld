@@ -5,6 +5,10 @@ export const NOTIFICATION_EXPANDED_MS = 5000;
 export const NOTIFICATION_SLIDE_MS = 350;
 /** Lucide + marker icons in the top-right notification column — keep rows a uniform height. */
 export const NOTIFICATION_ICON_SIZE = 14;
+/** Compact countdown / toast rows. */
+export const NOTIFICATION_ROW_MAX_WIDTH = "min(90vw, 320px)";
+/** Arrival orders with action buttons — must fit Redeploy / Reinforce / Garrison / Recall / Dismiss. */
+export const NOTIFICATION_DECISION_ROW_MAX_WIDTH = "min(96vw, 720px)";
 
 function NotificationIconSlot({ icon }: { icon: ReactNode }) {
   return (
@@ -102,17 +106,22 @@ export function CollapsibleNotificationRow({
   const slideMs = NOTIFICATION_SLIDE_MS;
   /** Wrapping only while fully expanded — shrinking max-width with pre-wrap makes a tall 1-char column. */
   const wrapping = wrapText && expanded;
+  /** Arrival decision rows: wider slide-out + flex-wrap so action buttons aren't clipped. */
+  const decisionExpanded = stayExpandedUntilDismiss && expanded;
+  const rowMaxWidth = decisionExpanded
+    ? NOTIFICATION_DECISION_ROW_MAX_WIDTH
+    : NOTIFICATION_ROW_MAX_WIDTH;
 
   return (
     <Panel
       style={{
         display: "flex",
-        alignItems: wrapping ? "flex-start" : "center",
+        alignItems: wrapping || decisionExpanded ? "flex-start" : "center",
         alignSelf: "flex-end",
         gap: expanded ? "0.5rem" : 0,
-        maxWidth: "min(90vw, 320px)",
+        maxWidth: rowMaxWidth,
         overflow: "hidden",
-        transition: `gap ${slideMs}ms ease`,
+        transition: `gap ${slideMs}ms ease, max-width ${slideMs}ms ease`,
         ...(highlightPeek && !expanded
           ? {
               boxShadow: "0 0 0 2px rgba(255, 180, 70, 0.85)",
@@ -131,7 +140,12 @@ export function CollapsibleNotificationRow({
           display: "flex",
           alignItems: "center",
           flexShrink: 0,
-          padding: wrapping ? "0.1rem 0 0" : highlightPeek && !expanded ? "0.2rem" : 0,
+          padding:
+            wrapping || decisionExpanded
+              ? "0.1rem 0 0"
+              : highlightPeek && !expanded
+                ? "0.2rem"
+                : 0,
           margin: 0,
           border: "none",
           background: highlightPeek && !expanded ? "rgba(255, 180, 70, 0.25)" : "transparent",
@@ -148,6 +162,8 @@ export function CollapsibleNotificationRow({
         style={{
           display: wrapping ? "block" : "flex",
           alignItems: wrapping ? undefined : "center",
+          flexWrap: decisionExpanded ? "wrap" : undefined,
+          rowGap: decisionExpanded ? "0.35rem" : undefined,
           gap: wrapping ? undefined : "0.5rem",
           flex: "1 1 auto",
           minWidth: 0,

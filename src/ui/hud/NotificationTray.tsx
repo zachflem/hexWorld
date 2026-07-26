@@ -26,6 +26,7 @@ function TrayActionButton({ label, onClick }: { label: string; onClick: () => vo
         border: "1px solid rgba(255, 255, 255, 0.35)",
         borderRadius: 6,
         cursor: "pointer",
+        flexShrink: 0,
         WebkitTapHighlightColor: "transparent",
       }}
     >

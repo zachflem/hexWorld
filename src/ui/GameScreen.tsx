@@ -4219,7 +4219,8 @@ export function GameScreen({
           flexDirection: "column",
           alignItems: "flex-end",
           gap: "0.35rem",
-          maxWidth: "min(90vw, 320px)",
+          /* Width is per-row (compact 320px vs wider arrival decisions) — don't clip children here. */
+          maxWidth: "min(96vw, 720px)",
           zIndex: 40,
         }}
       >
