@@ -73,15 +73,17 @@ Each resource has its own **storage cap** at your base (1000 at level 1, doublin
 
 ## Extraction tiles
 
-Build one on suitable land (never on water) to generate **food, wood, or stone** passively. Each has three levels — **L1 → L2 → L3** — upgraded in place, not rebuilt; higher levels yield substantially more, but cost a wider mix of resources to reach.
+Build one on suitable land (never on water) to generate **food, wood, or stone** into a local stockpile. Each has three levels — **L1 → L2 → L3** — upgraded in place, not rebuilt; higher levels yield substantially more, but cost a wider mix of resources to reach.
 
-**Steel has no extraction tile** — see [Steel: scrap stashes & Scrap Yard](#steel-scrap-stashes--scrap-yard).
+Each hex has a limited amount of extractable material decided when the world is generated. Richer hexes last longer; poorer ones run dry sooner. Food, wood, and stone extractors on the same hex all pull from that **shared** limit — and so does a **scrap stash** on that hex (hauled as steel). Tearing an extractor down and building a different type does **not** refill it. When a hex is empty, that site stops producing (and an empty scrap stash frees the hex). Terrain still matters for how fast extractors pull (and transition tiles still feel “off”), but you can place an extractor on any suitable land hex — you are not hunting special deposit icons. Some difficulty profiles may leave hex pools unlimited. You only see how much is left once you’ve **built** an extractor or dock, or when a **known scrap stash** is on the hex — empty ground doesn’t show a remaining readout.
+
+**Steel has no extraction tile** — see [Steel: scrap stashes & Scrap Yard](#steel-scrap-stashes--scrap-yard). The scrap loop is separate from hex food/wood/stone limits.
 
 Building extraction tiles gets progressively more expensive the more of that type you already have (your 2nd food tile costs more than your 1st, and so on).
 
 **Collecting resources:**
 - **Manual collection** is always free and always available from the tile sheet. Map collect pins stay quiet until a tile's local stockpile is about **60%** full (less clutter while extractors fill). Click a pin to pull that stockpile into storage by hand.
-- **Couriers** automate this once the structure is upgraded to **level 2+**. An implied courier hauls between the structure and your main base; travel time scales with route difficulty (farther / mountain-heavier sites take longer). Automated tiles hide their collect pin unless the local buffer is **full** — a nudge that base storage may need an upgrade (you'll also get a toast when hub storage and that stockpile are both full). Level 3 raises production. There are **no road / path tiles** to build.
+- **Couriers** automate this once the structure is upgraded to **level 2+**. An implied courier hauls between the structure and your main base; travel time scales with route difficulty (farther / mountain-heavier sites take longer). Automated tiles hide their collect pin unless the local buffer is **full** — a nudge that base storage may need an upgrade (you'll also get a toast when hub storage and that stockpile are both full). Level 3 raises production. There are **no road / path tiles** to build. Before you upgrade, weigh whether enough material remains on that hex to make the courier or L3 spend worthwhile.
 - Orange **level badges** on structures mean an upgrade is affordable — separate from collect pins.
 
 A tile can only hold one thing at a time — an extraction tile, a tower, a wall, a barracks, a dock, a power station, or a Scrap Yard — never a combination.
@@ -92,7 +94,7 @@ A tile can only hold one thing at a time — an extraction tile, a tower, a wall
 
 Steel comes from the map, not from an extractor:
 
-1. **Scrap stashes** are placed at world-gen (at least one near your start). When scouted (Wandering Scout, tower intel, etc.) they show a grey ring and tell you remaining steel plus a vague richness hint (“sparse dump” … “looks rich”). Visiting scouts also skim a small sample into storage.
+1. **Scrap stashes** are placed at world-gen (at least one near your start). When scouted (Wandering Scout, tower intel, etc.) they show a grey ring and tell you remaining material on that hex (hauled as steel) plus a vague richness hint (“sparse dump” … “looks rich”). Visiting scouts also skim a small sample into storage. That remaining is the **same** hex pool an extractor would drain.
 2. Build a **Scrap Yard** on owned empty land (wood + stone — no steel required to start). A **Scrapper** comes with the yard: assign it to a known stash and it walks yard → stash → yard, dumping steel into the yard’s local stockpile. You can reassign mid-route when empty, or recall it home (loaded trips keep their cargo).
 3. **Collect** from the yard (tile sheet anytime; map pin once the local stockpile is ~60% full, or only when full if the yard has a courier), or upgrade the yard to **L2** so an implied courier hauls steel to base like other resources. L3 adds Auto (Scrapper picks the next closest known stash) and more capacity/speed. L2+ yards need power coverage like other upgraded structures.
 
@@ -153,7 +155,7 @@ Towers also **passively claim territory** just by existing — every tile within
 
 ## Docks & the water
 
-Water tiles can't host normal extraction tiles or defenses — but you can build a **Dock** on any water tile bordering land (as long as you own or have scouted that water tile). A dock generates food (about 70% the rate of a standard food extraction tile). At **level 1** you collect manually; **level 2** unlocks an implied courier to base (same model as land extraction); **level 3** is the production upgrade (replaces the old standalone fishing-boat build).
+Water tiles can't host normal extraction tiles or defenses — but you can build a **Dock** on any water tile bordering land (as long as you own or have scouted that water tile). A dock generates food (about 70% the rate of a standard food extraction tile) and pulls from that **water hex’s** limited extractable pool the same way land extractors drain theirs — when the hex runs dry, the dock stops producing. At **level 1** you collect manually; **level 2** unlocks an implied courier to base (same model as land extraction); **level 3** is the production upgrade (replaces the old standalone fishing-boat build).
 
 Per dock:
 - **Scout Skiff** — a mobile unit (max 1 per dock) that wanders its connected body of water forever, revealing every tile it drifts past — the water equivalent of the Wandering Scout.

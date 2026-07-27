@@ -165,6 +165,35 @@ Union AoE + shared capacity pool; L1 structures exempt. See [Milestone25.md](Mil
 - *Passive*, ongoing while the tile operates (e.g. food: +2 noise/min, stone: +6 noise/min)
 - *One-time*, when built (+20) or upgraded (+10)
 
+### Hex resource pools (shared `remainingResource`) — design decided, not shipped
+
+**Decision ([issue #28](https://github.com/zachflem/hexWorld/issues/28)):** every hex gets a hidden **tile level** and a shared **`remainingResource`** at world-gen. Food / wood / stone extractors, **docks**, and **scrap stash hauls** all drain that same value. Demolish + rebuild (any F/W/S type or dock) does **not** reset it. Empty = stop yielding / stash frees when depleted; **no regen**. Place-anywhere and terrain/transition yield multipliers stay. Couriers/upgrades unchanged — the player judges whether remaining is worth the spend. Profile tweaks may set pools **infinite**.
+
+**Naming:** today’s stash `remainingSteel` **becomes** hex `remainingResource` (one field). Scrap UI can still label it as steel remaining while a stash occupies the hex; the underlying number is the tile pool.
+
+**Defaults:** `pool_by_terrain` / `pool_per_tile_level_pct` / `tile_level_max` start from today’s scrap bases (grassland 1050, shore 1800, forest 2400, mountain 3300; `+35%` per level above 1; `tile_level_max` 5). Add **water** for docks (first pass: shore’s base). Planned home: `hex_resource_pools.*`; `scrap_stashes.steel_pool_*` are superseded at impl (sizing comes from the hex pool, not a second counter).
+
+**UI:** show remaining on the **active** resource structure (extractor, dock, or known scrap stash) — not on empty / scouted / unscouted hexes without that structure.
+
+**Saves:** no migration required — shipping may invalidate older saves / bump the save format.
+
+**Formula shape:**
+
+```
+remainingResource = round(pool_by_terrain[terrain] × (1 + pool_per_tile_level_pct × (tileLevel − 1)))
+```
+
+**Planned** profile block (document only — not yet in `tweaksSchema.ts` / `tweaks.jsonc`):
+
+| Key | Role |
+|---|---|
+| `hex_resource_pools.infinite` | When `true`, skip drain (easy/author profiles) |
+| `hex_resource_pools.tile_level_max` | Max roll for per-hex tile level at world-gen |
+| `hex_resource_pools.pool_by_terrain` | Bases for grassland / forest / mountain / shore / **water** |
+| `hex_resource_pools.pool_per_tile_level_pct` | Extra fraction per tile level above 1 |
+
+**Future impl note:** world-gen stores per-hex `tileLevel` + `remainingResource`; scrap placement no longer rolls its own level or `remainingSteel`; Scrappers / `accrueResources` / dock accrue all decrement `remainingResource` (unless `infinite`).
+
 ---
 
 ## Transition Tiles

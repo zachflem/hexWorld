@@ -297,18 +297,18 @@ see [Milestone25.md](Milestone25.md).
 
 **Decision:**
 
-- Stash steel pool scales by **terrain type** and **tile level marker** on the hex (world-gen — exact table TBD in tweaks; same markers as future finite-resource work, issue #28 / ROADMAP #2).
-- **Early-game guarantee:** at least **one scrap stash within ~10 tiles** of spawn (base) so steel loop is reachable without deep exploration first.
+- Stash haul size is the hex’s shared **`remainingResource`**, sized by terrain × tile level via planned `hex_resource_pools.*` (land defaults copy today’s scrap bases; add **water** for docks). `scrap_stashes.steel_pool_*` / per-stash `remainingSteel` are superseded at impl.
+- **Early-game guarantee:** at least **one scrap stash within ~10 tiles** of spawn (base) so steel loop is reachable early.
 
 ### Q49 — “Tile level” for stash scaling
 
-**Decision:** Stash pool scales by **terrain type** and the hex’s **tile level marker** (world-gen value on each hex — same markers intended to drive future **finite per-tile resources**; see issue #28). Exact formula TBD in tweaks.
+**Decision:** World-gen assigns **one tile level per hex** and initializes **`remainingResource`** from it. Scrap stashes **reference that hex value** (no independent per-stash level or steel counter). F/W/S extractors and docks drain the **same** `remainingResource` ([issue #28](https://github.com/zachflem/hexWorld/issues/28)).
 
 ### Q50 — Stashes vs other tile uses
 
-**Decision:** There are **no separate natural-resource deposits** in the current build — only **terrain buffs/debuffs** for building/yield. Scrap stashes occupy a hex like a special site (reserved while steel remains, Q26); they do **not** compete with a not-yet-shipped deposit system.
+**Decision:** There are **no special natural-resource deposit sites** for food/wood/stone — only **terrain buffs/debuffs** for building/yield, plus the shared hex **`remainingResource`**. Scrap stashes are still reserved sites while remaining > 0 (Q26), but their “steel pool” **is** that hex remaining (hauled as steel). After depletion the hex frees; remaining is already zero so a later extractor would find it dry unless the profile sets pools infinite.
 
-**Follow-up (issue #28):** Investigate **finite resources per tile** for food/wood/stone, with pool/yield scaled by the **same tile level markers** — design in parallel with Milestone 26, not blocking MVP unless markers must land first.
+**#28 (decided):** One shared `remainingResource` per hex for extractors, docks, and scrap; `remainingSteel` renamed into that field; place-anywhere for F/W/S; rebuild does not reset; no regen; UI remaining only on active resource structures; old saves may be invalidated at ship; profile tweaks may set pools infinite. Implementation is future work — not part of Milestone 26.
 
 ### Q51 — Tile level markers: visibility
 
@@ -395,7 +395,7 @@ Linear progression L1→L5; exact speed/capacity numbers and upgrade costs in tw
 **Design Q&A complete (Q1–Q70).** Impl shipped on Milestone 26 / #36. Remaining playtest:
 
 - **Tweaks tuning** — early steel costs vs stash pools, Scrapper speed/capacity, courier cadence, banded hint copy.
-- Finite food/wood/stone pools (#28) stay parallel / out of M26 scope.
+- Finite food/wood/stone hex pools ([issue #28](https://github.com/zachflem/hexWorld/issues/28)) — **design decided**; engine/impl still future (out of M26 scope).
 
 ---
 

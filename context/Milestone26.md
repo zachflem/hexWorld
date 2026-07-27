@@ -198,5 +198,5 @@ When implementation ships:
 - Resource L4/L5 (collection speed / further production) — designed, not required to ship.
 - Courier destination = outpost hubs (MVP = base only).
 - Dedicated courier sprite art (implied unit).
-- Finite food/wood/stone tile pools (issue #28) — parallel, not blocking.
+- Finite food/wood/stone hex pools — design #28 closed; implementation is **Milestone 27 / [#84](https://github.com/zachflem/hexWorld/issues/84)** (`Milestone27.md`).
 - Water-based transport revival.

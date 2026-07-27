@@ -33,7 +33,7 @@ A small group arrives in unfamiliar territory. They settle, and immediately clai
 - **Coordinate system:** tiles are stored/serialized as **axial coordinates (q, r)** — simple two-integer keys, natural for save files. Algorithms that need them (distance, range queries, horde pathing line-of-travel) convert to cube coordinates internally.
 - **Terrain types:** grassland, forest, mountain, shore, water — each restricts which structures can be built on it.
 - **Transition tiles:** procedurally occur where two terrain types border each other. Either terrain's structures can be built there, at half yield. The game never explains this — scouting one only returns a cryptic hint.
-- **Natural resource tiles:** carry a level (1–24) determining yield when interacted with, and regenerate over time if depleted.
+- **Hex resource pools:** every hex carries a hidden **tile level** and a shared **`remainingResource`** at world-gen (sized by terrain × tile level — see [TWEAKS.md](TWEAKS.md)). Food / wood / stone extractors, **docks**, and **scrap stashes** all draw from that same remaining value (scrapper hauls it as steel; extractors/docks as F/W/S). The pool does **not** regenerate. Empty hexes stop yielding / free the stash site when depleted. Decision: [issue #28](https://github.com/zachflem/hexWorld/issues/28).
 
 ---
 
@@ -96,7 +96,9 @@ The player owns their base tile plus the first two full rings around it (19 tile
 | L2 | Implied courier auto-hauls to the main base |
 | L3 | Production increase (further L4/L5 are designed, not required yet) |
 
-**Steel is not an extraction tile.** It enters the economy only through world-gen **scrap stashes** and a **Scrap Yard** / **Scrapper** loop (see §8).
+**Place-anywhere, finite drain.** Extractors still build on any suitable land hex (terrain only multiplies yield; transition tiles still half-yield). They do **not** require special deposit sites. Yield accrues into the structure’s local stockpile while draining that hex’s shared **`remainingResource`** (§3). Food, wood, and stone extractors on the same hex all pull from that value; demolishing and rebuilding (same or different resource type) does **not** reset it. When the pool is empty, yield stops — no regeneration. Couriers and tier upgrades stay as today; the player decides whether remaining pool justifies the investment. Profile tweaks can raise/lower pool sizes or set hex pools to **infinite** (easy/author mode). **UI:** remaining (and dry) shows on the **built** extractor / dock tile sheet only — not on empty scouted or fogged hexes. See [TWEAKS.md](TWEAKS.md); decision [issue #28](https://github.com/zachflem/hexWorld/issues/28).
+
+**Steel is not an extraction tile.** It enters the economy only through world-gen **scrap stashes** and a **Scrap Yard** / **Scrapper** loop (see §8). A stash does **not** own a separate steel counter — it references the hex’s **`remainingResource`** (today’s `remainingSteel` becomes that shared field). Scrappers haul from it as steel; the same remaining is what an extractor would drain if the hex were free for F/W/S.
 
 None of the land extraction types can be built on water — those sit on dry land. Water tiles instead host a distinct building type, the **Dock** (see §16) — a food-generating structure, not a fifth extraction-tile type, and the one exception to "no building on water."
 
@@ -112,7 +114,7 @@ Extraction tiles generate both passive noise (ongoing, scaled by resource rarity
 
 **There are no infrastructure path tiles** (goat track / stone road / highway are removed). A hex still holds at most one structure — extraction, tower, wall, barracks, dock, power station, or **Scrap Yard** — never a combination.
 
-**Steel** does not use land extraction tiles. World-gen **scrap stashes** (finite steel pools, grey ring when known, banded richness hints) are hauled by a visible **Scrapper** into a **Scrap Yard** local stockpile. L1 yards are manual-collect only; L2+ yards run an implied last-mile courier into the shared pool. Yard level also gates Scrapper capacity/speed (Auto next-stash at L3). Details: [Milestone26.md](Milestone26.md), [ScrapperEconomy.md](ScrapperEconomy.md).
+**Steel** does not use land extraction tiles. World-gen **scrap stashes** (grey ring when known, banded richness hints) are hauled by a visible **Scrapper** into a **Scrap Yard** local stockpile. Stash haul drains the hex’s shared **`remainingResource`** (same tile-based pool every other resource structure uses — [issue #28](https://github.com/zachflem/hexWorld/issues/28)); there is no separate `remainingSteel`. L1 yards are manual-collect only; L2+ yards run an implied last-mile courier into the shared pool. Yard level also gates Scrapper capacity/speed (Auto next-stash at L3). Details: [Milestone26.md](Milestone26.md), [ScrapperEconomy.md](ScrapperEconomy.md).
 
 Remote outposts as alternate courier destinations and bidirectional flow (base *supplying* far-flung structures) stay out of scope for MVP — resources only ever flow inward, structure → base.
 
@@ -219,7 +221,7 @@ A successfully held den **converts into a player-usable Outpost** (`engine/outpo
 
 Added during playtesting, outside the milestone sequence in `ROADMAP.md` — the one deliberate exception to §7's "no building on water" rule.
 
-**Docks** are a food-generating building, placed on a water tile that borders land, provided the player owns or has scouted that water tile (the ordinary ownership rule for any other structure would never be satisfiable on open water, since territory expansion is land-adjacency-driven — scouted-or-owned is the water-specific relaxation). A dock yields a flat fraction of a small food extraction tile's rate into a **local stockpile**. At **L1** you collect manually; at **L2+** an implied courier hauls to the main base (same travel timing as land extraction). **L3** is the production upgrade (includes the old fishing-boat yield bonus). Unlike every land structure, a dock cannot be captured by a horde (hordes can't reach water tiles), so it carries no `damaged` state.
+**Docks** are a food-generating building, placed on a water tile that borders land, provided the player owns or has scouted that water tile (the ordinary ownership rule for any other structure would never be satisfiable on open water, since territory expansion is land-adjacency-driven — scouted-or-owned is the water-specific relaxation). A dock yields a flat fraction of a small food extraction tile's rate into a **local stockpile**, draining the water hex’s shared **`remainingResource`** the same way land extractors and scrap stashes drain theirs (§3 / §7) — not an infinite fishery. At **L1** you collect manually; at **L2+** an implied courier hauls to the main base (same travel timing as land extraction). **L3** is the production upgrade (includes the old fishing-boat yield bonus). Unlike every land structure, a dock cannot be captured by a horde (hordes can't reach water tiles), so it carries no `damaged` state.
 
 Dock-only unit:
 - **Scout Skiff** — a mobile unit (capped at one per dock) that wanders randomly across its dock's connected body of water indefinitely, revealing every tile it drifts across — the water equivalent of the Wandering Scout, automatic and ongoing.
