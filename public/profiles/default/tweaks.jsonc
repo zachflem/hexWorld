@@ -803,7 +803,11 @@
       // Applied at tower level 4 only (chance = base * this).
       "watchtower_intel_tier_multiplier": 2.0,
       // After 5 den-clear clues the search cluster is on the map; stop new signals.
-      "stops_once_all_clues_collected": true
+      "stops_once_all_clues_collected": true,
+      // Softmax neighbor weights while a signal is active (halved 2026-07-27 — slight hint, not bee-line).
+      "signal_bearing_weight": 1.25, // was 2.5
+      "signal_lab_approach_weight": 1.75, // was 3.5
+      "signal_lab_tile_bonus": 2.0 // was 4
     },
 
     "den_clear_bonus": {

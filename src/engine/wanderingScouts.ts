@@ -16,6 +16,12 @@ function labApproachScore(from: Axial, to: Axial, lab: Axial): number {
   return axialDistance(from, lab) - axialDistance(to, lab);
 }
 
+type SignalGuidanceWeights = {
+  bearingWeight: number;
+  labApproachWeight: number;
+  labTileBonus: number;
+};
+
 function pickWeightedNeighbor(
   candidates: Axial[],
   from: Axial,
@@ -23,6 +29,7 @@ function pickWeightedNeighbor(
   labCoord: Axial | null,
   seed: number,
   rollIndex: number,
+  guidance: SignalGuidanceWeights,
 ): Axial {
   if (candidates.length === 1) return candidates[0];
   if (!bearing) {
@@ -30,14 +37,14 @@ function pickWeightedNeighbor(
     return candidates[Math.min(candidates.length - 1, Math.floor(roll * candidates.length))];
   }
 
-  // Active watchtower signal: sector bias + pull toward the true lab so guided
-  // scouts are more likely to step onto it (they never award clues — dens do).
+  // Active watchtower signal: light sector bias + faint lab pull (tweaks).
+  // Scouts never award clues — dens do; this only nudges exploration.
   const labKey = labCoord ? axialKey(labCoord) : null;
   const weights = candidates.map((c) => {
-    let score = 2.5 * bearingStepScore(from, c, bearing);
+    let score = guidance.bearingWeight * bearingStepScore(from, c, bearing);
     if (labCoord) {
-      score += 3.5 * labApproachScore(from, c, labCoord);
-      if (labKey && axialKey(c) === labKey) score += 4;
+      score += guidance.labApproachWeight * labApproachScore(from, c, labCoord);
+      if (labKey && axialKey(c) === labKey) score += guidance.labTileBonus;
     }
     return Math.exp(score);
   });
@@ -77,8 +84,8 @@ export type AdvanceWanderingScoutsOptions = {
  * skiff uses.
  *
  * Wandering scouts never award lab clues (den clears do). An active watchtower
- * signal (#38) biases neighbor picks toward that compass sector and pulls
- * toward the lab tile so guided search is more likely to reveal it.
+ * signal (#38) lightly biases neighbor picks toward that compass sector and
+ * faintly toward the lab (`lab_clues.passive_surfacing.signal_*` weights).
  */
 export function advanceWanderingScouts(
   tweaks: Tweaks,
@@ -94,6 +101,12 @@ export function advanceWanderingScouts(
   }
 
   const secondsPerStep = tweaks.units.wandering_scout.seconds_per_step;
+  const surfacing = tweaks.lab_clues.passive_surfacing;
+  const guidance: SignalGuidanceWeights = {
+    bearingWeight: surfacing.signal_bearing_weight,
+    labApproachWeight: surfacing.signal_lab_approach_weight,
+    labTileBonus: surfacing.signal_lab_tile_bonus,
+  };
   const signal = options?.signal ?? null;
   const labCoord = options?.labCoord ?? null;
   const labKey = labCoord ? axialKey(labCoord) : null;
@@ -130,6 +143,7 @@ export function advanceWanderingScouts(
         signal && labCoord ? labCoord : null,
         seed,
         wanderingScoutRollIndex(coord, scout.spawnedAt, step),
+        guidance,
       );
 
       prevCoord = coord;

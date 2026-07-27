@@ -207,7 +207,7 @@ Somewhere out past every zombie den — deliberately farther out than any of the
 
 **Finding it** has two tracks that work together:
 
-- **Watchtowers (level 2+)** sometimes pick up a vague distant **signal** ("something in the north — send the scouts"). That is not a clue — it steers **Wandering Scouts** toward that sector and makes them more likely to actually step the lab hex. Level 4 towers hear signals more often. Scouts can also stumble onto the lab with no signal at all — when they do, a toast names the coordinates and the lab marker appears on that hex.
+- **Watchtowers (level 2+)** sometimes pick up a vague distant **signal** ("something in the north — send the scouts"). That is not a clue — it lightly steers **Wandering Scouts** toward that sector with only a faint pull toward the lab. Level 4 towers hear signals more often. Scouts can also stumble onto the lab with no signal at all — when they do, a toast names the coordinates and the lab marker appears on that hex.
 - **Clearing a den** always awards one directional **clue** (5 total). Clues refine from a rough compass quadrant relative to your base down to a narrower arc. Wandering scouts never collect clues.
 
 Once you've secured **5 dens' worth of clues**, the map marks a **search cluster**: scouted hexes inside it get a light tint in your chosen color, and unscouted hexes there show a little more through the fog — still not the exact lab tile. Send scouts through the cluster (or keep exploring earlier) to find and assault the lab.

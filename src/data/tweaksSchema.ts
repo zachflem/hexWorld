@@ -540,6 +540,18 @@ export const tweaksSchema = z.object({
       watchtower_intel_tier_multiplier: z.number(),
       /** When true, watchtower signals stop after all den-clear clues are in. */
       stops_once_all_clues_collected: z.boolean(),
+      /**
+       * Softmax weight on compass alignment while a watchtower signal is active
+       * (`bearingStepScore` × this, then `exp`). Higher = stronger sector nudge.
+       */
+      signal_bearing_weight: z.number(),
+      /**
+       * Softmax weight on stepping closer to the true lab (`labApproachScore` × this).
+       * Keep low — signals should hint, not bee-line.
+       */
+      signal_lab_approach_weight: z.number(),
+      /** Extra score added when a candidate neighbor is the lab tile itself. */
+      signal_lab_tile_bonus: z.number(),
     }),
     den_clear_bonus: z.object({
       guaranteed_clue_per_den_clear: z.boolean(),

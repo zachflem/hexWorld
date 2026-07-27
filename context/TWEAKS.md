@@ -531,7 +531,7 @@ A converted den becomes a second, independent economic/defensive hub — a real 
 
 **Surfacing:**
 - Guaranteed: clearing a den always awards exactly one clue (`den_clear_bonus.guaranteed_clue_per_den_clear`).
-- Watchtower signal (#38): L2–L3 towers roll `per_watchtower_tick_base_chance` (0.1%/tick); L4 multiplies by `watchtower_intel_tier_multiplier` (2×). A success sets a vague 4-point **signal** (not a clue) that biases wandering-scout steps toward that sector **and** pulls toward the true lab tile. Signal clears when a wandering scout reveals the lab (or is overwritten by a newer signal).
+- Watchtower signal (#38): L2–L3 towers roll `per_watchtower_tick_base_chance` (0.1%/tick); L4 multiplies by `watchtower_intel_tier_multiplier` (2×). A success sets a vague 4-point **signal** (not a clue) that lightly biases wandering-scout steps toward that sector and faintly toward the true lab tile. Softmax weights (halved 2026-07-27 / #83): `signal_bearing_weight` (1.25), `signal_lab_approach_weight` (1.75), `signal_lab_tile_bonus` (2). Signal clears when a wandering scout reveals the lab (or is overwritten by a newer signal).
 - Stops once all 5 den clues are collected (`stops_once_all_clues_collected` — no further signals).
 - Horde alert: toast when a horde first enters an active tower's combat range.
 

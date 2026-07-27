@@ -263,7 +263,7 @@ describe("watchtower signal bias", () => {
     expect(result.scoutedTiles.length).toBeGreaterThan(1);
   });
 
-  it("with a signal, prefers stepping onto an adjacent unscouted lab", () => {
+  it("with a signal, still prefers an adjacent unscouted lab more often than chance", () => {
     const tweaks = loadRealTweaks();
     const seed = 5;
     const start = findLandCoord(seed);
@@ -272,7 +272,7 @@ describe("watchtower signal bias", () => {
     );
     expect(labNeighbor).toBeDefined();
 
-    // Many single-step trials — guided search should land on the lab often.
+    // Soft guidance (#83): should beat uniform chance, but not dominate every trial.
     let hits = 0;
     const trials = 40;
     for (let i = 0; i < trials; i++) {
@@ -291,6 +291,11 @@ describe("watchtower signal bias", () => {
       );
       if (result.labRevealed) hits += 1;
     }
-    expect(hits).toBeGreaterThan(trials * 0.5);
+    const landNeighbors = axialNeighbors(start).filter(
+      (n) => isWithinMapBounds(n, gridSize) && terrainAt(seed, n) !== "water",
+    ).length;
+    // Exclude prevCoord oscillation? First step has no prev, so all land neighbors are candidates.
+    expect(hits).toBeGreaterThan(trials / landNeighbors);
+    expect(hits).toBeLessThan(trials * 0.95);
   });
 });
