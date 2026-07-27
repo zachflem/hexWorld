@@ -3318,15 +3318,13 @@ export function GameScreen({
   }
 
   /**
-   * Passive status for the sheet Info tab. Extraction connection, noise floor
-   * contribution, tower range/damage, and consumer power draw live here because
-   * they have no other home. Base HP/noise/storage also belong here: the map HP
-   * bar is glance-only, desktop hover is suppressed while the tile is selected,
-   * and storage fill vs caps appear nowhere else on the HUD. Tombstones and
-   * siege countdowns stay map/tray-first. Selected-tile countdown timers also
-   * appear under the sheet's In progress tab (and globally in the notification
-   * tray) — see activeCountdownRows. Returns null when the selected tile has
-   * nothing to show, so the Info tab only appears when needed.
+   * Passive status for the sheet Info filter — the touch / selected-tile path
+   * for structure stats (desktop still has the mouse hover tooltip; hover is
+   * suppressed on the selected tile). Covers the same glance stats as
+   * hoverInfoFor, plus base storage fill which only belongs here. Selected-tile
+   * countdown timers also appear under In progress (and the notification tray)
+   * — see activeCountdownRows. Returns null when the selected tile has nothing
+   * to show, so the Info filter only appears when needed.
    */
   function infoSheetContent(): ReactNode | null {
     if (!selected) return null;
@@ -3365,7 +3363,60 @@ export function GameScreen({
         );
       }
     }
+    if (selectedOutpost) {
+      const status = selectedOutpost.reinforcementAction
+        ? selectedOutpost.reinforcementAction.kind === "upgrade"
+          ? `Upgrading to L${selectedOutpost.reinforcementAction.targetLevel}…`
+          : "Repairing…"
+        : "Operational";
+      const maxHp = outpostReinforcementHp(tweaks, selectedOutpost.reinforcementLevel);
+      rows.push(
+        <div key="outpost-status">{status}</div>,
+        <StatRow
+          key="outpost-hp"
+          label={`HP (L${selectedOutpost.reinforcementLevel})`}
+          current={selectedOutpost.currentHp}
+          max={maxHp}
+        />,
+      );
+    }
+    if (selectedDen) {
+      const status = selectedDen.siege
+        ? `Under siege — wave ${selectedDen.siege.waveIndex + 1}`
+        : "Hostile";
+      rows.push(
+        <div key="den-status">{status}</div>,
+        <div key="den-defense">Defense: {denDefense(tweaks, selectedDen.level).toFixed(1)}</div>,
+      );
+    }
+    if (selectedIsLab) {
+      rows.push(
+        <div key="lab-status">{lab.secured ? "Secured" : "Guarded"}</div>,
+      );
+      if (!lab.secured) {
+        rows.push(
+          <div key="lab-guardian">Guardian defense: {lab.guardianDefense.toFixed(0)}</div>,
+        );
+      }
+    }
     if (selectedTile) {
+      const status = selectedTile.buildStartedAt
+        ? "Under construction"
+        : selectedTile.damaged
+          ? selectedTile.damageRepair
+            ? "Repairing…"
+            : "Damaged"
+          : selectedTile.upgrade
+            ? `Upgrading to ${extractionTierDisplayLabel(selectedTile.upgrade.targetTier)}…`
+            : "Operational";
+      rows.push(<div key="tile-status">{status}</div>);
+      if (isStructureActive(selectedTile)) {
+        rows.push(
+          <div key="tile-yield">
+            Yield: {yieldPerSecond(tweaks, selectedTile, world.seed).toFixed(1)} {selectedTile.resource}/sec
+          </div>,
+        );
+      }
       rows.push(
         <div key="flow">
           {selectedCourierAutomated
@@ -3376,25 +3427,116 @@ export function GameScreen({
               : "Courier — automated collection"
             : "Manual collection only (upgrade to L2 to automate)"}
         </div>,
+        <div key="tile-stockpile">Stockpile: {Math.floor(selectedTile.stockpile)}</div>,
       );
+    }
+    if (selectedDock) {
+      const level = dockLevel(selectedDock);
+      const status = selectedDock.buildStartedAt
+        ? "Under construction"
+        : selectedDock.upgrade
+          ? `Upgrading to L${selectedDock.upgrade.targetLevel}…`
+          : selectedDock.fishingBoatUpgrade
+            ? "Upgrading to L3…"
+            : "Operational";
+      const automated = structureHasCourierAutomation(level);
+      rows.push(<div key="dock-status">{status}</div>);
+      if (!selectedDock.buildStartedAt) {
+        rows.push(
+          <div key="dock-yield">Yield: {dockYieldPerSecond(tweaks, selectedDock).toFixed(1)} food/sec</div>,
+        );
+      }
+      rows.push(
+        <div key="dock-courier">
+          {automated
+            ? selectedDock.courier
+              ? selectedDock.courier.phase === "toBase"
+                ? "Courier — delivering to base"
+                : "Courier — returning"
+              : "Courier — automated collection"
+            : "Manual collection only (upgrade to L2 to automate)"}
+        </div>,
+        <div key="dock-stockpile">Stockpile: {Math.floor(selectedDock.stockpile)}</div>,
+      );
+    }
+    if (selectedWall) {
+      const status = selectedWall.buildStartedAt
+        ? "Under construction"
+        : selectedWall.damaged
+          ? selectedWall.damageRepair
+            ? "Repairing…"
+            : "Damaged"
+          : selectedWall.action
+            ? selectedWall.action.kind === "upgrade"
+              ? `Upgrading to ${selectedWall.action.targetTier}…`
+              : "Repairing durability…"
+            : "Operational";
+      const maxHp = maxWallDurability(tweaks, selectedWall.tier);
+      rows.push(
+        <div key="wall-status">{status}</div>,
+        <StatRow
+          key="wall-hp"
+          label="Durability"
+          current={selectedWall.durability}
+          max={maxHp}
+        />,
+      );
+    }
+    if (selectedBarracks) {
+      const status = selectedBarracks.buildStartedAt
+        ? "Under construction"
+        : selectedBarracks.damaged
+          ? selectedBarracks.damageRepair
+            ? "Repairing…"
+            : "Damaged"
+          : selectedBarracks.upgrade
+            ? `Upgrading to L${selectedBarracks.upgrade.targetLevel}…`
+            : "Operational";
+      rows.push(<div key="barracks-status">{status}</div>);
     }
     if (selectedNoiseFloorContribution !== null) {
       rows.push(<div key="noise">Noise floor: +{selectedNoiseFloorContribution.toFixed(1)}db</div>);
     }
     if (selectedTower) {
-      rows.push(
-        <div key="tower-stats">
-          Range {towerRange(tweaks, selectedTower.level, terrainAt(world.seed, selectedTower.coord))}, damage{" "}
-          {towerDamage(tweaks, selectedTower.level).toFixed(1)}
-        </div>,
-      );
+      const status = selectedTower.buildStartedAt
+        ? "Under construction"
+        : selectedTower.damaged
+          ? selectedTower.damageRepair
+            ? "Repairing…"
+            : "Damaged"
+          : selectedTower.upgrade
+            ? `Upgrading to L${selectedTower.upgrade.targetLevel}…`
+            : "Operational";
+      rows.push(<div key="tower-status">{status}</div>);
+      if (isStructureActive(selectedTower)) {
+        rows.push(
+          <div key="tower-stats">
+            Range {towerRange(tweaks, selectedTower.level, terrainAt(world.seed, selectedTower.coord))} tiles,
+            damage {towerDamage(tweaks, selectedTower.level).toFixed(1)} DPS
+          </div>,
+        );
+      }
     }
     if (selectedPowerStation) {
+      const status = selectedPowerStation.buildStartedAt
+        ? "Under construction"
+        : selectedPowerStation.damaged
+          ? selectedPowerStation.damageRepair
+            ? "Repairing…"
+            : "Damaged"
+          : selectedPowerStation.upgrade
+            ? `Upgrading to L${selectedPowerStation.upgrade.targetLevel}…`
+            : "Operational";
+      rows.push(<div key="power-station-status">{status}</div>);
+      if (isStructureActive(selectedPowerStation)) {
+        rows.push(
+          <div key="power-station-stats">
+            Capacity {powerStationCapacity(tweaks, selectedPowerStation.level).toFixed(0)}, AoE{" "}
+            {powerStationAoeRadius(tweaks, selectedPowerStation.level)} tiles
+          </div>,
+        );
+      }
       rows.push(
-        <div key="power-station-stats">
-          Capacity {powerStationCapacity(tweaks, selectedPowerStation.level).toFixed(0)}, AoE{" "}
-          {powerStationAoeRadius(tweaks, selectedPowerStation.level)} tiles
-        </div>,
         <div key="power-station-network">
           Network draw {powerNetwork.totalDraw.toFixed(0)}/{powerNetwork.totalCapacity.toFixed(0)} (
           {Math.round(powerNetwork.factor * 100)}%)
@@ -3402,6 +3544,15 @@ export function GameScreen({
       );
     }
     if (selectedScrapYard) {
+      const status = selectedScrapYard.buildStartedAt
+        ? "Under construction"
+        : selectedScrapYard.damaged
+          ? selectedScrapYard.damageRepair
+            ? "Repairing…"
+            : "Damaged"
+          : selectedScrapYard.upgrade
+            ? `Upgrading to L${selectedScrapYard.upgrade.targetLevel}…`
+            : "Operational";
       const yardCourierAutomated = structureHasCourierAutomation(selectedScrapYard.level);
       const scrapYield = scrapYardYieldPerSecond(
         tweaks,
@@ -3413,8 +3564,11 @@ export function GameScreen({
         gridSize,
         powerNetwork,
       );
+      rows.push(<div key="scrap-yard-status">{status}</div>);
+      if (isStructureActive(selectedScrapYard)) {
+        rows.push(<div key="scrap-yard-yield">Yield: {scrapYield.toFixed(1)} steel/sec</div>);
+      }
       rows.push(
-        <div key="scrap-yard-yield">Yield: {scrapYield.toFixed(1)} steel/sec</div>,
         <div key="scrap-yard-stockpile">Stockpile: {Math.floor(selectedScrapYard.stockpile)} steel</div>,
         <div key="scrap-yard-courier">
           {yardCourierAutomated

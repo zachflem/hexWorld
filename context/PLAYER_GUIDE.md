@@ -41,6 +41,8 @@ All three wipe current progress, so use them deliberately.
 
 Bottom-left hex buttons: **zoom in**, **zoom out** (tap or hold to keep zooming), and **recenter on base** (keeps your current zoom). Scroll-wheel / pinch zoom still work on the map itself. The bottom-right cluster opens panels (garrisons, intelligence, personnel, research, settings). **Personnel** lists owned combat units, scout assets, and food upkeep per second; **Intelligence** shows lab clues and watchtower signals.
 
+Select any structure (or den, lab, scrap stash, tombstone) to open its tile sheet — the **Info** filter shows status and stats (yield, durability, range, power draw, and so on). On desktop, hovering a tile also shows a short tooltip; on touch, use **Info**.
+
 The top-left resource bar shows stockpile amounts; a small green/red **±** next to an amount is the live net rate per second (inflow minus upkeep; hidden when roughly zero or that resource is at cap).
 ---
 
