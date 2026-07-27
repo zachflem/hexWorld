@@ -1,12 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { defaultOpenFormKey, defaultTabKey, deriveSheetTabs, type SheetAction } from "./TileActionSheet";
+import {
+  defaultOpenFormKey,
+  defaultFilterKey,
+  deriveSheetModel,
+  listPriority,
+  type SheetAction,
+} from "./TileActionSheet";
 
 function leaf(partial: Partial<SheetAction> & Pick<SheetAction, "key" | "title">): SheetAction {
   return { icon: null, ...partial };
 }
 
-describe("deriveSheetTabs", () => {
-  it("puts Upgrades first, category tabs next, Actions before Info", () => {
+describe("listPriority", () => {
+  it("ranks tile tasks above upgrades, garrison, and other", () => {
+    expect(listPriority("train", "train-militia", false)).toBe(1);
+    expect(listPriority("actions", "collect", false)).toBe(1);
+    expect(listPriority("upgrades", "tower-upgrade", false)).toBe(2);
+    expect(listPriority("garrison", "garrison-manage", false)).toBe(3);
+    expect(listPriority("build-civil", "build-power-station", false)).toBe(4);
+    expect(listPriority("actions", "demolish", false)).toBe(4);
+  });
+
+  it("boosts preferDefault Garrison above tile tasks", () => {
+    expect(listPriority("garrison", "garrison-manage", true)).toBe(0);
+  });
+
+  it("keeps in-progress / arrival orders urgent", () => {
+    expect(listPriority("in-progress", "busy-tower-build", false)).toBe(0);
+    expect(listPriority("arrival-orders", "arrival-redeploy", false)).toBe(0);
+  });
+});
+
+describe("deriveSheetModel", () => {
+  it("prefixes All and keeps category filters for narrowing", () => {
     const actions: SheetAction[] = [
       leaf({ key: "garrison", title: "Garrison" }),
       leaf({
@@ -23,89 +49,40 @@ describe("deriveSheetTabs", () => {
       leaf({ key: "info", title: "Info", infoContent: "stats" }),
     ];
 
-    const tabs = deriveSheetTabs(actions);
-    expect(tabs.map((t) => t.key)).toEqual(["upgrades", "train", "actions", "info"]);
-    expect(tabs[0]?.items?.map((i) => i.key)).toEqual(["tower-upgrade"]);
-    expect(tabs[2]?.items?.map((i) => i.key)).toEqual(["garrison"]);
+    const { filters, allEntries } = deriveSheetModel(actions);
+    expect(filters.map((t) => t.key)).toEqual(["all", "upgrades", "train", "actions", "info"]);
+    expect(allEntries.map((e) => e.action.key)).toEqual(["train-militia", "tower-upgrade", "garrison"]);
   });
 
-  it("keeps Actions last when there are no upgrades", () => {
+  it("sorts usable tile tasks before upgrades before other; disabled sink", () => {
     const actions: SheetAction[] = [
-      leaf({ key: "collect", title: "Collect" }),
-      {
-        key: "build-civil",
-        icon: null,
-        title: "Civil",
-        subActions: [leaf({ key: "build-power-station", title: "Build power station" })],
-      },
-    ];
-
-    expect(deriveSheetTabs(actions).map((t) => t.key)).toEqual(["build-civil", "actions"]);
-  });
-
-  it("gives base garrison its own category tab beside storage", () => {
-    const actions: SheetAction[] = [
-      leaf({ key: "base-upgrade", title: "Upgrade base to L2", upgradeAvailable: true }),
-      {
-        key: "storage-upgrade",
-        icon: null,
-        title: "Storage",
-        subActions: [leaf({ key: "food", title: "food → L2" })],
-      },
-      {
-        key: "garrison",
-        icon: null,
-        title: "Garrison",
-        subActions: [leaf({ key: "garrison-manage", title: "Garrison" })],
-      },
-    ];
-
-    const tabs = deriveSheetTabs(actions);
-    expect(tabs.map((t) => t.key)).toEqual(["upgrades", "storage-upgrade", "garrison"]);
-    expect(tabs[2]?.items?.map((i) => i.key)).toEqual(["garrison-manage"]);
-  });
-
-  it("groups reinforcement upgrades under Upgrades even when unaffordable", () => {
-    const actions: SheetAction[] = [
-      leaf({
-        key: "base-reinforce",
-        title: "Upgrade reinforcement to 120 HP",
-        disabled: true,
-        upgradeAvailable: false,
-      }),
-      leaf({ key: "base-repair", title: "Repair base" }),
-    ];
-
-    const tabs = deriveSheetTabs(actions);
-    expect(tabs.map((t) => t.key)).toEqual(["upgrades", "actions"]);
-    expect(tabs[0]?.upgradeAvailable).toBe(false);
-    expect(tabs[0]?.items?.map((i) => i.key)).toEqual(["base-reinforce"]);
-    expect(tabs[1]?.items?.map((i) => i.key)).toEqual(["base-repair"]);
-  });
-
-  it("puts In progress ahead of Upgrades when a tile has active timers", () => {
-    const actions: SheetAction[] = [
+      leaf({ key: "demolish", title: "Demolish" }),
       leaf({
         key: "tower-upgrade",
         title: "Upgrade to L2",
+        disabled: true,
+        upgradeAvailable: false,
+      }),
+      leaf({ key: "collect", title: "Collect" }),
+      leaf({
+        key: "base-upgrade",
+        title: "Upgrade base to L2",
         upgradeAvailable: true,
       }),
-      {
-        key: "in-progress",
-        icon: null,
-        title: "In progress",
-        subActions: [leaf({ key: "busy-tower-build", title: "Building tower", detail: "2m remaining" })],
-      },
-      leaf({ key: "demolish", title: "Demolish" }),
     ];
 
-    const tabs = deriveSheetTabs(actions);
-    expect(tabs.map((t) => t.key)).toEqual(["in-progress", "upgrades", "actions"]);
-    expect(tabs[0]?.items?.map((i) => i.key)).toEqual(["busy-tower-build"]);
+    const { allEntries } = deriveSheetModel(actions);
+    expect(allEntries.map((e) => e.action.key)).toEqual([
+      "collect",
+      "base-upgrade",
+      "demolish",
+      "tower-upgrade",
+    ]);
   });
 
-  it("prefers a preferDefault Garrison tab over upgrade highlights", () => {
+  it("puts Garrison ahead of everything when preferDefault (horde threat)", () => {
     const actions: SheetAction[] = [
+      leaf({ key: "collect", title: "Collect" }),
       leaf({
         key: "tower-upgrade",
         title: "Upgrade to L2",
@@ -126,12 +103,83 @@ describe("deriveSheetTabs", () => {
       },
     ];
 
-    const tabs = deriveSheetTabs(actions);
-    expect(defaultTabKey(tabs)).toBe("garrison");
-    expect(defaultOpenFormKey(tabs, "garrison")).toBe("garrison-manage");
+    const { filters, allEntries } = deriveSheetModel(actions);
+    expect(allEntries.map((e) => e.action.key)).toEqual([
+      "garrison-manage",
+      "collect",
+      "tower-upgrade",
+    ]);
+    expect(defaultFilterKey(filters)).toBe("all");
+    expect(defaultOpenFormKey(filters, "all")).toBe("garrison-manage");
   });
 
-  it("still ranks In progress above preferDefault Garrison", () => {
+  it("gives base garrison its own filter beside storage", () => {
+    const actions: SheetAction[] = [
+      leaf({ key: "base-upgrade", title: "Upgrade base to L2", upgradeAvailable: true }),
+      {
+        key: "storage-upgrade",
+        icon: null,
+        title: "Storage",
+        subActions: [leaf({ key: "food", title: "food → L2" })],
+      },
+      {
+        key: "garrison",
+        icon: null,
+        title: "Garrison",
+        subActions: [leaf({ key: "garrison-manage", title: "Garrison" })],
+      },
+    ];
+
+    const { filters, allEntries } = deriveSheetModel(actions);
+    expect(filters.map((t) => t.key)).toEqual(["all", "upgrades", "storage-upgrade", "garrison"]);
+    // Storage + base upgrade share the upgrades band; garrison trails.
+    expect(allEntries.map((e) => e.action.key)).toEqual(["food", "base-upgrade", "garrison-manage"]);
+  });
+
+  it("groups reinforcement upgrades under Upgrades even when unaffordable", () => {
+    const actions: SheetAction[] = [
+      leaf({
+        key: "base-reinforce",
+        title: "Upgrade reinforcement to 120 HP",
+        disabled: true,
+        upgradeAvailable: false,
+      }),
+      leaf({ key: "base-repair", title: "Repair base" }),
+    ];
+
+    const { filters, allEntries } = deriveSheetModel(actions);
+    expect(filters.map((t) => t.key)).toEqual(["all", "upgrades", "actions"]);
+    expect(filters.find((f) => f.key === "upgrades")?.upgradeAvailable).toBe(false);
+    expect(allEntries.map((e) => e.action.key)).toEqual(["base-repair", "base-reinforce"]);
+    expect(allEntries.find((e) => e.action.key === "base-reinforce")?.categoryKey).toBe("upgrades");
+  });
+
+  it("puts In progress at the top of the All list", () => {
+    const actions: SheetAction[] = [
+      leaf({
+        key: "tower-upgrade",
+        title: "Upgrade to L2",
+        upgradeAvailable: true,
+      }),
+      {
+        key: "in-progress",
+        icon: null,
+        title: "In progress",
+        subActions: [leaf({ key: "busy-tower-build", title: "Building tower", detail: "2m remaining" })],
+      },
+      leaf({ key: "demolish", title: "Demolish" }),
+    ];
+
+    const { filters, allEntries } = deriveSheetModel(actions);
+    expect(filters.map((t) => t.key)).toEqual(["all", "in-progress", "upgrades", "actions"]);
+    expect(allEntries.map((e) => e.action.key)).toEqual([
+      "busy-tower-build",
+      "tower-upgrade",
+      "demolish",
+    ]);
+  });
+
+  it("still ranks In progress above preferDefault Garrison in the list", () => {
     const actions: SheetAction[] = [
       {
         key: "in-progress",
@@ -148,8 +196,71 @@ describe("deriveSheetTabs", () => {
       },
     ];
 
-    const tabs = deriveSheetTabs(actions);
-    expect(defaultTabKey(tabs)).toBe("in-progress");
-    expect(defaultOpenFormKey(tabs, "in-progress")).toBeNull();
+    const { filters, allEntries } = deriveSheetModel(actions);
+    expect(defaultFilterKey(filters)).toBe("all");
+    expect(allEntries.map((e) => e.action.key)).toEqual(["busy", "garrison-manage"]);
+    // In-progress outranks auto-opening the garrison form.
+    expect(defaultOpenFormKey(filters, "all")).toBeNull();
+  });
+
+  it("defaults to All even when an upgrade is available", () => {
+    const actions: SheetAction[] = [
+      leaf({
+        key: "tower-upgrade",
+        title: "Upgrade to L2",
+        upgradeAvailable: true,
+      }),
+      {
+        key: "build-civil",
+        icon: null,
+        title: "Civil",
+        subActions: [leaf({ key: "build-power-station", title: "Build power station" })],
+      },
+    ];
+
+    const { filters } = deriveSheetModel(actions);
+    expect(defaultFilterKey(filters)).toBe("all");
+  });
+
+  it("scrap yard: All shows only closest stash; Actions keeps every stash", () => {
+    const actions: SheetAction[] = [
+      leaf({
+        key: "scrap-yard-upgrade",
+        title: "Upgrade to L2",
+        upgradeAvailable: true,
+      }),
+      leaf({
+        key: "scrapper-assign-near",
+        title: "Assign Scrapper — stash (10 steel)",
+        distance: 2,
+        allListClosestGroup: "scrapper-assign",
+      }),
+      leaf({
+        key: "scrapper-assign-far",
+        title: "Assign Scrapper — stash (40 steel)",
+        distance: 8,
+        allListClosestGroup: "scrapper-assign",
+      }),
+      leaf({ key: "collect-scrap-yard", title: "Collect" }),
+      leaf({ key: "demolish", title: "Demolish" }),
+    ];
+
+    const { filters, allEntries } = deriveSheetModel(actions);
+    expect(allEntries.map((e) => e.action.key)).toEqual([
+      "collect-scrap-yard",
+      "scrapper-assign-near",
+      "scrap-yard-upgrade",
+      "demolish",
+    ]);
+    const actionsFilter = filters.find((f) => f.key === "actions");
+    expect(actionsFilter?.items?.map((i) => i.key)).toEqual(
+      expect.arrayContaining([
+        "scrapper-assign-near",
+        "scrapper-assign-far",
+        "collect-scrap-yard",
+        "demolish",
+      ]),
+    );
+    expect(actionsFilter?.items).toHaveLength(4);
   });
 });

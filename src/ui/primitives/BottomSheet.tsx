@@ -41,7 +41,7 @@ export function BottomSheet({
   title: string;
   onClose: () => void;
   children: ReactNode;
-  /** Pinned between the title bar and the scrollable body (e.g. category tabs). */
+  /** Pinned between the title bar and the scrollable body (e.g. category filters). */
   toolbar?: ReactNode;
   footer?: ReactNode;
   /** When this changes, the body scrolls back to top (tab / form navigation). */

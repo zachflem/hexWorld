@@ -2064,7 +2064,8 @@ export function GameScreen({
    * tile — mirrors the old TilePopup / TileActionRing gates branch for
    * branch (same *OptionFor helpers, same handlers). Multi-choice actions
    * (which resource to extract, which storage to upgrade) collapse into
-   * category tabs via `subActions` rather than a flat root list.
+   * category groups via `subActions` rather than a flat root list (the sheet
+   * flattens them into one list with filter pills).
    *
    * Called by sheetActionsFor below, which appends the universal
    * owned-tile-regardless-of-structure actions (Collect, Garrison, Demolish)
@@ -2444,21 +2445,22 @@ export function GameScreen({
           const canAssign =
             knownStashes.length > 0 && (!trip || (trip.phase === "idle" && trip.assignedStashId == null));
           if (canAssign) {
-            actions.push({
-              key: "scrapper-assign",
-              icon: <HardHat size={18} />,
-              title: "Assign Scrapper",
-              detail: "Send to a known stash",
-              subActions: knownStashes.map((stash) => ({
+            // Flatten stash targets as Actions leaves. All shows only the
+            // closest; the Actions filter lists every known stash (#71).
+            for (const stash of knownStashes) {
+              const distance = axialDistance(selectedScrapYard.coord, stash.coord);
+              actions.push({
                 key: `scrapper-assign-${stash.id}`,
                 icon: resourceIcon("steel", 18),
-                title: `Stash (${Math.floor(stash.remainingSteel)} steel)`,
-                detail: `Distance ${axialDistance(selectedScrapYard.coord, stash.coord)}`,
+                title: `Assign Scrapper — stash (${Math.floor(stash.remainingSteel)} steel)`,
+                detail: `Distance ${distance}`,
+                distance,
+                allListClosestGroup: "scrapper-assign",
                 onClick: () => {
                   void handleAssignScrapperStash(selectedScrapYard.coord, stash.id);
                 },
-              })),
-            });
+              });
+            }
           }
           if (trip && trip.phase !== "idle") {
             actions.push({
@@ -2677,7 +2679,7 @@ export function GameScreen({
     // Empty, buildable, owned land — every structure category is
     // independently available here (they're not mutually exclusive choices
     // at the "what can go here" stage, see GameScreen's selectedEmpty gate),
-    // grouped under two category tabs — Civil (resource extraction, power)
+    // grouped under two category filters — Civil (resource extraction, power)
     // and Military (tower, wall, barracks).
     const emptyBuildableGate = isOwned(selected) && selectedEmpty && !selectedIsBase && isBuildableLand(world.seed, selected);
     if (emptyBuildableGate) {
@@ -4055,7 +4057,7 @@ export function GameScreen({
   const sheetActions = sheetActionsFor(countdownRows);
   const structureProgressMap = structureProgressByKey(countdownRows);
   // Suppressed on the currently-selected tile — the action sheet (and Info
-  // tab, where applicable) already covers the same ground, and the two
+  // filter, where applicable) already covers the same ground, and the two
   // floating panels would otherwise visually collide.
   const hoverInfoContent =
     hoveredCoord && !(selected && axialEquals(hoveredCoord, selected)) ? hoverInfoFor(hoveredCoord) : null;

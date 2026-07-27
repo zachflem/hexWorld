@@ -63,7 +63,7 @@ You begin owning your base tile plus the two full rings around it (19 tiles) out
 
 Four stockpile types, in ascending rarity: **food → wood → stone → steel**. Rarer resources yield less per tile and generate more noise while being gathered.
 
-Each resource has its own **storage cap** at your base (1000 at level 1, doubling per storage upgrade level — upgraded per-resource from the base tile sheet’s **Storage** tab; first upgrade takes **2 minutes**, each further level **+50%** on that timer, and progress shows in the notification tray). Separate from the global tech tree under [Research](#research). The base sheet’s **Info** tab shows how full each stockpile is against its current cap.
+Each resource has its own **storage cap** at your base (1000 at level 1, doubling per storage upgrade level — upgraded per-resource from the base tile sheet’s **Storage** filter; first upgrade takes **2 minutes**, each further level **+50%** on that timer, and progress shows in the notification tray). Separate from the global tech tree under [Research](#research). The base sheet’s **Info** filter shows how full each stockpile is against its current cap.
 
 **Power** is not stockpiled. Build a **power station** on owned land to cover nearby tiles with capacity. Upgrade the station for more capacity and a wider area. Level-1 buildings work anywhere without power; upgraded (level/tier 2+) buildings — including Scrap Yards — need coverage. If demand exceeds supply you’ll **brown out** (slower yield/DPS/etc.); past the cut-off they go offline (“No power”), which also freezes Scrapper progress and clears last-mile couriers.
 
@@ -231,7 +231,7 @@ When a row appears it stays **fully expanded for 5 seconds**, then the text/coun
 
 When several timers are running, collapsed icons stack in that column so you can see at a glance how much is in flight.
 
-On the map, any building with a timed job also shows a **circular progress ring** that fills as the timer runs — amber for builds, orange for upgrades, green for repairs, purple for training, blue for base relocation. Opening that tile’s sheet adds an **In progress** tab listing those jobs with remaining time — handy when you want the detail without hunting the notification tray.
+On the map, any building with a timed job also shows a **circular progress ring** that fills as the timer runs — amber for builds, orange for upgrades, green for repairs, purple for training, blue for base relocation. Opening that tile’s sheet lists those jobs under **In progress** (at the top of the combined action list, or via that filter) with remaining time — handy when you want the detail without hunting the notification tray.
 
 ---
 
