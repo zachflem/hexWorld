@@ -4,7 +4,7 @@ import type { ScrapYardRecord, ScrapperTrip } from "../data/scrapYards";
 import { idleScrapperTrip } from "../data/scrapYards";
 import type { TerritoryRecord } from "../data/territory";
 import type { Tweaks } from "../data/tweaksSchema";
-import { axialDistance, axialKey, type Axial } from "./hexCoords";
+import { axialDistance, axialEquals, axialKey, type Axial } from "./hexCoords";
 import {
   findExpeditionRouteFrom,
   stepCorridorWalk,
@@ -199,6 +199,8 @@ export function assignScrapperStash(
 /**
  * Pull the Scrapper home and clear its stash assignment (Q47) — on arrival it
  * idles at the yard instead of auto-looping the old stash. Cargo is kept (Q38).
+ * If the Scrapper is still on the yard hex (just assigned / not yet moved),
+ * clear the assignment and idle immediately — startLeg cannot path yard→yard.
  */
 export function recallScrapperToYard(
   tweaks: Tweaks,
@@ -215,6 +217,18 @@ export function recallScrapperToYard(
 
   const from =
     trip.path.length > 0 ? (trip.path[scrapperPathIndexAt(trip, now)] ?? yard.coord) : yard.coord;
+
+  // Already home — no return leg needed; drop the stash job and park.
+  if (axialEquals(from, yard.coord)) {
+    return {
+      ...yard,
+      scrapper: {
+        ...idleScrapperTrip(),
+        cargo: trip.cargo,
+      },
+    };
+  }
+
   const speed = scrapperSpeedMultiplier(tweaks, yard.level);
   const next = startLeg(
     tweaks,

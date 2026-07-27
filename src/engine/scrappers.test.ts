@@ -136,7 +136,7 @@ describe("scrappers", () => {
     expect(afterDeliver.scrapYards[0]!.scrapper?.cargo).toBe(0);
   });
 
-  it("recall clears the stash assignment so arrival does not auto-redeploy", () => {
+  it("recall at the yard clears the stash assignment and idles immediately", () => {
     const tweaks = loadRealTweaks();
     const base = { q: 0, r: 0 };
     const yardCoord = { q: 1, r: 0 };
@@ -158,7 +158,9 @@ describe("scrappers", () => {
       now,
     );
     expect(startedYard).not.toBeNull();
+    expect(startedYard!.scrapper?.phase).toBe("toStash");
 
+    // Still on the yard hex one tick later — no yard→yard path; park + clear.
     const recalled = recallScrapperToYard(
       tweaks,
       seed,
@@ -167,6 +169,47 @@ describe("scrappers", () => {
       [],
       gridSize,
       now + 1,
+    );
+    expect(recalled).not.toBeNull();
+    expect(recalled!.scrapper?.phase).toBe("idle");
+    expect(recalled!.scrapper?.assignedStashId).toBeNull();
+  });
+
+  it("recall mid-route clears assignment so arrival does not auto-redeploy", () => {
+    const tweaks = loadRealTweaks();
+    const base = { q: 0, r: 0 };
+    const yardCoord = { q: 1, r: 0 };
+    const stashCoord = { q: 2, r: 0 };
+    const owned = [base, yardCoord, stashCoord];
+    const territory = { base, owned };
+    const seed = 1;
+    const gridSize = 32;
+    const now = 1_000;
+
+    const startedYard = assignScrapperStash(
+      tweaks,
+      seed,
+      yard({ coord: yardCoord }),
+      stash({ coord: stashCoord, remainingSteel: 40 }),
+      territory,
+      [],
+      gridSize,
+      now,
+    );
+    expect(startedYard).not.toBeNull();
+    const trip = startedYard!.scrapper!;
+    expect(trip.path.length).toBeGreaterThanOrEqual(2);
+
+    // Advance to the far hex so recall must build a real return leg.
+    const midNow = trip.arriveAt;
+    const recalled = recallScrapperToYard(
+      tweaks,
+      seed,
+      startedYard!,
+      territory,
+      [],
+      gridSize,
+      midNow,
     );
     expect(recalled).not.toBeNull();
     expect(recalled!.scrapper?.phase).toBe("toYard");
