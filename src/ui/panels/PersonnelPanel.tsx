@@ -1,28 +1,42 @@
 import type { UnitsRecord } from "../../data/units";
 import type { GarrisonsRecord } from "../../data/garrisons";
 import type { Barracks } from "../../data/barracks";
+import type { ScoutSkiffsRecord } from "../../data/scoutSkiffs";
+import type { WanderingScoutsRecord } from "../../data/wanderingScouts";
 import type { Tweaks } from "../../data/tweaksSchema";
 import {
   crossBowSniperCapacity,
   junkyardKnightCapacity,
   militiaCapacity,
 } from "../../engine/barracks";
-import { garrisonedCrossBowSniperTotal, garrisonedJunkyardKnightTotal, garrisonedMilitiaTotal } from "../../engine/garrisons";
+import {
+  garrisonedCrossBowSniperTotal,
+  garrisonedJunkyardKnightTotal,
+  garrisonedMilitiaTotal,
+} from "../../engine/garrisons";
+import { totalUpkeepPerSecond, type UnitCommitments } from "../../engine/units";
 import { BottomSheet } from "../primitives/BottomSheet";
+import { SheetInfoCard, SheetSectionLabel } from "../primitives/SheetListItem";
 import { StatRow } from "../primitives/StatRow";
 
-/** Standing-army totals + capacities across the whole territory, at a glance — previously only visible one barracks at a time via the tile popup. */
-export function MilitaryPanel({
+/** Owned units + outgoing food upkeep — formerly MilitaryPanel. */
+export function PersonnelPanel({
   tweaks,
   units,
   garrisons,
   barracksList,
+  scoutSkiffs,
+  wanderingScouts,
+  commitments,
   onClose,
 }: {
   tweaks: Tweaks;
   units: UnitsRecord;
   garrisons: GarrisonsRecord;
   barracksList: Barracks[];
+  scoutSkiffs: ScoutSkiffsRecord;
+  wanderingScouts: WanderingScoutsRecord;
+  commitments?: UnitCommitments;
   onClose: () => void;
 }) {
   const militiaCap = militiaCapacity(tweaks, barracksList);
@@ -31,9 +45,14 @@ export function MilitaryPanel({
   const garrisonedMilitia = garrisonedMilitiaTotal(garrisons);
   const garrisonedKnights = garrisonedJunkyardKnightTotal(garrisons);
   const garrisonedSnipers = garrisonedCrossBowSniperTotal(garrisons);
+  const foodUpkeepPerSec = totalUpkeepPerSecond(tweaks, units, commitments);
+  const upkeepDisplay =
+    foodUpkeepPerSec === 0
+      ? "0/sec"
+      : `−${foodUpkeepPerSec < 0.1 ? foodUpkeepPerSec.toFixed(3) : foodUpkeepPerSec.toFixed(2)}/sec`;
 
   return (
-    <BottomSheet open title="Military" onClose={onClose}>
+    <BottomSheet open title="Personnel" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
         <StatRow
           label="Militia"
@@ -63,6 +82,21 @@ export function MilitaryPanel({
               : undefined
           }
         />
+
+        <SheetInfoCard>
+          <span>Scout skiffs: {scoutSkiffs.length}</span>
+          <span>Wandering scouts: {wanderingScouts.length}</span>
+        </SheetInfoCard>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+          <SheetSectionLabel>Outgoing requirements</SheetSectionLabel>
+          <SheetInfoCard>
+            <span>Food upkeep: {upkeepDisplay}</span>
+            <span style={{ opacity: 0.7, fontSize: "0.78rem" }}>
+              Barracks-idle combat units only — same rate as the top resource bar.
+            </span>
+          </SheetInfoCard>
+        </div>
       </div>
     </BottomSheet>
   );

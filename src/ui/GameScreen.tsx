@@ -245,10 +245,10 @@ import {
 } from "./menu/PowerStatusPinOverlay";
 import { formatCost, formatDuration } from "./format";
 import { GarrisonsPanel } from "./panels/GarrisonsPanel";
-import { ScoutingPanel } from "./panels/ScoutingPanel";
+import { IntelligencePanel } from "./panels/IntelligencePanel";
+import { PersonnelPanel } from "./panels/PersonnelPanel";
 import { DevToolsPanel, type DevLabMode } from "./panels/DevToolsPanel";
 import { labSearchZoneCenter } from "../engine/lab";
-import { MilitaryPanel } from "./panels/MilitaryPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
 import {
   Anchor,
@@ -275,7 +275,7 @@ import {
   Zap,
 } from "lucide-react";
 
-type OpenPanel = "garrisons" | "scouting" | "military" | "settings" | "research" | "dev";
+type OpenPanel = "garrisons" | "intelligence" | "personnel" | "settings" | "research" | "dev";
 
 /**
  * Reuses the same painted sprites HexCanvas draws on the map — ring-hex actions
@@ -610,8 +610,8 @@ export function GameScreen({
   const [hoveredCoord, setHoveredCoord] = useState<Axial | null>(null);
   /** Which of the global hex cluster's panel slots is open, if any. Only one at a time. Dismissed via BottomSheet Close/backdrop. */
   const [openPanel, setOpenPanel] = useState<OpenPanel | null>(null);
-  /** Hammer slot — highlights owned/empty/buildable tiles with an affordable build option, see buildModeEligibleKeysFor below. */
-  const [buildModeActive, setBuildModeActive] = useState(false);
+  /** Hammer slot parked (UI commented out) — leave false; re-add setter when re-enabling Build mode. */
+  const [buildModeActive] = useState(false);
   /** Dev-server-only — reveals the whole map through fog of war. Session-local; never persisted. */
   const [fogDisabled, setFogDisabled] = useState(false);
   /** Dev-server-only — Off | final-clue search hint | exact lab reveal. */
@@ -4184,18 +4184,18 @@ export function GameScreen({
             onClick: () => toggleOpenPanel("garrisons"),
           },
           {
-            key: "scouting",
+            key: "intelligence",
             icon: <Binoculars size={20} />,
-            title: "Scouting",
-            active: openPanel === "scouting",
-            onClick: () => toggleOpenPanel("scouting"),
+            title: "Intelligence",
+            active: openPanel === "intelligence",
+            onClick: () => toggleOpenPanel("intelligence"),
           },
           {
-            key: "military",
+            key: "personnel",
             icon: <Swords size={20} />,
-            title: "Military",
-            active: openPanel === "military",
-            onClick: () => toggleOpenPanel("military"),
+            title: "Personnel",
+            active: openPanel === "personnel",
+            onClick: () => toggleOpenPanel("personnel"),
           },
           {
             key: "research",
@@ -4207,13 +4207,14 @@ export function GameScreen({
             highlight: hasStartableResearch(tweaks, research, resources) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
             onClick: () => toggleOpenPanel("research"),
           },
-          {
-            key: "build-mode",
-            icon: <Hammer size={20} />,
-            title: buildModeActive ? "Exit build mode" : "Build mode",
-            active: buildModeActive,
-            onClick: () => setBuildModeActive((v) => !v),
-          },
+          // Build mode (affordable empty-tile tint) parked — low value; leave state/logic below to re-enable.
+          // {
+          //   key: "build-mode",
+          //   icon: <Hammer size={20} />,
+          //   title: buildModeActive ? "Exit build mode" : "Build mode",
+          //   active: buildModeActive,
+          //   onClick: () => setBuildModeActive((v) => !v),
+          // },
           {
             key: "settings",
             icon: <Settings size={20} />,
@@ -4242,18 +4243,31 @@ export function GameScreen({
       {openPanel === "garrisons" && (
         <GarrisonsPanel garrisons={garrisons} garrisonRecalls={garrisonRecalls} now={now} onClose={() => setOpenPanel(null)} />
       )}
-      {openPanel === "scouting" && (
-        <ScoutingPanel
+      {openPanel === "intelligence" && (
+        <IntelligencePanel
           tweaks={tweaks}
-          scoutSkiffs={scoutSkiffs}
-          wanderingScouts={wanderingScouts}
           lab={lab}
           base={territory.base}
           onClose={() => setOpenPanel(null)}
         />
       )}
-      {openPanel === "military" && (
-        <MilitaryPanel tweaks={tweaks} units={units} garrisons={garrisons} barracksList={barracksList} onClose={() => setOpenPanel(null)} />
+      {openPanel === "personnel" && (
+        <PersonnelPanel
+          tweaks={tweaks}
+          units={units}
+          garrisons={garrisons}
+          barracksList={barracksList}
+          scoutSkiffs={scoutSkiffs}
+          wanderingScouts={wanderingScouts}
+          commitments={{
+            garrisons,
+            expeditions,
+            denAssaults,
+            garrisonRecalls,
+            labAssaults,
+          }}
+          onClose={() => setOpenPanel(null)}
+        />
       )}
       {openPanel === "settings" && (
         <SettingsPanel

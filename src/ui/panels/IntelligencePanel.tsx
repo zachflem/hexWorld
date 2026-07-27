@@ -1,24 +1,18 @@
 import type { Axial } from "../../engine/hexCoords";
-import type { ScoutSkiffsRecord } from "../../data/scoutSkiffs";
-import type { WanderingScoutsRecord } from "../../data/wanderingScouts";
 import type { LabRecord } from "../../data/lab";
 import type { Tweaks } from "../../data/tweaksSchema";
 import { labClueText } from "../../engine/lab";
 import { BottomSheet } from "../primitives/BottomSheet";
 import { SheetInfoCard, SheetListItem, SheetSectionLabel } from "../primitives/SheetListItem";
 
-/** Scouting/exploration status + the lab's clue history — previously the clue count/latest hint lived in the HUD header with no history, and skiffs/wandering scouts had no summary view at all. */
-export function ScoutingPanel({
+/** Lab clues and intel returns — formerly ScoutingPanel (unit logistics moved to Personnel). */
+export function IntelligencePanel({
   tweaks,
-  scoutSkiffs,
-  wanderingScouts,
   lab,
   base,
   onClose,
 }: {
   tweaks: Tweaks;
-  scoutSkiffs: ScoutSkiffsRecord;
-  wanderingScouts: WanderingScoutsRecord;
   lab: LabRecord;
   base: Axial;
   onClose: () => void;
@@ -29,15 +23,13 @@ export function ScoutingPanel({
   }));
 
   return (
-    <BottomSheet open title="Scouting" onClose={onClose}>
+    <BottomSheet open title="Intelligence" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
-        <SheetInfoCard>
-          <span>Scout skiffs: {scoutSkiffs.length}</span>
-          <span>Wandering scouts: {wanderingScouts.length}</span>
-          {lab.watchtowerSignal ? (
+        {lab.watchtowerSignal ? (
+          <SheetInfoCard>
             <span>Watchtower signal: {lab.watchtowerSignal.bearing}</span>
-          ) : null}
-        </SheetInfoCard>
+          </SheetInfoCard>
+        ) : null}
 
         <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
           <SheetSectionLabel>
@@ -47,7 +39,8 @@ export function ScoutingPanel({
             <SheetListItem title="Lab secured" detail="You win." />
           ) : clueHistory.length === 0 ? (
             <p style={{ margin: 0, opacity: 0.7, fontSize: "0.85rem" }}>
-              No clues yet — clear dens to gather directional lab clues. Watchtower signals guide scouts separately.
+              No clues yet — clear dens to gather directional lab clues. Watchtower signals guide scouts
+              separately.
             </p>
           ) : (
             clueHistory.map(({ n, text }) => (

@@ -29,7 +29,7 @@ The original “watchtower drips clues on tick” leftover (#37) was **redesigne
 - `src/App.tsx` — tick wiring (signals, den-clear clues, lab assault → win)
 - `src/render/HexCanvas.tsx` — search-zone overlays; dev Lab preview modes
 - `src/ui/WinScreen.tsx` / `src/data/gameStatus.ts` — win state
-- `src/ui/panels/ScoutingPanel.tsx` — clue history + active signal
+- `src/ui/panels/IntelligencePanel.tsx` — clue history + active signal (formerly ScoutingPanel; #69)
 - `src/ui/panels/DevToolsPanel.tsx` — DEV cycle Off / Show hint / Reveal lab
 
 ## Acceptance

@@ -31,7 +31,7 @@ Out of scope for this pass: DESIGN §11 twelve-tier intel-depth / progressive ti
 - `src/engine/lab.ts` — `rollWatchtowerSignal`, compass helpers, toast copy
 - `src/engine/wanderingScouts.ts` — bearing-weighted steps + lab pull while signal active
 - `src/App.tsx` — tick wiring + horde alerts
-- `src/ui/panels/ScoutingPanel.tsx` — active signal line
+- `src/ui/panels/IntelligencePanel.tsx` — active signal line (formerly ScoutingPanel; #69)
 
 ### Acceptance
 
