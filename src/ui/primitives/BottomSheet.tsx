@@ -36,6 +36,8 @@ export function BottomSheet({
   footer,
   scrollKey,
   style,
+  /** Backdrop z-index; sheet uses layer + 1. Raise for stacked sheets (e.g. confirm over Settings). */
+  layer = 50,
 }: {
   open: boolean;
   title: string;
@@ -47,6 +49,7 @@ export function BottomSheet({
   /** When this changes, the body scrolls back to top (tab / form navigation). */
   scrollKey?: string | number;
   style?: CSSProperties;
+  layer?: number;
 }) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [canScrollUp, setCanScrollUp] = useState(false);
@@ -123,7 +126,7 @@ export function BottomSheet({
           position: "fixed",
           inset: 0,
           background: "rgba(0, 0, 0, 0.35)",
-          zIndex: 50,
+          zIndex: layer,
         }}
       />
       <div
@@ -154,7 +157,7 @@ export function BottomSheet({
           borderRadius: "12px 12px 0 0",
           border: "1px solid rgba(255, 255, 255, 0.1)",
           borderBottom: "none",
-          zIndex: 51,
+          zIndex: layer + 1,
           pointerEvents: "auto",
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
           boxShadow: "0 -8px 32px rgba(0, 0, 0, 0.45)",

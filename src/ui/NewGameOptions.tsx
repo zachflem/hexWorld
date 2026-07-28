@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { CSSProperties } from "react";
 import { generateSeed } from "../data/world";
+import { useConfirm } from "./primitives/ConfirmProvider";
 import { SheetButton } from "./primitives/SheetButton";
 import { SheetSectionLabel } from "./primitives/SheetListItem";
 
@@ -30,12 +31,13 @@ export function NewGameOptions({
   onCancel?: () => void;
   confirmLabel?: string;
 }) {
+  const confirm = useConfirm();
   const [choice, setChoice] = useState<NewGameChoice>("replay");
   /** Blank = random on confirm — do not pre-fill a mount-time seed (#68). */
   const [seedInput, setSeedInput] = useState("");
   const [seedError, setSeedError] = useState<string | null>(null);
 
-  function handleConfirm() {
+  async function handleConfirm() {
     // Validate seed before the discard confirm so a typo doesn't trigger a scary popup first.
     let nextSeed: number | null = null;
     if (choice === "newSeed") {
@@ -52,15 +54,15 @@ export function NewGameOptions({
       }
     }
 
-    if (
-      !window.confirm(
+    const ok = await confirm({
+      title: "Discard progress?",
+      message:
         choice === "replay"
-          ? "This restarts on the same map and discards your current progress. Continue?"
-          : "Starting a new game permanently discards your current save. Continue?",
-      )
-    ) {
-      return;
-    }
+          ? "This restarts on the same map and discards your current progress."
+          : "Starting a new game permanently discards your current save.",
+      confirmLabel: "Continue",
+    });
+    if (!ok) return;
 
     if (choice === "replay") {
       onReplayCurrent();
@@ -126,7 +128,7 @@ export function NewGameOptions({
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "0.1rem" }}>
-        <SheetButton onClick={handleConfirm}>{confirmLabel}</SheetButton>
+        <SheetButton onClick={() => void handleConfirm()}>{confirmLabel}</SheetButton>
         {onCancel && (
           <SheetButton variant="secondary" onClick={onCancel}>
             Cancel

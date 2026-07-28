@@ -263,6 +263,7 @@ import {
   junkyardKnightTrainCost,
   militiaTrainCost,
 } from "./engine/units";
+import { useConfirm } from "./ui/primitives/ConfirmProvider";
 import { GameScreen } from "./ui/GameScreen";
 import { NOTIFICATION_ICON_SIZE } from "./ui/hud/CollapsibleNotificationRow";
 import type { ToastRecord } from "./ui/hud/Toast";
@@ -655,6 +656,7 @@ function speedMultiplierRates(tweaks: Tweaks, research: ResearchRecord): number[
 }
 
 export default function App() {
+  const confirm = useConfirm();
   const [boot, setBoot] = useState<BootState>({ status: "loading" });
   const bootRef = useRef(boot);
   useEffect(() => {
@@ -2506,11 +2508,13 @@ export default function App() {
       options?.confirmReplace ??
       (current.status === "continuePrompt" || (current.status === "ready" && current.game != null));
 
-    if (
-      confirmReplace &&
-      !window.confirm("Load this save file? It will replace the game currently stored in this browser.")
-    ) {
-      return;
+    if (confirmReplace) {
+      const ok = await confirm({
+        title: "Load save file?",
+        message: "It will replace the game currently stored in this browser.",
+        confirmLabel: "Load",
+      });
+      if (!ok) return;
     }
 
     const file = await pickSaveFile();

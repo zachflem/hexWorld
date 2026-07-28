@@ -263,6 +263,7 @@ import { PersonnelPanel } from "./panels/PersonnelPanel";
 import { DevToolsPanel, type DevLabMode } from "./panels/DevToolsPanel";
 import { labSearchZoneCenter } from "../engine/lab";
 import { SettingsPanel } from "./panels/SettingsPanel";
+import { useConfirm } from "./primitives/ConfirmProvider";
 import {
   Anchor,
   Archive,
@@ -618,6 +619,7 @@ export function GameScreen({
   /** Settings — replace session from a JSON save file. */
   onLoadFromFile: () => void;
 }) {
+  const confirm = useConfirm();
   const hexCanvasRef = useRef<HexCanvasHandle>(null);
   const gridSize = resolveWorldGridSize(world, tweaks);
   /** Same imperative-positioning convention as TileActionSheet's predecessor used — see HoverTooltip.tsx. */
@@ -1428,7 +1430,12 @@ export function GameScreen({
 
   async function handleDemolish() {
     if (!selected) return;
-    if (!window.confirm("Demolish this structure? You'll only recover a fraction of what you spent on it.")) return;
+    const ok = await confirm({
+      title: "Demolish structure?",
+      message: "You'll only recover a fraction of what you spent on it.",
+      confirmLabel: "Demolish",
+    });
+    if (!ok) return;
     const result = await onDemolish(selected);
     applyActionResult(result);
   }
