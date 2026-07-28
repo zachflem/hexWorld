@@ -6,8 +6,8 @@ import { tweaksSchema } from "./tweaksSchema";
 import { initialResourceAmounts } from "./resources";
 
 describe("initialResourceAmounts", () => {
-  it("extracts only the 4 numeric resource fields from the real tweaks.jsonc", () => {
-    const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  it("extracts only the 4 numeric resource fields from the default profile tweaks.jsonc", () => {
+    const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
     const tweaks = tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 
     const amounts = initialResourceAmounts(tweaks);

@@ -5,6 +5,12 @@ import { describe, expect, it } from "vitest";
 import { axialDistance, axialKey, mapCenter } from "../engine/hexCoords";
 import { terrainAt } from "../engine/terrain";
 import { createDens } from "./dens";
+import {
+  emptyHexResourcePools,
+  hexTileLevel,
+  initialRemainingResource,
+  remainingResourceAt,
+} from "./hexResourcePools";
 import { createLab } from "./lab";
 import { tweaksForMapSize } from "./mapSize";
 import {
@@ -17,7 +23,7 @@ import {
 import { tweaksSchema } from "./tweaksSchema";
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -61,14 +67,16 @@ describe("createScrapStashes", () => {
     expect(stashes.some((s) => axialDistance(base, s.coord) <= max)).toBe(true);
   });
 
-  it("assigns scrap art variants in 1..art_variant_count", () => {
+  it("assigns scrap art variants and uses deterministic hex richness", () => {
     const { tweaks, stashes } = place();
+    const store = emptyHexResourcePools();
     for (const stash of stashes) {
       expect(stash.artVariant).toBeGreaterThanOrEqual(1);
       expect(stash.artVariant).toBeLessThanOrEqual(tweaks.scrap_stashes.art_variant_count);
-      expect(stash.remainingSteel).toBeGreaterThan(0);
-      expect(stash.tileLevel).toBeGreaterThanOrEqual(1);
-      expect(stash.tileLevel).toBeLessThanOrEqual(tweaks.scrap_stashes.tile_level_max);
+      expect(initialRemainingResource(seed, stash.coord, tweaks)).toBeGreaterThan(0);
+      expect(hexTileLevel(seed, stash.coord, tweaks)).toBeGreaterThanOrEqual(1);
+      expect(hexTileLevel(seed, stash.coord, tweaks)).toBeLessThanOrEqual(tweaks.hex_resource_pools.tile_level_max);
+      expect(isActiveScrapStash(tweaks, seed, store, stash)).toBe(true);
     }
   });
 
@@ -78,37 +86,35 @@ describe("createScrapStashes", () => {
     expect(new Set(stashes.map((s) => axialKey(s.coord))).size).toBe(stashes.length);
   });
 
-  it("scrapStashBlocksHex only while steel remains", () => {
-    const stash = {
-      id: "scrap-0",
-      coord: { q: 1, r: 2 },
-      remainingSteel: 10,
-      artVariant: 1,
-      tileLevel: 2,
-    };
-    expect(scrapStashBlocksHex([stash], stash.coord)).toBe(true);
-    expect(isActiveScrapStash({ ...stash, remainingSteel: 0 })).toBe(false);
-    expect(scrapStashBlocksHex([{ ...stash, remainingSteel: 0 }], stash.coord)).toBe(false);
+  it("scrapStashBlocksHex only while hex remaining stays above zero", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 1;
+    const stash = { id: "scrap-0", coord: { q: 1, r: 2 }, artVariant: 1 };
+    const activeStore = { [axialKey(stash.coord)]: 10 };
+    const emptyStore = { [axialKey(stash.coord)]: 0 };
+    expect(scrapStashBlocksHex(tweaks, seed, activeStore, [stash], stash.coord)).toBe(true);
+    expect(isActiveScrapStash(tweaks, seed, emptyStore, stash)).toBe(false);
+    expect(scrapStashBlocksHex(tweaks, seed, emptyStore, [stash], stash.coord)).toBe(false);
   });
 
-  it("applies wandering-scout steel samples when a scout steps onto a stash", () => {
+  it("applies wandering-scout steel samples by draining the shared hex pool", () => {
     const tweaks = loadRealTweaks();
     const sample = tweaks.scrap_stashes.wandering_scout_sample_steel;
-    const pool = sample + 40;
     const stash = {
       id: "scrap-0",
       coord: { q: 2, r: 2 },
-      remainingSteel: pool,
       artVariant: 1,
-      tileLevel: 1,
     };
+    const pool = sample + 40;
     const result = applyWanderingScoutScrapSamples(
       tweaks,
+      seed,
+      { [axialKey(stash.coord)]: pool },
       [stash],
       [{ coord: { q: 1, r: 2 } }],
       [{ coord: { q: 2, r: 2 } }],
     );
     expect(result.steelGained).toBe(sample);
-    expect(result.scrapStashes[0]!.remainingSteel).toBe(pool - sample);
+    expect(remainingResourceAt(seed, stash.coord, result.hexResourcePools, tweaks)).toBe(pool - sample);
   });
 });

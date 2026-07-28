@@ -19,7 +19,14 @@ import {
   dockYieldPerSecond,
   nextDockLevel,
 } from "../engine/docks";
-import { isStructureActive, repairCost, scaledCostMap, structureRepairDurationMs } from "../engine/formulas";
+import {
+  buildSlotCap,
+  isStructureActive,
+  repairCost,
+  scaledCostMap,
+  structureRepairDurationMs,
+  totalStructureCount,
+} from "../engine/formulas";
 import { yieldPerSecond } from "../engine/tick";
 import {
   extractionTierDisplayLabel,
@@ -173,6 +180,12 @@ import type { NoiseRecord } from "../data/noise";
 import type { DenRecord, DensRecord } from "../data/dens";
 import type { ScrapStashRecord, ScrapStashesRecord } from "../data/scrapStashes";
 import { isActiveScrapStash } from "../data/scrapStashes";
+import {
+  formatRemainingResource,
+  hexTileLevel,
+  remainingResourceAt,
+  type HexResourcePoolsRecord,
+} from "../data/hexResourcePools";
 import type { DenAssaultsRecord } from "../data/denAssaults";
 import type { TombstoneRecord, TombstonesRecord } from "../data/tombstones";
 import type { LabRecord } from "../data/lab";
@@ -347,6 +360,12 @@ function powerStationTierIconName(level: number): string {
   return "power-large";
 }
 
+/** Walls use fractional slot_cost — show one decimal when needed. */
+function formatBuildSlots(n: number): string {
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
 /** Banded richness copy for stash intel (Q51/Q52) — no exact tile level shown. */
 function scrapRichnessHint(tileLevel: number, maxLevel: number): string {
   const t = maxLevel <= 1 ? 1 : tileLevel / maxLevel;
@@ -401,6 +420,7 @@ export function GameScreen({
   noise,
   dens,
   scrapStashes,
+  hexResourcePools,
   denAssaults,
   outposts,
   garrisonRecalls,
@@ -493,6 +513,7 @@ export function GameScreen({
   noise: NoiseRecord;
   dens: DensRecord;
   scrapStashes: ScrapStashesRecord;
+  hexResourcePools: HexResourcePoolsRecord;
   denAssaults: DenAssaultsRecord;
   outposts: OutpostsRecord;
   garrisonRecalls: GarrisonRecallsRecord;
@@ -1355,7 +1376,7 @@ export function GameScreen({
 
   async function handleSendScrapperFromStash() {
     if (!selected) return;
-    const stash = scrapStashes.find((s) => isActiveScrapStash(s) && axialEquals(s.coord, selected));
+    const stash = scrapStashes.find((s) => isActiveScrapStash(tweaks, world.seed, hexResourcePools, s) && axialEquals(s.coord, selected));
     if (!stash) return;
     const idleYard = scrapYards.find((y) => {
       if (!y.scrapperReady || !isStructureActive(y)) return false;
@@ -1654,7 +1675,7 @@ export function GameScreen({
   const selectedDen: DenRecord | null = selected ? (dens.find((d) => axialEquals(d.coord, selected)) ?? null) : null;
   const selectedScrapStash: ScrapStashRecord | null =
     selected && (isOwned(selected) || isScouted(selected))
-      ? (scrapStashes.find((s) => isActiveScrapStash(s) && axialEquals(s.coord, selected)) ?? null)
+      ? (scrapStashes.find((s) => isActiveScrapStash(tweaks, world.seed, hexResourcePools, s) && axialEquals(s.coord, selected)) ?? null)
       : null;
   const selectedOutpost: OutpostRecord | null = selected ? outpostAt(selected) : null;
   const selectedTombstone: TombstoneRecord | null = selected
@@ -1771,6 +1792,7 @@ export function GameScreen({
       territory,
       scoutedTiles,
       gridSize,
+      hexResourcePools,
       {
         garrisons,
         expeditions,
@@ -1790,6 +1812,7 @@ export function GameScreen({
     powerNetwork,
     territory,
     scoutedTiles,
+    hexResourcePools,
     garrisons,
     expeditions,
     denAssaults,
@@ -2437,7 +2460,7 @@ export function GameScreen({
         if (selectedScrapYard.scrapperReady && isStructureActive(selectedScrapYard)) {
           const knownKeys = new Set([...territory.owned, ...scoutedTiles].map(axialKey));
           const knownStashes = scrapStashes.filter(
-            (s) => isActiveScrapStash(s) && knownKeys.has(axialKey(s.coord)),
+            (s) => isActiveScrapStash(tweaks, world.seed, hexResourcePools, s) && knownKeys.has(axialKey(s.coord)),
           );
           const trip = selectedScrapYard.scrapper;
           // Assign only when parked with no stash job — not while looping a haul
@@ -2452,7 +2475,7 @@ export function GameScreen({
               actions.push({
                 key: `scrapper-assign-${stash.id}`,
                 icon: resourceIcon("steel", 18),
-                title: `Assign Scrapper — stash (${Math.floor(stash.remainingSteel)} steel)`,
+                title: `Assign Scrapper — stash (${formatRemainingResource(remainingResourceAt(world.seed, stash.coord, hexResourcePools, tweaks), tweaks)} steel)`,
                 detail: `Distance ${distance}`,
                 distance,
                 allListClosestGroup: "scrapper-assign",
@@ -3340,6 +3363,17 @@ export function GameScreen({
               : "Repairing…"
           : "Operational";
       const maxHp = baseReinforcementHp(tweaks, base.reinforcementLevel);
+      const usedSlots = totalStructureCount(
+        tweaks,
+        extractionTiles,
+        towers,
+        walls,
+        barracksList,
+        docks,
+        powerStations,
+        scrapYards,
+      );
+      const slotCap = buildSlotCap(tweaks, base.level);
       rows.push(
         <div key="base-status">{status}</div>,
         <StatRow
@@ -3349,6 +3383,13 @@ export function GameScreen({
           max={maxHp}
         />,
         <div key="base-noise">Noise cap: {noiseCap(tweaks, base.level)}db</div>,
+        <StatRow
+          key="base-build-slots"
+          label="Build slots"
+          current={usedSlots}
+          max={slotCap}
+          displayValue={`${formatBuildSlots(usedSlots)}/${formatBuildSlots(slotCap)}`}
+        />,
       );
       for (const resource of RESOURCE_ORDER) {
         const level = storageLevels[resource];
@@ -3428,6 +3469,13 @@ export function GameScreen({
             : "Manual collection only (upgrade to L2 to automate)"}
         </div>,
         <div key="tile-stockpile">Stockpile: {Math.floor(selectedTile.stockpile)}</div>,
+        <div key="tile-remaining">
+          Hex remaining:{" "}
+          {formatRemainingResource(
+            remainingResourceAt(world.seed, selectedTile.coord, hexResourcePools, tweaks),
+            tweaks,
+          )}
+        </div>,
       );
     }
     if (selectedDock) {
@@ -3457,6 +3505,13 @@ export function GameScreen({
             : "Manual collection only (upgrade to L2 to automate)"}
         </div>,
         <div key="dock-stockpile">Stockpile: {Math.floor(selectedDock.stockpile)}</div>,
+        <div key="dock-remaining">
+          Hex remaining:{" "}
+          {formatRemainingResource(
+            remainingResourceAt(world.seed, selectedDock.coord, hexResourcePools, tweaks),
+            tweaks,
+          )}
+        </div>,
       );
     }
     if (selectedWall) {
@@ -3559,6 +3614,7 @@ export function GameScreen({
         world.seed,
         selectedScrapYard,
         scrapStashes,
+        hexResourcePools,
         territory,
         scoutedTiles,
         gridSize,
@@ -3591,10 +3647,17 @@ export function GameScreen({
     if (selectedScrapStash) {
       rows.push(
         <div key="scrap-steel">
-          Steel remaining: {Math.floor(selectedScrapStash.remainingSteel)}
+          Steel remaining:{" "}
+          {formatRemainingResource(
+            remainingResourceAt(world.seed, selectedScrapStash.coord, hexResourcePools, tweaks),
+            tweaks,
+          )}
         </div>,
         <div key="scrap-hint">
-          {scrapRichnessHint(selectedScrapStash.tileLevel, tweaks.scrap_stashes.tile_level_max)}
+          {scrapRichnessHint(
+            hexTileLevel(world.seed, selectedScrapStash.coord, tweaks),
+            tweaks.hex_resource_pools.tile_level_max,
+          )}
         </div>,
         <div key="scrap-note">Build a Scrap Yard and send a Scrapper to haul steel here.</div>,
       );
@@ -3664,6 +3727,22 @@ export function GameScreen({
         <HoverPanel icon={structureIcon(structureLevelCandidates("base", base.level), 28)} title={`Base — L${base.level}`} status={status}>
           <span>HP: {Math.floor(base.currentHp)}/{Math.floor(maxHp)}</span>
           <span>Noise cap: {noiseCap(tweaks, base.level)}db</span>
+          <span>
+            Build slots:{" "}
+            {formatBuildSlots(
+              totalStructureCount(
+                tweaks,
+                extractionTiles,
+                towers,
+                walls,
+                barracksList,
+                docks,
+                powerStations,
+                scrapYards,
+              ),
+            )}
+            /{formatBuildSlots(buildSlotCap(tweaks, base.level))}
+          </span>
         </HoverPanel>
       );
     }
@@ -3695,13 +3774,24 @@ export function GameScreen({
 
     const scrapStash =
       isOwned(coord) || isScouted(coord)
-        ? scrapStashes.find((s) => isActiveScrapStash(s) && axialEquals(s.coord, coord))
+        ? scrapStashes.find((s) => isActiveScrapStash(tweaks, world.seed, hexResourcePools, s) && axialEquals(s.coord, coord))
         : undefined;
     if (scrapStash) {
       return (
         <HoverPanel icon={<Archive size={22} />} title="Scrap stash" status="Salvage site">
-          <span>Steel remaining: {Math.floor(scrapStash.remainingSteel)}</span>
-          <span>{scrapRichnessHint(scrapStash.tileLevel, tweaks.scrap_stashes.tile_level_max)}</span>
+          <span>
+            Steel remaining:{" "}
+            {formatRemainingResource(
+              remainingResourceAt(world.seed, scrapStash.coord, hexResourcePools, tweaks),
+              tweaks,
+            )}
+          </span>
+          <span>
+            {scrapRichnessHint(
+              hexTileLevel(world.seed, scrapStash.coord, tweaks),
+              tweaks.hex_resource_pools.tile_level_max,
+            )}
+          </span>
         </HoverPanel>
       );
     }
@@ -3748,6 +3838,13 @@ export function GameScreen({
               : "Manual collection (L2 automates)"}
           </span>
           <span>Stockpile: {Math.floor(tile.stockpile)}</span>
+          <span>
+            Hex remaining:{" "}
+            {formatRemainingResource(
+              remainingResourceAt(world.seed, tile.coord, hexResourcePools, tweaks),
+              tweaks,
+            )}
+          </span>
           <span>{powerDrawText("extraction", extractionTierLevel(tile.tier))}</span>
           {powerStateLabelFor(extractionTierLevel(tile.tier), tile.coord) && (
             <span>{powerStateLabelFor(extractionTierLevel(tile.tier), tile.coord)}</span>
@@ -3828,6 +3925,7 @@ export function GameScreen({
         world.seed,
         scrapYard,
         scrapStashes,
+        hexResourcePools,
         territory,
         scoutedTiles,
         gridSize,
@@ -3941,6 +4039,13 @@ export function GameScreen({
               : "Manual collection (L2 automates)"}
           </span>
           <span>Stockpile: {Math.floor(dock.stockpile)}</span>
+          <span>
+            Hex remaining:{" "}
+            {formatRemainingResource(
+              remainingResourceAt(world.seed, dock.coord, hexResourcePools, tweaks),
+              tweaks,
+            )}
+          </span>
         </HoverPanel>
       );
     }
@@ -4245,6 +4350,7 @@ export function GameScreen({
           lab={lab}
           dens={dens}
           scrapStashes={scrapStashes}
+          hexResourcePools={hexResourcePools}
           outposts={outposts}
           hordes={hordes}
           expeditions={expeditions}

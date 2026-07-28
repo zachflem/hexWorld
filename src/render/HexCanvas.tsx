@@ -32,6 +32,7 @@ import type { GarrisonsRecord } from "../data/garrisons";
 import type { DenRecord } from "../data/dens";
 import type { ScrapStashRecord, ScrapStashesRecord } from "../data/scrapStashes";
 import { isActiveScrapStash } from "../data/scrapStashes";
+import type { HexResourcePoolsRecord } from "../data/hexResourcePools";
 import type { OutpostRecord } from "../data/outposts";
 import type { HordeRecord } from "../data/hordes";
 import type { Expedition, ExpeditionsRecord } from "../data/expeditions";
@@ -317,6 +318,7 @@ export const HexCanvas = forwardRef<
     lab: LabRecord;
     dens: DenRecord[];
     scrapStashes: ScrapStashesRecord;
+    hexResourcePools: HexResourcePoolsRecord;
     outposts: OutpostRecord[];
     hordes: HordeRecord[];
     expeditions: ExpeditionsRecord;
@@ -408,6 +410,7 @@ export const HexCanvas = forwardRef<
     lab,
     dens,
     scrapStashes,
+    hexResourcePools,
     outposts,
     hordes,
     expeditions,
@@ -1052,7 +1055,11 @@ export const HexCanvas = forwardRef<
 
           // Known scrap stashes (owned/scouted fog) — resource-pin art + grey ring (Q9/Q70).
           const scrapStash = scrapStashesByKey.get(coordKey);
-          if (scrapStash && isActiveScrapStash(scrapStash) && (tier === "owned" || tier === "scouted")) {
+          if (
+            scrapStash &&
+            isActiveScrapStash(tweaks, seed, hexResourcePools, scrapStash) &&
+            (tier === "owned" || tier === "scouted")
+          ) {
             ctx.beginPath();
             ctx.arc(screenCenter.x, screenCenter.y, size * 0.52, 0, Math.PI * 2);
             ctx.strokeStyle = SCRAP_STASH_RING_COLOR;
@@ -1726,6 +1733,7 @@ export const HexCanvas = forwardRef<
     garrisonsByKey,
     densByKey,
     scrapStashesByKey,
+    hexResourcePools,
     hordesByKey,
     docksByKey,
     scoutSkiffsByKey,

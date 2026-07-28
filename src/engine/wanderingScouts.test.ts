@@ -10,7 +10,7 @@ import { advanceWanderingScouts } from "./wanderingScouts";
 import { bearingStepScore } from "./lab";
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -197,7 +197,7 @@ describe("watchtower signal bias", () => {
     const start = findLandCoord(seed);
     const steps = 80;
     const stepSec = tweaks.units.wandering_scout.seconds_per_step;
-    // Lab far north so sector bias and lab-approach pull reinforce each other.
+    // Lab far north — with default weights only the compass bearing should pull northward.
     const farNorthLab = { q: start.q, r: start.r - 40 };
 
     function northDelta(path: Axial[]): number {
@@ -263,8 +263,12 @@ describe("watchtower signal bias", () => {
     expect(result.scoutedTiles.length).toBeGreaterThan(1);
   });
 
-  it("with a signal, still prefers an adjacent unscouted lab more often than chance", () => {
+  it("default signal weights do not magnetize scouts onto an adjacent lab tile", () => {
     const tweaks = loadRealTweaks();
+    // Default profile: approach/tile bonus are 0 — compass only.
+    expect(tweaks.lab_clues.passive_surfacing.signal_lab_approach_weight).toBe(0);
+    expect(tweaks.lab_clues.passive_surfacing.signal_lab_tile_bonus).toBe(0);
+
     const seed = 5;
     const start = findLandCoord(seed);
     const labNeighbor = axialNeighbors(start).find(
@@ -272,7 +276,6 @@ describe("watchtower signal bias", () => {
     );
     expect(labNeighbor).toBeDefined();
 
-    // Soft guidance (#83): should beat uniform chance, but not dominate every trial.
     let hits = 0;
     const trials = 40;
     for (let i = 0; i < trials; i++) {
@@ -294,8 +297,55 @@ describe("watchtower signal bias", () => {
     const landNeighbors = axialNeighbors(start).filter(
       (n) => isWithinMapBounds(n, gridSize) && terrainAt(seed, n) !== "water",
     ).length;
-    // Exclude prevCoord oscillation? First step has no prev, so all land neighbors are candidates.
+    // No lab-tile magnetism: hit rate should stay near chance (bearing may nudge
+    // slightly if the neighbor happens to align north, but must not dominate).
+    expect(hits).toBeLessThan(trials * 0.7);
+    expect(hits).toBeGreaterThanOrEqual(0);
+    expect(landNeighbors).toBeGreaterThan(1);
+  });
+
+  it("non-zero lab approach weights can still prefer stepping onto the lab", () => {
+    const baseTweaks = loadRealTweaks();
+    const tweaks = {
+      ...baseTweaks,
+      lab_clues: {
+        ...baseTweaks.lab_clues,
+        passive_surfacing: {
+          ...baseTweaks.lab_clues.passive_surfacing,
+          signal_bearing_weight: 0.5,
+          signal_lab_approach_weight: 3,
+          signal_lab_tile_bonus: 4,
+        },
+      },
+    };
+    const seed = 5;
+    const start = findLandCoord(seed);
+    const labNeighbor = axialNeighbors(start).find(
+      (n) => isWithinMapBounds(n, gridSize) && terrainAt(seed, n) !== "water",
+    );
+    expect(labNeighbor).toBeDefined();
+
+    let hits = 0;
+    const trials = 40;
+    for (let i = 0; i < trials; i++) {
+      const result = advanceWanderingScouts(
+        tweaks,
+        [makeScout(start, { spawnedAt: i })],
+        [],
+        seed,
+        gridSize,
+        tweaks.units.wandering_scout.seconds_per_step,
+        {
+          signal: { bearing: "north", setAt: 0 },
+          base: start,
+          labCoord: labNeighbor!,
+        },
+      );
+      if (result.labRevealed) hits += 1;
+    }
+    const landNeighbors = axialNeighbors(start).filter(
+      (n) => isWithinMapBounds(n, gridSize) && terrainAt(seed, n) !== "water",
+    ).length;
     expect(hits).toBeGreaterThan(trials / landNeighbors);
-    expect(hits).toBeLessThan(trials * 0.95);
   });
 });

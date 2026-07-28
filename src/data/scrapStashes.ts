@@ -7,6 +7,12 @@ import {
 import { seededRandom } from "../engine/noise";
 import { terrainAt, type TerrainType } from "../engine/terrain";
 import type { DenRecord } from "./dens";
+import {
+  drainRemainingResource,
+  isInfiniteResources,
+  remainingResourceAt,
+  type HexResourcePoolsRecord,
+} from "./hexResourcePools";
 import type { LabRecord } from "./lab";
 import { enumerateMapCoords } from "./featurePlacement";
 import { scaleToMapSize } from "./mapSize";
@@ -15,18 +21,11 @@ import type { Tweaks } from "./tweaksSchema";
 export interface ScrapStashRecord {
   id: string;
   coord: Axial;
-  /** Steel still available for Scrapper hauls (and scout samples). */
-  remainingSteel: number;
   /**
    * 1-based index into `resources/scrap-#.png` (Q70). Fixed at world-gen —
    * same seed always picks the same variant for this stash.
    */
   artVariant: number;
-  /**
-   * Hidden world-gen richness (Q49/Q51) — drives pool size; banded scout
-   * hints can surface later without showing the raw number.
-   */
-  tileLevel: number;
 }
 
 export type ScrapStashesRecord = ScrapStashRecord[];
@@ -55,75 +54,74 @@ export function rollScrapStashCount(
   return Math.max(1, baseCount + roll);
 }
 
-export function isActiveScrapStash(stash: ScrapStashRecord): boolean {
-  return stash.remainingSteel > 0;
+/** True while the hex still has remaining (or infinite_resources). */
+export function isActiveScrapStash(
+  tweaks: Tweaks,
+  seed: number,
+  store: HexResourcePoolsRecord,
+  stash: ScrapStashRecord,
+): boolean {
+  if (isInfiniteResources(tweaks)) return true;
+  return remainingResourceAt(seed, stash.coord, store, tweaks) > 0;
 }
 
 /** True when a non-depleted stash reserves this hex (Q26). */
-export function scrapStashBlocksHex(stashes: ScrapStashesRecord, coord: Axial): boolean {
+export function scrapStashBlocksHex(
+  tweaks: Tweaks,
+  seed: number,
+  store: HexResourcePoolsRecord,
+  stashes: ScrapStashesRecord,
+  coord: Axial,
+): boolean {
   const key = axialKey(coord);
-  return stashes.some((s) => isActiveScrapStash(s) && axialKey(s.coord) === key);
+  return stashes.some(
+    (s) => isActiveScrapStash(tweaks, seed, store, s) && axialKey(s.coord) === key,
+  );
 }
 
 /**
  * When a wandering scout steps onto an active stash, grant a small steel
- * sample and reduce the stash pool (Q7). One sample per scout that changed
- * tiles onto a stash this advance.
+ * sample and drain the shared hex pool (Q7 / Milestone 27).
  */
 export function applyWanderingScoutScrapSamples(
   tweaks: Tweaks,
+  seed: number,
+  store: HexResourcePoolsRecord,
   scrapStashes: ScrapStashesRecord,
   previousScouts: { coord: Axial }[],
   nextScouts: { coord: Axial }[],
-): { scrapStashes: ScrapStashesRecord; steelGained: number } {
+): { scrapStashes: ScrapStashesRecord; steelGained: number; hexResourcePools: HexResourcePoolsRecord } {
   const sample = tweaks.scrap_stashes.wandering_scout_sample_steel;
   if (sample <= 0 || scrapStashes.length === 0) {
-    return { scrapStashes, steelGained: 0 };
+    return { scrapStashes, steelGained: 0, hexResourcePools: store };
   }
 
-  const prevByIndex = previousScouts;
   let steelGained = 0;
-  let nextStashes = scrapStashes;
+  let nextStore = store;
 
   for (let i = 0; i < nextScouts.length; i++) {
     const next = nextScouts[i];
-    const prev = prevByIndex[i];
+    const prev = previousScouts[i];
     if (!next || !prev) continue;
     if (axialKey(next.coord) === axialKey(prev.coord)) continue;
 
-    const stashIndex = nextStashes.findIndex(
-      (s) => isActiveScrapStash(s) && axialKey(s.coord) === axialKey(next.coord),
+    const stash = scrapStashes.find(
+      (s) => isActiveScrapStash(tweaks, seed, nextStore, s) && axialKey(s.coord) === axialKey(next.coord),
     );
-    if (stashIndex < 0) continue;
+    if (!stash) continue;
 
-    const stash = nextStashes[stashIndex]!;
-    const taken = Math.min(sample, stash.remainingSteel);
-    if (taken <= 0) continue;
-
-    steelGained += taken;
-    nextStashes = nextStashes.map((s, j) =>
-      j === stashIndex ? { ...s, remainingSteel: s.remainingSteel - taken } : s,
-    );
+    const drained = drainRemainingResource(seed, stash.coord, nextStore, tweaks, sample);
+    nextStore = drained.store;
+    if (drained.taken <= 0) continue;
+    steelGained += drained.taken;
   }
 
-  return { scrapStashes: nextStashes, steelGained };
+  return { scrapStashes, steelGained, hexResourcePools: nextStore };
 }
 
 function terrainWeight(tweaks: Tweaks, terrain: TerrainType): number {
   if (terrain === "water") return 0;
   return tweaks.scrap_stashes.terrain_placement_weight[terrain];
-}
-
-function rollTileLevel(seed: number, salt: number, maxLevel: number): number {
-  return 1 + Math.floor(seededRandom(seed, salt) * maxLevel);
-}
-
-function steelPoolFor(tweaks: Tweaks, terrain: TerrainType, tileLevel: number): number {
-  if (terrain === "water") return 0;
-  const pools = tweaks.scrap_stashes.steel_pool_by_terrain;
-  const base = pools[terrain];
-  const levelMul = 1 + tweaks.scrap_stashes.steel_pool_per_tile_level_pct * (tileLevel - 1);
-  return Math.max(1, Math.round(base * levelMul));
 }
 
 function artVariantFor(seed: number, salt: number, variantCount: number): number {
@@ -137,8 +135,6 @@ function makeStash(
   coord: Axial,
   tweaks: Tweaks,
 ): ScrapStashRecord {
-  const terrain = terrainAt(seed, coord);
-  const tileLevel = rollTileLevel(seed, SCRAP_STASH_PLACEMENT_SALT + index * 10 + 3, tweaks.scrap_stashes.tile_level_max);
   const artVariant = artVariantFor(
     seed,
     SCRAP_STASH_PLACEMENT_SALT + index * 10 + 5,
@@ -147,9 +143,7 @@ function makeStash(
   return {
     id: `scrap-${index}`,
     coord,
-    remainingSteel: steelPoolFor(tweaks, terrain, tileLevel),
     artVariant,
-    tileLevel,
   };
 }
 
@@ -196,6 +190,7 @@ function pickWeighted(
  * Deterministic scrap-stash placement (Milestone 26 / #36).
  * Favors mountain/forest/shore, keeps dens+lab clear, guarantees one stash
  * near the base (Q48), and assigns seeded scrap-# art (Q70).
+ * Pool size lives on the hex (`hex_resource_pools`), not the stash record.
  */
 export function createScrapStashes(
   seed: number,
@@ -232,7 +227,6 @@ export function createScrapStashes(
   const guarantee = pickWeighted(seed, SCRAP_STASH_PLACEMENT_SALT, near.length > 0 ? near : weighted, minSeparation);
   if (guarantee) {
     placed.push(guarantee);
-    // Keep the main pool in sync with the guarantee pick.
     for (let i = weighted.length - 1; i >= 0; i--) {
       const c = weighted[i]!;
       if (axialKey(c.coord) === axialKey(guarantee) || axialDistance(c.coord, guarantee) < minSeparation) {

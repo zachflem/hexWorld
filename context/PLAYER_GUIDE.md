@@ -109,7 +109,7 @@ The base is a hub, not a fighting unit — it holds your storage, tech upgrades,
 - **Base level** caps how far every other structure type can be upgraded, sets your **build slot cap** (the total number of structures you're allowed to have standing at once — 10 at level 1, +10 per level), and widens how far from your territory you're allowed to attack/claim tiles.
 - **Base upgrades** cost resources and take real time — they keep counting down even while you're offline.
 - **Reinforcement HP** is a separate, upgradeable pool defending the base tile itself. Upgrading or repairing it also takes real time (offline-safe). **Only one** base level upgrade, reinforcement upgrade, or reinforcement repair can run at a time — you can't stack a reinforcement job on top of a base-level upgrade. If a horde deals more damage than your current reinforcement HP (plus any garrison stationed there) can absorb, **the base falls and the run ends.** A successful defense still costs HP, so repeated assaults need repair even if none of them individually break through.
-- Selecting the base opens a tile sheet: **Info** shows operational status, reinforcement HP, noise cap, and storage fill vs caps; **Upgrades** / **Storage** / **Actions** cover the usual commits.
+- Selecting the base opens a tile sheet: **Info** shows operational status, reinforcement HP, noise cap, build slots used vs cap, and storage fill vs caps; **Upgrades** / **Storage** / **Actions** cover the usual commits.
 - You can also **relocate your base** to a different owned tile once you meet the base-level requirement (costs resources and time).
 
 ---
@@ -211,7 +211,7 @@ Somewhere out past every zombie den — deliberately farther out than any of the
 
 **Finding it** has two tracks that work together:
 
-- **Watchtowers (level 2+)** sometimes pick up a vague distant **signal** ("something in the north — send the scouts"). That is not a clue — it lightly steers **Wandering Scouts** toward that sector with only a faint pull toward the lab. Level 4 towers hear signals more often. Scouts can also stumble onto the lab with no signal at all — when they do, a toast names the coordinates and the lab marker appears on that hex.
+- **Watchtowers (level 2+)** sometimes pick up a vague distant **signal** ("something in the north — send the scouts"). That is not a clue — it only gently steers **Wandering Scouts** toward that compass sector (no magnetism to the true lab tile). Level 4 towers hear signals more often. Scouts can also stumble onto the lab with no signal at all — when they do, a toast names the coordinates and the lab marker appears on that hex.
 - **Clearing a den** always awards one directional **clue** (5 total). Clues refine from a rough compass quadrant relative to your base down to a narrower arc. Wandering scouts never collect clues.
 
 Once you've secured **5 dens' worth of clues**, the map marks a **search cluster**: scouted hexes inside it get a light tint in your chosen color, and unscouted hexes there show a little more through the fog — still not the exact lab tile. Send scouts through the cluster (or keep exploring earlier) to find and assault the lab.

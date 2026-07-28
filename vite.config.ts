@@ -9,7 +9,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "tweaks.jsonc", "profiles/index.json"],
+      includeAssets: ["favicon.svg", "profiles/index.json"],
       manifest: {
         name: "Hex World",
         short_name: "Hex World",

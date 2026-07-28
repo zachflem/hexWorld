@@ -8,6 +8,10 @@ import type { Axial } from "./hexCoords";
 import { linearBuildCost } from "./formulas";
 import { storageCapacity } from "./storage";
 import { advanceCourierSite, structureHasCourierAutomation } from "./couriers";
+import {
+  drainRemainingResource,
+  type HexResourcePoolsRecord,
+} from "../data/hexResourcePools";
 
 /**
  * Linear (not Formula A) build-count cost — same reasoning as
@@ -75,16 +79,28 @@ export function accrueDockResources(
   territory: TerritoryRecord,
   scoutedTiles: Axial[],
   gridSize: number,
-): { resources: ResourceAmounts; docks: DockRecord[] } {
-  if (elapsedSeconds <= 0 || docks.length === 0) return { resources, docks };
+  hexResourcePools: HexResourcePoolsRecord = {},
+): { resources: ResourceAmounts; docks: DockRecord[]; hexResourcePools: HexResourcePoolsRecord } {
+  if (elapsedSeconds <= 0 || docks.length === 0) {
+    return { resources, docks, hexResourcePools };
+  }
 
   const tileStockpileCap = tweaks.storage.capacity_base_per_resource;
   let nextResources = { ...resources };
+  let nextPools = hexResourcePools ?? {};
 
   const nextDocks = docks.map((dock) => {
     if (dock.buildStartedAt != null) return dock;
     const rate = dockYieldPerSecond(tweaks, dock);
-    let stockpile = Math.min(tileStockpileCap, dock.stockpile + rate * elapsedSeconds);
+    const want = rate * elapsedSeconds;
+    const room = Math.max(0, tileStockpileCap - dock.stockpile);
+    const request = Math.min(want, room);
+    let stockpile = dock.stockpile;
+    if (request > 0) {
+      const drained = drainRemainingResource(seed, dock.coord, nextPools, tweaks, request);
+      nextPools = drained.store;
+      stockpile = dock.stockpile + drained.taken;
+    }
 
     const { site, resources: afterCourier } = advanceCourierSite(
       tweaks,
@@ -105,7 +121,7 @@ export function accrueDockResources(
     return { ...dock, stockpile: site.stockpile, courier: site.courier };
   });
 
-  return { resources: nextResources, docks: nextDocks };
+  return { resources: nextResources, docks: nextDocks, hexResourcePools: nextPools };
 }
 
 /** Manual collection: instantly moves a dock's entire local stockpile to base food storage, capped there. */

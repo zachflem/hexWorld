@@ -412,20 +412,28 @@ export const tweaksSchema = z.object({
     }),
   }),
 
-  scrap_stashes: z.object({
-    _status: z.string(),
-    count: z.number(),
-    early_guarantee_max_distance: z.number(),
+  /** Shared per-hex remainingResource (Milestone 27 / #84). */
+  hex_resource_pools: z.object({
+    _status: z.string().optional(),
+    /** When true, F/W/S extractors, docks, and scrap never drain. */
+    infinite_resources: z.boolean(),
     tile_level_max: z.number(),
-    art_variant_count: z.number(),
-    steel_pool_by_terrain: z.object({
+    pool_by_terrain: z.object({
       shore: z.number(),
       grassland: z.number(),
       forest: z.number(),
       mountain: z.number(),
+      water: z.number(),
     }),
-    /** Extra pool fraction per tile_level above 1 (e.g. 0.25 → L2 = 1.25×, L5 = 2×). */
-    steel_pool_per_tile_level_pct: z.number(),
+    /** Extra pool fraction per tile_level above 1 (e.g. 0.35 → L2 = 1.35×). */
+    pool_per_tile_level_pct: z.number(),
+  }),
+
+  scrap_stashes: z.object({
+    _status: z.string(),
+    count: z.number(),
+    early_guarantee_max_distance: z.number(),
+    art_variant_count: z.number(),
     terrain_placement_weight: z.object({
       shore: z.number(),
       grassland: z.number(),
@@ -547,10 +555,13 @@ export const tweaksSchema = z.object({
       signal_bearing_weight: z.number(),
       /**
        * Softmax weight on stepping closer to the true lab (`labApproachScore` × this).
-       * Keep low — signals should hint, not bee-line.
+       * Prefer 0 — tower signals should be vague compass only, not lab magnetism.
        */
       signal_lab_approach_weight: z.number(),
-      /** Extra score added when a candidate neighbor is the lab tile itself. */
+      /**
+       * Extra score when a candidate neighbor is the lab tile itself.
+       * Prefer 0 with approach weight — otherwise scouts bee-line once signaled.
+       */
       signal_lab_tile_bonus: z.number(),
     }),
     den_clear_bonus: z.object({

@@ -10,6 +10,10 @@ import { isStructureActive } from "./formulas";
 import { powerPerformanceFactor, type PowerNetworkSnapshot } from "./power";
 import { advanceCourierSite, structureHasCourierAutomation } from "./couriers";
 import type { Axial } from "./hexCoords";
+import {
+  drainRemainingResource,
+  type HexResourcePoolsRecord,
+} from "../data/hexResourcePools";
 
 /**
  * Resource units generated per real second by one extraction tile, given its
@@ -48,18 +52,26 @@ export function accrueResources(
   territory: TerritoryRecord,
   scoutedTiles: Axial[],
   gridSize: number,
-): { resources: ResourceAmounts; tiles: ExtractionTile[] } {
-  if (elapsedSeconds <= 0) return { resources, tiles };
+  hexResourcePools: HexResourcePoolsRecord = {},
+): { resources: ResourceAmounts; tiles: ExtractionTile[]; hexResourcePools: HexResourcePoolsRecord } {
+  if (elapsedSeconds <= 0) return { resources, tiles, hexResourcePools };
 
   const tileStockpileCap = tweaks.storage.capacity_base_per_resource;
+  let nextPools = hexResourcePools ?? {};
 
   let workingTiles = tiles.map((tile) => {
     if (!isStructureActive(tile)) return tile;
     const powerMul = powerPerformanceFactor(powerNetwork, extractionTierLevel(tile.tier), tile.coord);
     if (powerMul <= 0) return tile;
     const rate = yieldPerSecond(tweaks, tile, seed) * powerMul;
-    const stockpile = Math.min(tileStockpileCap, tile.stockpile + rate * elapsedSeconds);
-    return { ...tile, stockpile };
+    const want = rate * elapsedSeconds;
+    const room = Math.max(0, tileStockpileCap - tile.stockpile);
+    const request = Math.min(want, room);
+    if (request <= 0) return tile;
+    const drained = drainRemainingResource(seed, tile.coord, nextPools, tweaks, request);
+    nextPools = drained.store;
+    if (drained.taken <= 0) return tile;
+    return { ...tile, stockpile: tile.stockpile + drained.taken };
   });
 
   let nextResources = { ...resources };
@@ -88,7 +100,7 @@ export function accrueResources(
     return { ...tile, stockpile: site.stockpile, courier: site.courier };
   });
 
-  return { resources: nextResources, tiles: workingTiles };
+  return { resources: nextResources, tiles: workingTiles, hexResourcePools: nextPools };
 }
 
 /**

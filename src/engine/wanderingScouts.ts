@@ -37,7 +37,7 @@ function pickWeightedNeighbor(
     return candidates[Math.min(candidates.length - 1, Math.floor(roll * candidates.length))];
   }
 
-  // Active watchtower signal: light sector bias + faint lab pull (tweaks).
+  // Active watchtower signal: sector bias (+ optional lab magnetism if weights > 0).
   // Scouts never award clues — dens do; this only nudges exploration.
   const labKey = labCoord ? axialKey(labCoord) : null;
   const weights = candidates.map((c) => {
@@ -58,10 +58,10 @@ function pickWeightedNeighbor(
 }
 
 export type AdvanceWanderingScoutsOptions = {
-  /** Active watchtower listening focus — biases steps toward that sector + the lab. */
+  /** Active watchtower listening focus — soft compass-sector bias only (lab magnetism is tweakable, default off). */
   signal: WatchtowerSignal | null;
   base: Axial;
-  /** True lab tile — used only while a signal is active to pull scouts toward it. */
+  /** True lab tile — only used when signal_lab_* weights are non-zero (default 0 = vague bearing only). */
   labCoord: Axial;
   /**
    * Axial spiral radius revealed around each stepped hex (Improved Optics).
@@ -84,8 +84,9 @@ export type AdvanceWanderingScoutsOptions = {
  * skiff uses.
  *
  * Wandering scouts never award lab clues (den clears do). An active watchtower
- * signal (#38) lightly biases neighbor picks toward that compass sector and
- * faintly toward the lab (`lab_clues.passive_surfacing.signal_*` weights).
+ * signal (#38) softly biases neighbor picks toward that compass sector
+ * (`signal_bearing_weight`). Lab approach / tile bonuses exist in tweaks but
+ * default to 0 so signals stay vague — not a bee-line.
  */
 export function advanceWanderingScouts(
   tweaks: Tweaks,

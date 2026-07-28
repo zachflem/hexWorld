@@ -14,6 +14,11 @@ import { dockLevel, dockYieldPerSecond } from "./docks";
 import { extractionTierLevel } from "./tiers";
 import { powerPerformanceFactor, type PowerNetworkSnapshot } from "./power";
 import { courierOneWayDurationMs, structureHasCourierAutomation } from "./couriers";
+import {
+  isInfiniteResources,
+  remainingResourceAt,
+  type HexResourcePoolsRecord,
+} from "../data/hexResourcePools";
 
 /**
  * Live per-resource net rate (units/sec, may be negative) for the HUD's
@@ -34,6 +39,7 @@ export function computeResourceRates(
   territory: TerritoryRecord,
   scoutedTiles: Axial[],
   gridSize: number,
+  hexResourcePools: HexResourcePoolsRecord = {},
   commitments: UnitCommitments = {
     garrisons: [],
     expeditions: [],
@@ -60,6 +66,12 @@ export function computeResourceRates(
       gridSize,
     );
     if (oneWay == null) continue;
+    if (
+      !isInfiniteResources(tweaks) &&
+      remainingResourceAt(seed, tile.coord, hexResourcePools, tweaks) <= 0
+    ) {
+      continue;
+    }
     grossInflow[tile.resource] += yieldPerSecond(tweaks, tile, seed) * powerMul;
   }
 
@@ -76,6 +88,12 @@ export function computeResourceRates(
       gridSize,
     );
     if (oneWay == null) continue;
+    if (
+      !isInfiniteResources(tweaks) &&
+      remainingResourceAt(seed, dock.coord, hexResourcePools, tweaks) <= 0
+    ) {
+      continue;
+    }
     grossInflow.food += dockYieldPerSecond(tweaks, dock);
   }
 

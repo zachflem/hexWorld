@@ -2,7 +2,7 @@
 
 This is the plain-English companion to `tweaks.jsonc`. Read this when you've forgotten why a number is what it is, or how a formula is supposed to work.
 
-The canonical **Standard** balance lives at `public/profiles/default/tweaks.jsonc`. A legacy copy at `public/tweaks.jsonc` is kept in sync for reference; the app loads per-profile files at boot (see `src/data/tweaksLoader.ts`).
+The canonical **Standard** balance lives at `public/profiles/default/tweaks.jsonc`. The app loads per-profile files at boot (see `src/data/tweaksLoader.ts`); tests load the same default profile file.
 
 ---
 
@@ -171,7 +171,7 @@ Union AoE + shared capacity pool; L1 structures exempt. See [Milestone25.md](Mil
 
 **Naming:** today’s stash `remainingSteel` **becomes** hex `remainingResource` (one field). Scrap UI can still label it as steel remaining while a stash occupies the hex; the underlying number is the tile pool.
 
-**Defaults:** `pool_by_terrain` / `pool_per_tile_level_pct` / `tile_level_max` start from today’s scrap bases (grassland 1050, shore 1800, forest 2400, mountain 3300; `+35%` per level above 1; `tile_level_max` 5). Add **water** for docks (first pass: shore’s base). Planned home: `hex_resource_pools.*`; `scrap_stashes.steel_pool_*` are superseded at impl (sizing comes from the hex pool, not a second counter).
+**Defaults:** `pool_by_terrain` / `pool_per_tile_level_pct` / `tile_level_max` default bases: grassland 1575, shore 2700, forest 3600, mountain 4950, water 2700; hard ≈70% of those; `+35%` per level above 1; `tile_level_max` 5. Planned home: `hex_resource_pools.*`; `scrap_stashes.steel_pool_*` are superseded at impl (sizing comes from the hex pool, not a second counter).
 
 **UI:** show remaining on the **active** resource structure (extractor, dock, or known scrap stash) — not on empty / scouted / unscouted hexes without that structure.
 
@@ -361,8 +361,8 @@ Finite steel pools on map hexes. Count scales with map size (`mapSize.ts`); ±1 
 
 | Key | Role |
 |-----|------|
-| `steel_pool_by_terrain` | Base pool: grassland 1050 / shore 1800 / forest 2400 / mountain 3300 |
-| `steel_pool_per_tile_level_pct` | +35% per hidden tile level above 1 (sparse grassland ≈ 1050; rich mountain ≈ 7920) |
+| `steel_pool_by_terrain` | **Superseded by** `hex_resource_pools.pool_by_terrain` (default grassland 1575 / shore 2700 / forest 3600 / mountain 4950 / water 2700) |
+| `steel_pool_per_tile_level_pct` | **Superseded by** `hex_resource_pools.pool_per_tile_level_pct` (+35%; sparse grassland ≈ 1575; rich mountain ≈ 11880) |
 | `wandering_scout_sample_steel` | 36 steel skimmed when a wandering scout steps an active stash |
 | `terrain_placement_weight` | Favors mountain/forest/shore; rare on grassland |
 
@@ -560,7 +560,7 @@ A converted den becomes a second, independent economic/defensive hub — a real 
 
 **Surfacing:**
 - Guaranteed: clearing a den always awards exactly one clue (`den_clear_bonus.guaranteed_clue_per_den_clear`).
-- Watchtower signal (#38): L2–L3 towers roll `per_watchtower_tick_base_chance` (0.1%/tick); L4 multiplies by `watchtower_intel_tier_multiplier` (2×). A success sets a vague 4-point **signal** (not a clue) that lightly biases wandering-scout steps toward that sector and faintly toward the true lab tile. Softmax weights (halved 2026-07-27 / #83): `signal_bearing_weight` (1.25), `signal_lab_approach_weight` (1.75), `signal_lab_tile_bonus` (2). Signal clears when a wandering scout reveals the lab (or is overwritten by a newer signal).
+- Watchtower signal (#38): L2–L3 towers roll `per_watchtower_tick_base_chance` (0.1%/tick); L4 multiplies by `watchtower_intel_tier_multiplier` (2×). A success sets a vague 4-point **signal** (not a clue) that gently biases wandering-scout steps toward that compass sector only. Softmax weights (2026-07-28): `signal_bearing_weight` (0.85), `signal_lab_approach_weight` (0), `signal_lab_tile_bonus` (0) — lab magnetism off so signals stay vague. Signal clears when a wandering scout reveals the lab (or is overwritten by a newer signal).
 - Stops once all 5 den clues are collected (`stops_once_all_clues_collected` — no further signals).
 - Horde alert: toast when a horde first enters an active tower's combat range.
 

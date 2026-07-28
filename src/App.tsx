@@ -51,6 +51,11 @@ import { SCOUTED_TILES_DB_KEY, type ScoutedTiles } from "./data/scoutedTiles";
 import { DENS_DB_KEY, createDens, resolveDen, type DenRecord, type DensRecord } from "./data/dens";
 import { DEN_ASSAULTS_DB_KEY, normalizeDenAssault, type DenAssaultRecord, type DenAssaultsRecord } from "./data/denAssaults";
 import {
+  emptyHexResourcePools,
+  HEX_RESOURCE_POOLS_DB_KEY,
+  type HexResourcePoolsRecord,
+} from "./data/hexResourcePools";
+import {
   SCRAP_STASHES_DB_KEY,
   applyWanderingScoutScrapSamples,
   createScrapStashes,
@@ -286,6 +291,7 @@ interface GameState {
   noise: NoiseRecord;
   dens: DensRecord;
   scrapStashes: ScrapStashesRecord;
+  hexResourcePools: HexResourcePoolsRecord;
   scrapYards: ScrapYardsRecord;
   hordes: HordesRecord;
   expeditions: ExpeditionsRecord;
@@ -413,6 +419,7 @@ function buildGameState(
     noise: NoiseRecord | undefined;
     dens: DenRecord[] | undefined;
     scrapStashes: ScrapStashesRecord | undefined;
+    hexResourcePools: HexResourcePoolsRecord | undefined;
     scrapYards: ScrapYardsRecord | undefined;
     hordes: HordesRecord | undefined;
     expeditions: ExpeditionsRecord | undefined;
@@ -455,6 +462,10 @@ function buildGameState(
           lab,
           tweaks,
         );
+  const hexResourcePools: HexResourcePoolsRecord =
+    data.hexResourcePools && typeof data.hexResourcePools === "object"
+      ? (data.hexResourcePools as HexResourcePoolsRecord)
+      : emptyHexResourcePools();
   const migrated = migrateLegacyTrainingQueues(data.barracksList ?? [], { ...initialUnits(), ...(data.units as LegacyUnitsRecord | undefined) });
   // One-shot migration from stockpile-power saves (Milestone 25 / #70): power
   // extraction tiles become L1 power stations, resources.power/storageLevels.power
@@ -514,6 +525,7 @@ function buildGameState(
     noise: data.noise ?? initialNoise(tweaks),
     dens: resolvedDens,
     scrapStashes,
+    hexResourcePools,
     scrapYards,
     hordes: data.hordes ?? [],
     expeditions: (data.expeditions ?? []).map((e) => normalizeExpedition(e)),
@@ -590,7 +602,7 @@ function resolveConstruction<T extends { buildStartedAt?: number | null }>(
 }
 
 /** Every owned tile can hold at most one structure of any kind (extraction, tower, wall, barracks, dock, power station, or scrap yard). */
-function isHexOccupied(game: GameState, coord: Axial): boolean {
+function isHexOccupied(game: GameState, tweaks: Tweaks, coord: Axial): boolean {
   const key = axialKey(coord);
   return (
     game.extractionTiles.some((t) => axialKey(t.coord) === key) ||
@@ -600,7 +612,7 @@ function isHexOccupied(game: GameState, coord: Axial): boolean {
     game.docks.some((t) => axialKey(t.coord) === key) ||
     game.powerStations.some((t) => axialKey(t.coord) === key) ||
     game.scrapYards.some((t) => axialKey(t.coord) === key) ||
-    scrapStashBlocksHex(game.scrapStashes, coord)
+    scrapStashBlocksHex(tweaks, game.world.seed, game.hexResourcePools, game.scrapStashes, coord)
   );
 }
 
@@ -702,6 +714,7 @@ export default function App() {
           noise,
           dens,
           scrapStashes,
+          hexResourcePools,
           scrapYards,
           hordes,
           expeditions,
@@ -739,6 +752,7 @@ export default function App() {
           get<NoiseRecord>(NOISE_DB_KEY),
           get<DensRecord>(DENS_DB_KEY),
           get<ScrapStashesRecord>(SCRAP_STASHES_DB_KEY),
+          get<HexResourcePoolsRecord>(HEX_RESOURCE_POOLS_DB_KEY),
           get<ScrapYardsRecord>(SCRAP_YARDS_DB_KEY),
           get<HordesRecord>(HORDES_DB_KEY),
           get<ExpeditionsRecord>(EXPEDITIONS_DB_KEY),
@@ -782,6 +796,7 @@ export default function App() {
             noise,
             dens,
             scrapStashes,
+            hexResourcePools,
             scrapYards,
             hordes,
             expeditions,
@@ -880,7 +895,12 @@ export default function App() {
       // (path auto-flow retired). Scouted tiles feed the same owned∪scouted
       // route set as expeditions.
       const economyGridSize = resolveWorldGridSize(current.game.world, current.tweaks);
-      const { resources: producedResources, tiles: extractionTilesAfterYield } = accrueResources(
+      let hexResourcePools = current.game.hexResourcePools;
+      const {
+        resources: producedResources,
+        tiles: extractionTilesAfterYield,
+        hexResourcePools: poolsAfterExtraction,
+      } = accrueResources(
         current.tweaks,
         current.game.extractionTiles,
         elapsedSeconds,
@@ -893,7 +913,9 @@ export default function App() {
         current.game.territory,
         current.game.scoutedTiles,
         economyGridSize,
+        hexResourcePools,
       );
+      hexResourcePools = poolsAfterExtraction;
       // Later stages (hold-period damage, horde overrun/reversion, fresh
       // conversions) build on top of this array, not current.game.outposts
       // directly. Reinforcement upgrade/repair timers are resolved here too,
@@ -901,7 +923,11 @@ export default function App() {
       const outpostsAfterYield: OutpostsRecord = current.game.outposts.map((o) =>
         resolveOutpostReinforcementAction(current.tweaks, o, virtualNow),
       );
-      const { resources: producedResourcesWithDocks, docks: docksAfterYield } = accrueDockResources(
+      const {
+        resources: producedResourcesWithDocks,
+        docks: docksAfterYield,
+        hexResourcePools: poolsAfterDocks,
+      } = accrueDockResources(
         current.tweaks,
         current.game.docks,
         producedResources,
@@ -913,7 +939,9 @@ export default function App() {
         current.game.territory,
         current.game.scoutedTiles,
         economyGridSize,
+        hexResourcePools,
       );
+      hexResourcePools = poolsAfterDocks;
       const { resources: producedResourcesWithYards, scrapYards: scrapYardsAfterCourier } =
         advanceScrapYardCouriers(
           current.tweaks,
@@ -1221,11 +1249,14 @@ export default function App() {
       );
       const scrapSample = applyWanderingScoutScrapSamples(
         current.tweaks,
+        current.game.world.seed,
+        hexResourcePools,
         current.game.scrapStashes,
         wanderingScoutsAfterBuild,
         wanderingScouts,
       );
       let scrapStashes = scrapSample.scrapStashes;
+      hexResourcePools = scrapSample.hexResourcePools;
       if (scrapSample.steelGained > 0) {
         const steelCap = storageCapacity(current.tweaks, current.game.storageLevels.steel);
         resources = {
@@ -1251,6 +1282,7 @@ export default function App() {
         current.game.world.seed,
         scrapYards,
         scrapStashes,
+        hexResourcePools,
         territoryAfterRelocation,
         scoutedTilesAfterWander,
         economyGridSize,
@@ -1259,6 +1291,7 @@ export default function App() {
       );
       scrapYards = scrapperAdvance.scrapYards;
       scrapStashes = scrapperAdvance.scrapStashes;
+      hexResourcePools = scrapperAdvance.hexResourcePools;
       const territoryBeforeHordes = scrapperAdvance.territory;
       const scoutedTiles = scrapperAdvance.scoutedTiles;
 
@@ -2117,6 +2150,7 @@ export default function App() {
         set(SCOUTED_TILES_DB_KEY, scoutedTilesAfterCapture),
         set(DENS_DB_KEY, densAfterAssaults),
         set(SCRAP_STASHES_DB_KEY, scrapStashes),
+        set(HEX_RESOURCE_POOLS_DB_KEY, hexResourcePools),
         set(DEN_ASSAULTS_DB_KEY, nextDenAssaults),
         set(OUTPOSTS_DB_KEY, outpostsAfterSieges),
         set(GARRISON_RECALLS_DB_KEY, pendingGarrisonRecalls),
@@ -2155,6 +2189,7 @@ export default function App() {
                 scoutedTiles: scoutedTilesAfterCapture,
                 dens: densAfterAssaults,
                 scrapStashes,
+                hexResourcePools,
                 denAssaults: nextDenAssaults,
                 outposts: outpostsAfterSieges,
                 garrisonRecalls: pendingGarrisonRecalls,
@@ -2231,6 +2266,7 @@ export default function App() {
     const garrisonRecalls: GarrisonRecallsRecord = [];
     const lab = createLab(world.seed, gridSize, territory.base, dens, mapTweaks);
     const scrapStashes = createScrapStashes(world.seed, gridSize, territory.base, dens, lab, mapTweaks);
+    const hexResourcePools = emptyHexResourcePools();
     const scrapYards: ScrapYardsRecord = [];
     const labAssaults: LabAssaultsRecord = [];
     const research = initialResearch();
@@ -2257,6 +2293,7 @@ export default function App() {
       set(NOISE_DB_KEY, noise),
       set(DENS_DB_KEY, dens),
       set(SCRAP_STASHES_DB_KEY, scrapStashes),
+      set(HEX_RESOURCE_POOLS_DB_KEY, hexResourcePools),
       set(SCRAP_YARDS_DB_KEY, scrapYards),
       set(HORDES_DB_KEY, hordes),
       set(EXPEDITIONS_DB_KEY, expeditions),
@@ -2301,6 +2338,7 @@ export default function App() {
           noise,
           dens,
           scrapStashes,
+          hexResourcePools,
           scrapYards,
           hordes,
           expeditions,
@@ -2429,6 +2467,7 @@ export default function App() {
       noise: stored.noise as NoiseRecord | undefined,
       dens: stored.dens as DensRecord | undefined,
       scrapStashes: stored.scrapStashes as ScrapStashesRecord | undefined,
+      hexResourcePools: stored.hexResourcePools as HexResourcePoolsRecord | undefined,
       scrapYards: stored.scrapYards as ScrapYardsRecord | undefined,
       hordes: stored.hordes as HordesRecord | undefined,
       expeditions: stored.expeditions as ExpeditionsRecord | undefined,
@@ -2537,7 +2576,7 @@ export default function App() {
       return { ok: false, reason: "Cannot build on water" };
     }
 
-    if (isHexOccupied(game, coord)) {
+    if (isHexOccupied(game, tweaks, coord)) {
       return { ok: false, reason: "Tile already has a structure" };
     }
 
@@ -2751,7 +2790,7 @@ export default function App() {
     if (!isTransitionTile(game.world.seed, coord)) {
       return { ok: false, reason: "Docks must be built on water bordering land" };
     }
-    if (isHexOccupied(game, coord)) {
+    if (isHexOccupied(game, tweaks, coord)) {
       return { ok: false, reason: "Tile already has a structure" };
     }
 
@@ -2978,7 +3017,7 @@ export default function App() {
     if (!isBuildableLand(game.world.seed, coord)) {
       return { ok: false, reason: "Cannot build on water" };
     }
-    if (isHexOccupied(game, coord)) {
+    if (isHexOccupied(game, tweaks, coord)) {
       return { ok: false, reason: "Tile already has a structure" };
     }
     const structureCount = totalStructureCount(
@@ -3081,7 +3120,7 @@ export default function App() {
     if (!isBuildableLand(game.world.seed, coord)) {
       return { ok: false, reason: "Cannot build on water" };
     }
-    if (isHexOccupied(game, coord)) {
+    if (isHexOccupied(game, tweaks, coord)) {
       return { ok: false, reason: "Tile already has a structure" };
     }
     const structureCount = totalStructureCount(
@@ -3184,7 +3223,7 @@ export default function App() {
     if (!isBuildableLand(game.world.seed, coord)) {
       return { ok: false, reason: "Cannot build on water" };
     }
-    if (isHexOccupied(game, coord)) {
+    if (isHexOccupied(game, tweaks, coord)) {
       return { ok: false, reason: "Tile already has a structure" };
     }
     const structureCount = totalStructureCount(
@@ -3320,6 +3359,7 @@ export default function App() {
       game.world.seed,
       yard,
       stash,
+      game.hexResourcePools,
       game.territory,
       game.scoutedTiles,
       resolveWorldGridSize(game.world, tweaks),
@@ -3377,7 +3417,7 @@ export default function App() {
     if (!isBuildableLand(game.world.seed, coord)) {
       return { ok: false, reason: "Cannot build on water" };
     }
-    if (isHexOccupied(game, coord)) {
+    if (isHexOccupied(game, tweaks, coord)) {
       return { ok: false, reason: "Tile already has a structure" };
     }
     const structureCount = totalStructureCount(
@@ -3727,7 +3767,7 @@ export default function App() {
     if (!isBuildableLand(game.world.seed, coord)) {
       return { ok: false, reason: "Cannot build on water" };
     }
-    if (isHexOccupied(game, coord)) {
+    if (isHexOccupied(game, tweaks, coord)) {
       return { ok: false, reason: "Tile already has a structure" };
     }
     const structureCount = totalStructureCount(
@@ -4312,7 +4352,7 @@ export default function App() {
     if (terrainAt(game.world.seed, destination) === "water") {
       return { ok: false, reason: "Can't relocate onto water" };
     }
-    if (isHexOccupied(game, destination)) {
+    if (isHexOccupied(game, tweaks, destination)) {
       return { ok: false, reason: "Tile isn't empty" };
     }
 
@@ -5102,6 +5142,7 @@ export default function App() {
       noise={boot.game.noise}
       dens={boot.game.dens}
       scrapStashes={boot.game.scrapStashes}
+      hexResourcePools={boot.game.hexResourcePools}
       denAssaults={boot.game.denAssaults}
       outposts={boot.game.outposts}
       lab={boot.game.lab}

@@ -18,6 +18,7 @@ import { STORAGE_UPGRADES_DB_KEY } from "./storageUpgrades";
 import { NOISE_DB_KEY } from "./noise";
 import { DENS_DB_KEY } from "./dens";
 import { SCRAP_STASHES_DB_KEY } from "./scrapStashes";
+import { HEX_RESOURCE_POOLS_DB_KEY } from "./hexResourcePools";
 import { SCRAP_YARDS_DB_KEY } from "./scrapYards";
 import { HORDES_DB_KEY } from "./hordes";
 import { EXPEDITIONS_DB_KEY } from "./expeditions";
@@ -36,9 +37,9 @@ import { PROFILE_SLUG_DB_KEY } from "./profile";
 import { DEFAULT_PROFILE_SLUG } from "./profileRegistry";
 
 export const SAVE_FILE_FORMAT = "hexworld-save" as const;
-/** v2: power stations replace stockpile power (Milestone 25 / #70). v1 imports still accepted + migrated on load. */
-export const SAVE_FILE_VERSION = 2 as const;
-export const SAVE_FILE_VERSIONS_ACCEPTED = new Set([1, 2]);
+/** v3: shared hex remainingResource (Milestone 27 / #84). Older exports rejected. */
+export const SAVE_FILE_VERSION = 3 as const;
+export const SAVE_FILE_VERSIONS_ACCEPTED = new Set([3]);
 
 const GAME_DB_KEYS = [
   PLAYER_DB_KEY,
@@ -60,6 +61,7 @@ const GAME_DB_KEYS = [
   NOISE_DB_KEY,
   DENS_DB_KEY,
   SCRAP_STASHES_DB_KEY,
+  HEX_RESOURCE_POOLS_DB_KEY,
   SCRAP_YARDS_DB_KEY,
   HORDES_DB_KEY,
   EXPEDITIONS_DB_KEY,
@@ -113,6 +115,7 @@ export type PersistableGameSnapshot = {
   noise: unknown;
   dens: unknown;
   scrapStashes: unknown;
+  hexResourcePools: unknown;
   scrapYards: unknown;
   hordes: unknown;
   expeditions: unknown;
@@ -153,6 +156,7 @@ export type StoredGameKeys = {
   noise: unknown;
   dens: unknown;
   scrapStashes: unknown;
+  hexResourcePools: unknown;
   scrapYards: unknown;
   hordes: unknown;
   expeditions: unknown;
@@ -206,6 +210,7 @@ export function snapshotToKeys(game: PersistableGameSnapshot, profileSlug: strin
     [NOISE_DB_KEY]: game.noise,
     [DENS_DB_KEY]: game.dens,
     [SCRAP_STASHES_DB_KEY]: game.scrapStashes,
+    [HEX_RESOURCE_POOLS_DB_KEY]: game.hexResourcePools,
     [SCRAP_YARDS_DB_KEY]: game.scrapYards,
     [HORDES_DB_KEY]: game.hordes,
     [EXPEDITIONS_DB_KEY]: game.expeditions,
@@ -268,6 +273,7 @@ export function keysToStoredGame(keys: SaveFileV1["keys"], profileSlugFallback?:
     noise: keys[NOISE_DB_KEY],
     dens: keys[DENS_DB_KEY],
     scrapStashes: keys[SCRAP_STASHES_DB_KEY],
+    hexResourcePools: keys[HEX_RESOURCE_POOLS_DB_KEY],
     scrapYards: keys[SCRAP_YARDS_DB_KEY],
     hordes: keys[HORDES_DB_KEY],
     expeditions: keys[EXPEDITIONS_DB_KEY],

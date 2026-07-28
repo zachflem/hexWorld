@@ -723,6 +723,24 @@
 
 
   // --------------------------------------------------------------------------
+  // HEX RESOURCE POOLS (Milestone 27 / #84 — shared remainingResource per hex)
+  // --------------------------------------------------------------------------
+  "hex_resource_pools": {
+    "_status": "shipped Milestone 27 — shared remaining for F/W/S extractors, docks, and scrap. infinite_resources skips all drain.",
+    "infinite_resources": false,
+    "tile_level_max": 5,
+    "pool_by_terrain": {
+      "grassland": 1575,
+      "shore": 2700,
+      "forest": 3600,
+      "mountain": 4950,
+      "water": 2700
+    },
+    "pool_per_tile_level_pct": 0.35,
+    "_pool_note": "remaining = round(pool_by_terrain[terrain] * (1 + pool_per_tile_level_pct * (tileLevel-1))). Hard profile uses ~70% of default bases."
+  },
+
+  // --------------------------------------------------------------------------
   // SCRAP STASHES (Milestone 26 / #36 — world-gen steel sites for Scrappers)
   // --------------------------------------------------------------------------
   "scrap_stashes": {
@@ -730,17 +748,8 @@
     "count": 28,
     "early_guarantee_max_distance": 10,
     "_early_guarantee_note": "At least one stash within this axial distance of base (scaled with map size) so the steel loop is reachable early (ScrapperEconomy Q48).",
-    "tile_level_max": 5,
     "art_variant_count": 3,
     "_art_variant_note": "resources/scrap-1.png … scrap-N.png (Q70). Seeded per stash at world-gen.",
-    "steel_pool_by_terrain": {
-      "grassland": 1050,
-      "shore": 1800,
-      "forest": 2400,
-      "mountain": 3300
-    },
-    "steel_pool_per_tile_level_pct": 0.35,
-    "_pool_note": "pool = round(steel_pool_by_terrain[terrain] * (1 + steel_pool_per_tile_level_pct * (tileLevel-1))). Tile level is hidden world-gen richness (Q49). Sparse (L1) grassland ≈ 1050 (~7× power station steel); rich (L5) mountain ≈ 7920.",
     "terrain_placement_weight": {
       "grassland": 1,
       "shore": 2,
@@ -804,10 +813,12 @@
       "watchtower_intel_tier_multiplier": 2.0,
       // After 5 den-clear clues the search cluster is on the map; stop new signals.
       "stops_once_all_clues_collected": true,
-      // Softmax neighbor weights while a signal is active (halved 2026-07-27 — slight hint, not bee-line).
-      "signal_bearing_weight": 1.25, // was 2.5
-      "signal_lab_approach_weight": 1.75, // was 3.5
-      "signal_lab_tile_bonus": 2.0 // was 4
+      // Softmax neighbor weights while a signal is active.
+      // Tower signals are a vague compass nudge only — no true-lab magnetism
+      // (lab approach / tile bonus zeroed 2026-07-28; was still bee-lining after the 07-27 half).
+      "signal_bearing_weight": 0.85,
+      "signal_lab_approach_weight": 0,
+      "signal_lab_tile_bonus": 0
     },
 
     "den_clear_bonus": {

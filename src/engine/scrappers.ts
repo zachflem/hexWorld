@@ -1,5 +1,11 @@
 import type { ScrapStashRecord, ScrapStashesRecord } from "../data/scrapStashes";
 import { isActiveScrapStash } from "../data/scrapStashes";
+import {
+  drainRemainingResource,
+  isInfiniteResources,
+  remainingResourceAt,
+  type HexResourcePoolsRecord,
+} from "../data/hexResourcePools";
 import type { ScrapYardRecord, ScrapperTrip } from "../data/scrapYards";
 import { idleScrapperTrip } from "../data/scrapYards";
 import type { TerritoryRecord } from "../data/territory";
@@ -80,6 +86,9 @@ export function scrapperWorldCoord(yard: ScrapYardRecord, now: number): Axial {
 }
 
 function closestKnownStash(
+  tweaks: Tweaks,
+  seed: number,
+  store: HexResourcePoolsRecord,
   yard: ScrapYardRecord,
   stashes: ScrapStashesRecord,
   knownKeys: Set<string>,
@@ -87,7 +96,7 @@ function closestKnownStash(
   let best: ScrapStashRecord | null = null;
   let bestDist = Infinity;
   for (const stash of stashes) {
-    if (!isActiveScrapStash(stash) || !knownKeys.has(axialKey(stash.coord))) continue;
+    if (!isActiveScrapStash(tweaks, seed, store, stash) || !knownKeys.has(axialKey(stash.coord))) continue;
     const dist = axialDistance(yard.coord, stash.coord);
     if (dist < bestDist) {
       bestDist = dist;
@@ -108,11 +117,22 @@ export function scrapYardYieldPerSecond(
   seed: number,
   yard: ScrapYardRecord,
   stashes: ScrapStashesRecord,
-  territory: TerritoryRecord,
-  scoutedTiles: Axial[],
-  gridSize: number,
-  powerNetwork?: PowerNetworkSnapshot,
+  hexResourcePoolsOrTerritory: HexResourcePoolsRecord | TerritoryRecord,
+  territoryOrScouted: TerritoryRecord | Axial[],
+  scoutedTilesOrGrid: Axial[] | number,
+  gridSizeOrPower: number | PowerNetworkSnapshot | undefined,
+  powerNetworkMaybe?: PowerNetworkSnapshot,
 ): number {
+  const usingLegacyArgs = Array.isArray(territoryOrScouted);
+  const hexResourcePools: HexResourcePoolsRecord = usingLegacyArgs ? {} : (hexResourcePoolsOrTerritory as HexResourcePoolsRecord);
+  const territory: TerritoryRecord = usingLegacyArgs
+    ? (hexResourcePoolsOrTerritory as TerritoryRecord)
+    : (territoryOrScouted as TerritoryRecord);
+  const scoutedTiles: Axial[] = usingLegacyArgs
+    ? (territoryOrScouted as Axial[])
+    : (scoutedTilesOrGrid as Axial[]);
+  const gridSize = usingLegacyArgs ? (scoutedTilesOrGrid as number) : (gridSizeOrPower as number);
+  const powerNetwork = usingLegacyArgs ? (gridSizeOrPower as PowerNetworkSnapshot | undefined) : powerNetworkMaybe;
   if (!yard.scrapperReady || !isStructureActive(yard)) return 0;
   if (powerNetwork && powerPerformanceFactor(powerNetwork, yard.level, yard.coord) <= 0) {
     return 0;
@@ -122,9 +142,12 @@ export function scrapYardYieldPerSecond(
   const trip = yard.scrapper;
   let stash: ScrapStashRecord | null = null;
   if (trip?.assignedStashId) {
-    stash = stashes.find((s) => s.id === trip.assignedStashId && isActiveScrapStash(s)) ?? null;
+    stash =
+      stashes.find(
+        (s) => s.id === trip.assignedStashId && isActiveScrapStash(tweaks, seed, hexResourcePools, s),
+      ) ?? null;
   }
-  if (!stash) stash = closestKnownStash(yard, stashes, known);
+  if (!stash) stash = closestKnownStash(tweaks, seed, hexResourcePools, yard, stashes, known);
   if (!stash) return 0;
 
   const route = findExpeditionRouteFrom(
@@ -143,7 +166,12 @@ export function scrapYardYieldPerSecond(
   const roundTripSec = (2 * oneWayMs) / 1000;
   if (roundTripSec <= 0) return 0;
 
-  const cargo = Math.min(scrapperCapacity(tweaks, yard.level), stash.remainingSteel);
+  const remaining = remainingResourceAt(seed, stash.coord, hexResourcePools, tweaks);
+  if (!isInfiniteResources(tweaks) && remaining <= 0) return 0;
+  const cargo = Math.min(
+    scrapperCapacity(tweaks, yard.level),
+    isInfiniteResources(tweaks) ? scrapperCapacity(tweaks, yard.level) : remaining,
+  );
   return cargo / roundTripSec;
 }
 
@@ -156,13 +184,25 @@ export function assignScrapperStash(
   seed: number,
   yard: ScrapYardRecord,
   stash: ScrapStashRecord,
-  territory: TerritoryRecord,
-  scoutedTiles: Axial[],
-  gridSize: number,
-  now: number,
+  hexResourcePoolsOrTerritory: HexResourcePoolsRecord | TerritoryRecord,
+  territoryOrScouted: TerritoryRecord | Axial[],
+  scoutedTilesOrGrid: Axial[] | number,
+  gridSizeOrNow: number,
+  nowOrUndefined?: number,
 ): ScrapYardRecord | null {
+  const usingLegacyArgs = Array.isArray(territoryOrScouted);
+  const hexResourcePools: HexResourcePoolsRecord = usingLegacyArgs ? {} : (hexResourcePoolsOrTerritory as HexResourcePoolsRecord);
+  const territory: TerritoryRecord = usingLegacyArgs
+    ? (hexResourcePoolsOrTerritory as TerritoryRecord)
+    : (territoryOrScouted as TerritoryRecord);
+  const scoutedTiles: Axial[] = usingLegacyArgs
+    ? (territoryOrScouted as Axial[])
+    : (scoutedTilesOrGrid as Axial[]);
+  const gridSize = usingLegacyArgs ? (scoutedTilesOrGrid as number) : gridSizeOrNow;
+  const now = usingLegacyArgs ? gridSizeOrNow : (nowOrUndefined ?? gridSizeOrNow);
+
   if (!yard.scrapperReady || !isStructureActive(yard)) return null;
-  if (!isActiveScrapStash(stash)) return null;
+  if (!isActiveScrapStash(tweaks, seed, hexResourcePools, stash)) return null;
 
   const known = new Set([...territory.owned, ...scoutedTiles].map(axialKey));
   if (!known.has(axialKey(stash.coord))) return null;
@@ -251,6 +291,7 @@ export function recallScrapperToYard(
 export type AdvanceScrappersResult = {
   scrapYards: ScrapYardRecord[];
   scrapStashes: ScrapStashesRecord;
+  hexResourcePools: HexResourcePoolsRecord;
   territory: TerritoryRecord;
   scoutedTiles: Axial[];
 };
@@ -261,19 +302,33 @@ export type AdvanceScrappersResult = {
  * known stash only after the assigned one is depleted (Q58).
  * L2+ yards with no power / below cutoff freeze mid-route (keep cargo); L1 is
  * power-exempt like other structures.
+ * Pickup drains shared hex remainingResource (Milestone 27).
  */
 export function advanceScrappers(
   tweaks: Tweaks,
   seed: number,
   yards: ScrapYardRecord[],
   stashes: ScrapStashesRecord,
-  territory: TerritoryRecord,
-  scoutedTiles: Axial[],
-  gridSize: number,
-  now: number,
-  powerNetwork: PowerNetworkSnapshot,
+  hexResourcePoolsOrTerritory: HexResourcePoolsRecord | TerritoryRecord,
+  territoryOrScouted: TerritoryRecord | Axial[],
+  scoutedTilesOrGrid: Axial[] | number,
+  gridSizeOrNow: number,
+  nowOrPower: number | PowerNetworkSnapshot,
+  powerNetworkMaybe?: PowerNetworkSnapshot,
 ): AdvanceScrappersResult {
+  const usingLegacyArgs = Array.isArray(territoryOrScouted);
+  const hexResourcePools: HexResourcePoolsRecord = usingLegacyArgs ? {} : (hexResourcePoolsOrTerritory as HexResourcePoolsRecord);
+  const territory: TerritoryRecord = usingLegacyArgs
+    ? (hexResourcePoolsOrTerritory as TerritoryRecord)
+    : (territoryOrScouted as TerritoryRecord);
+  const scoutedTiles: Axial[] = usingLegacyArgs
+    ? (territoryOrScouted as Axial[])
+    : (scoutedTilesOrGrid as Axial[]);
+  const gridSize = usingLegacyArgs ? (scoutedTilesOrGrid as number) : gridSizeOrNow;
+  const now = usingLegacyArgs ? (gridSizeOrNow as number) : (nowOrPower as number);
+  const powerNetwork = usingLegacyArgs ? (nowOrPower as PowerNetworkSnapshot) : (powerNetworkMaybe as PowerNetworkSnapshot);
   let nextStashes = stashes;
+  let nextPools = hexResourcePools;
   let nextTerritory = territory;
   let nextScouted = scoutedTiles;
 
@@ -321,11 +376,10 @@ export function advanceScrappers(
         const stashIndex = nextStashes.findIndex((s) => s.id === trip.assignedStashId);
         const stash = stashIndex >= 0 ? nextStashes[stashIndex]! : null;
         let cargo = 0;
-        if (stash && isActiveScrapStash(stash)) {
-          cargo = Math.min(cap, stash.remainingSteel);
-          nextStashes = nextStashes.map((s, i) =>
-            i === stashIndex ? { ...s, remainingSteel: s.remainingSteel - cargo } : s,
-          );
+        if (stash && isActiveScrapStash(tweaks, seed, nextPools, stash)) {
+          const drained = drainRemainingResource(seed, stash.coord, nextPools, tweaks, cap);
+          nextPools = drained.store;
+          cargo = drained.taken;
         }
         const fromCoord = stash?.coord ?? trip.path[trip.path.length - 1]!;
         const returnLeg = startLeg(
@@ -352,7 +406,9 @@ export function advanceScrappers(
         // after that stash is gone — then pick the next closest known stash (Q58).
         const sameStash =
           finishedStashId != null
-            ? nextStashes.find((s) => s.id === finishedStashId && isActiveScrapStash(s))
+            ? nextStashes.find(
+                (s) => s.id === finishedStashId && isActiveScrapStash(tweaks, seed, nextPools, s),
+              )
             : null;
         if (sameStash) {
           const again = startLeg(
@@ -372,7 +428,7 @@ export function advanceScrappers(
           if (again) trip = again;
         } else if (scrapperHasAuto(tweaks, yard.level)) {
           const known = new Set([...nextTerritory.owned, ...nextScouted].map(axialKey));
-          const next = closestKnownStash(yard, nextStashes, known);
+          const next = closestKnownStash(tweaks, seed, nextPools, yard, nextStashes, known);
           if (next) {
             const auto = startLeg(
               tweaks,
@@ -400,6 +456,7 @@ export function advanceScrappers(
   return {
     scrapYards: nextYards,
     scrapStashes: nextStashes,
+    hexResourcePools: nextPools,
     territory: nextTerritory,
     scoutedTiles: nextScouted,
   };

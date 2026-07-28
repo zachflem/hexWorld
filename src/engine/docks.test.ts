@@ -21,7 +21,7 @@ import {
 import { courierOneWayDurationMs } from "./couriers";
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -68,6 +68,7 @@ function accrue(
     terr,
     [],
     GRID,
+    {},
   );
 }
 
