@@ -95,7 +95,7 @@ A tile can only hold one thing at a time — an extraction tile, a tower, a wall
 Steel comes from the map, not from an extractor:
 
 1. **Scrap stashes** are placed at world-gen (at least one near your start). When scouted (Wandering Scout, tower intel, etc.) they show a grey ring and tell you remaining material on that hex (hauled as steel) plus a vague richness hint (“sparse dump” … “looks rich”). Visiting scouts also skim a small sample into storage. That remaining is the **same** hex pool an extractor would drain.
-2. Build a **Scrap Yard** on owned empty land (wood + stone — no steel required to start). A **Scrapper** comes with the yard: assign it to a known stash and it walks yard → stash → yard, dumping steel into the yard’s local stockpile. You can reassign mid-route when empty, or recall it home (loaded trips keep their cargo).
+2. Build a **Scrap Yard** on owned empty land (wood + stone — no steel required to start). A **Scrapper** comes with the yard: assign it to a known stash and it walks yard → stash → yard, dumping steel into the yard’s local stockpile. You can reassign mid-route when empty, or recall it home (loaded trips keep their cargo). If the yard stockpile is full, the Scrapper pauses at the yard and resumes once you collect (or a courier frees space).
 3. **Collect** from the yard (tile sheet anytime; map pin once the local stockpile is ~60% full, or only when full if the yard has a courier), or upgrade the yard to **L2** so an implied courier hauls steel to base like other resources. L3 adds Auto (Scrapper picks the next closest known stash) and more capacity/speed. L2+ yards need power coverage like other upgraded structures.
 
 Empty stashes free their hex once the steel is gone.

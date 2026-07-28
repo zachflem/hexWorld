@@ -312,4 +312,111 @@ describe("scrappers", () => {
     );
     expect(rate).toBeGreaterThan(0);
   });
+
+  it("pauses looping when the yard stockpile is full and resumes once there is room", () => {
+    const tweaks = loadRealTweaks();
+    const base = { q: 0, r: 0 };
+    const yardCoord = { q: 1, r: 0 };
+    const stashCoord = { q: 2, r: 0 };
+    const territory = { base, owned: [base, yardCoord, stashCoord] };
+    const seed = 1;
+    const tileCap = tweaks.storage.capacity_base_per_resource;
+    const haulCap = tweaks.scrap_yards.scrapper.capacity_by_level[1] ?? 8;
+    const stashRecord = stash({ coord: stashCoord });
+    const pools = poolsFor([[stashRecord, 400]]);
+
+    // Arrive home with a haul that fills the stockpile exactly.
+    const returning: ScrapYardRecord = yard({
+      coord: yardCoord,
+      stockpile: tileCap - haulCap,
+      scrapper: {
+        assignedStashId: stashRecord.id,
+        phase: "toYard",
+        path: [stashCoord, yardCoord],
+        departedAt: 0,
+        arriveAt: 1_000,
+        resolvedIndex: 1,
+        cargo: haulCap,
+      },
+    });
+
+    const afterFull = advanceScrappers(
+      tweaks,
+      seed,
+      [returning],
+      [stashRecord],
+      pools,
+      territory,
+      [],
+      32,
+      1_000,
+      UNLIMITED_POWER,
+    );
+    expect(afterFull.scrapYards[0]!.stockpile).toBe(tileCap);
+    expect(afterFull.scrapYards[0]!.scrapper?.phase).toBe("idle");
+    expect(afterFull.scrapYards[0]!.scrapper?.assignedStashId).toBe(stashRecord.id);
+    const remainingWhilePaused = remainingResourceAt(
+      seed,
+      stashCoord,
+      afterFull.hexResourcePools,
+      tweaks,
+    );
+
+    // Still full — stay parked (no stash drain).
+    const stillFull = advanceScrappers(
+      tweaks,
+      seed,
+      afterFull.scrapYards,
+      afterFull.scrapStashes,
+      afterFull.hexResourcePools,
+      afterFull.territory,
+      afterFull.scoutedTiles,
+      32,
+      2_000,
+      UNLIMITED_POWER,
+    );
+    expect(stillFull.scrapYards[0]!.scrapper?.phase).toBe("idle");
+    expect(remainingResourceAt(seed, stashCoord, stillFull.hexResourcePools, tweaks)).toBe(
+      remainingWhilePaused,
+    );
+
+    // Collect some steel → resume outbound.
+    const withRoom = stillFull.scrapYards.map((y) => ({ ...y, stockpile: tileCap - haulCap }));
+    const resumed = advanceScrappers(
+      tweaks,
+      seed,
+      withRoom,
+      stillFull.scrapStashes,
+      stillFull.hexResourcePools,
+      stillFull.territory,
+      stillFull.scoutedTiles,
+      32,
+      3_000,
+      UNLIMITED_POWER,
+    );
+    expect(resumed.scrapYards[0]!.scrapper?.phase).toBe("toStash");
+    expect(resumed.scrapYards[0]!.scrapper?.assignedStashId).toBe(stashRecord.id);
+  });
+
+  it("assignScrapperStash refuses when the yard stockpile is already full", () => {
+    const tweaks = loadRealTweaks();
+    const base = { q: 0, r: 0 };
+    const yardCoord = { q: 1, r: 0 };
+    const stashCoord = { q: 2, r: 0 };
+    const territory = { base, owned: [base, yardCoord, stashCoord] };
+    const tileCap = tweaks.storage.capacity_base_per_resource;
+    const stashRecord = stash({ coord: stashCoord });
+    const result = assignScrapperStash(
+      tweaks,
+      1,
+      yard({ coord: yardCoord, stockpile: tileCap }),
+      stashRecord,
+      poolsFor([[stashRecord, 40]]),
+      territory,
+      [],
+      32,
+      1_000,
+    );
+    expect(result).toBeNull();
+  });
 });

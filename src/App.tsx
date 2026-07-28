@@ -3353,6 +3353,9 @@ export default function App() {
     if (!yard) return { ok: false, reason: "No scrap yard here" };
     const stash = game.scrapStashes.find((s) => s.id === stashId);
     if (!stash) return { ok: false, reason: "Scrap stash not found" };
+    if (yard.stockpile >= tweaks.storage.capacity_base_per_resource) {
+      return { ok: false, reason: "Yard stockpile is full" };
+    }
 
     const updated = assignScrapperStash(
       tweaks,

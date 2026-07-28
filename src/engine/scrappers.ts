@@ -32,6 +32,15 @@ export function scrapperHasAuto(tweaks: Tweaks, yardLevel: number): boolean {
   return yardLevel >= tweaks.scrap_yards.scrapper.auto_next_stash_min_level;
 }
 
+/** Yard local steel buffer — same flat cap as extraction stockpiles (Q61). */
+export function scrapYardStockpileCap(tweaks: Tweaks): number {
+  return tweaks.storage.capacity_base_per_resource;
+}
+
+export function scrapYardStockpileRoom(tweaks: Tweaks, stockpile: number): number {
+  return Math.max(0, scrapYardStockpileCap(tweaks) - stockpile);
+}
+
 /** Scrapper leg duration — uses scrap_yards.scrapper.travel_seconds_per_cost, not expedition pacing. */
 export function scrapperTravelDurationMs(
   tweaks: Tweaks,
@@ -137,6 +146,8 @@ export function scrapYardYieldPerSecond(
   if (powerNetwork && powerPerformanceFactor(powerNetwork, yard.level, yard.coord) <= 0) {
     return 0;
   }
+  const room = scrapYardStockpileRoom(tweaks, yard.stockpile);
+  if (room <= 0) return 0;
 
   const known = new Set([...territory.owned, ...scoutedTiles].map(axialKey));
   const trip = yard.scrapper;
@@ -168,9 +179,11 @@ export function scrapYardYieldPerSecond(
 
   const remaining = remainingResourceAt(seed, stash.coord, hexResourcePools, tweaks);
   if (!isInfiniteResources(tweaks) && remaining <= 0) return 0;
+  const haulCap = scrapperCapacity(tweaks, yard.level);
   const cargo = Math.min(
-    scrapperCapacity(tweaks, yard.level),
-    isInfiniteResources(tweaks) ? scrapperCapacity(tweaks, yard.level) : remaining,
+    haulCap,
+    room,
+    isInfiniteResources(tweaks) ? haulCap : remaining,
   );
   return cargo / roundTripSec;
 }
@@ -203,6 +216,8 @@ export function assignScrapperStash(
 
   if (!yard.scrapperReady || !isStructureActive(yard)) return null;
   if (!isActiveScrapStash(tweaks, seed, hexResourcePools, stash)) return null;
+  // No room at the yard — keep the Scrapper parked (resume once collected / couriered).
+  if (scrapYardStockpileRoom(tweaks, yard.stockpile) <= 0) return null;
 
   const known = new Set([...territory.owned, ...scoutedTiles].map(axialKey));
   if (!known.has(axialKey(stash.coord))) return null;
@@ -300,9 +315,12 @@ export type AdvanceScrappersResult = {
  * Advance in-flight Scrappers: pickup at stash, deliver to yard stockpile,
  * then loop the same stash until empty (Q8). Auto L3+ picks the next closest
  * known stash only after the assigned one is depleted (Q58).
+ * When the yard stockpile is full, the Scrapper parks at the yard (keeping its
+ * stash assignment) and resumes once there is room again.
  * L2+ yards with no power / below cutoff freeze mid-route (keep cargo); L1 is
  * power-exempt like other structures.
- * Pickup drains shared hex remainingResource (Milestone 27).
+ * Pickup drains shared hex remainingResource (Milestone 27), capped by haul
+ * capacity and remaining yard stockpile room.
  */
 export function advanceScrappers(
   tweaks: Tweaks,
@@ -340,7 +358,69 @@ export function advanceScrappers(
     let stockpile = yard.stockpile;
     const speed = scrapperSpeedMultiplier(tweaks, yard.level);
     const cap = scrapperCapacity(tweaks, yard.level);
-    const tileCap = tweaks.storage.capacity_base_per_resource;
+    const tileCap = scrapYardStockpileCap(tweaks);
+
+    const tryOutbound = (preferredStashId: string | null): ScrapperTrip | null => {
+      const sameStash =
+        preferredStashId != null
+          ? nextStashes.find(
+              (s) => s.id === preferredStashId && isActiveScrapStash(tweaks, seed, nextPools, s),
+            )
+          : null;
+      if (sameStash) {
+        return startLeg(
+          tweaks,
+          seed,
+          yard.coord,
+          sameStash.coord,
+          nextTerritory,
+          nextScouted,
+          gridSize,
+          now,
+          speed,
+          sameStash.id,
+          "toStash",
+          0,
+        );
+      }
+      if (scrapperHasAuto(tweaks, yard.level)) {
+        const known = new Set([...nextTerritory.owned, ...nextScouted].map(axialKey));
+        const next = closestKnownStash(tweaks, seed, nextPools, yard, nextStashes, known);
+        if (next) {
+          return startLeg(
+            tweaks,
+            seed,
+            yard.coord,
+            next.coord,
+            nextTerritory,
+            nextScouted,
+            gridSize,
+            now,
+            speed,
+            next.id,
+            "toStash",
+            0,
+          );
+        }
+      }
+      return null;
+    };
+
+    /** Park idle but keep a stash job so we resume when stockpile has room. */
+    const pauseForFullStockpile = (preferredStashId: string | null): ScrapperTrip => {
+      let stashId = preferredStashId;
+      const sameStillActive =
+        stashId != null &&
+        nextStashes.some((s) => s.id === stashId && isActiveScrapStash(tweaks, seed, nextPools, s));
+      if (!sameStillActive) {
+        stashId = null;
+        if (scrapperHasAuto(tweaks, yard.level)) {
+          const known = new Set([...nextTerritory.owned, ...nextScouted].map(axialKey));
+          stashId = closestKnownStash(tweaks, seed, nextPools, yard, nextStashes, known)?.id ?? null;
+        }
+      }
+      return { ...idleScrapperTrip(), assignedStashId: stashId };
+    };
 
     // Loaded return: free-claim scouted hexes as the Scrapper walks (Q28–Q30).
     if (trip.phase === "toYard" && trip.path.length > 1 && trip.cargo > 0) {
@@ -377,9 +457,13 @@ export function advanceScrappers(
         const stash = stashIndex >= 0 ? nextStashes[stashIndex]! : null;
         let cargo = 0;
         if (stash && isActiveScrapStash(tweaks, seed, nextPools, stash)) {
-          const drained = drainRemainingResource(seed, stash.coord, nextPools, tweaks, cap);
-          nextPools = drained.store;
-          cargo = drained.taken;
+          const room = scrapYardStockpileRoom(tweaks, stockpile);
+          const take = Math.min(cap, room);
+          if (take > 0) {
+            const drained = drainRemainingResource(seed, stash.coord, nextPools, tweaks, take);
+            nextPools = drained.store;
+            cargo = drained.taken;
+          }
         }
         const fromCoord = stash?.coord ?? trip.path[trip.path.length - 1]!;
         const returnLeg = startLeg(
@@ -400,53 +484,30 @@ export function advanceScrappers(
       } else if (trip.phase === "toYard") {
         stockpile = Math.min(tileCap, stockpile + trip.cargo);
         const finishedStashId = trip.assignedStashId;
-        trip = idleScrapperTrip();
 
-        // Loop the same assigned stash until empty (Q8). Auto L3+ only kicks in
-        // after that stash is gone — then pick the next closest known stash (Q58).
-        const sameStash =
-          finishedStashId != null
-            ? nextStashes.find(
-                (s) => s.id === finishedStashId && isActiveScrapStash(tweaks, seed, nextPools, s),
-              )
-            : null;
-        if (sameStash) {
-          const again = startLeg(
-            tweaks,
-            seed,
-            yard.coord,
-            sameStash.coord,
-            nextTerritory,
-            nextScouted,
-            gridSize,
-            now,
-            speed,
-            sameStash.id,
-            "toStash",
-            0,
-          );
-          if (again) trip = again;
-        } else if (scrapperHasAuto(tweaks, yard.level)) {
-          const known = new Set([...nextTerritory.owned, ...nextScouted].map(axialKey));
-          const next = closestKnownStash(tweaks, seed, nextPools, yard, nextStashes, known);
-          if (next) {
-            const auto = startLeg(
-              tweaks,
-              seed,
-              yard.coord,
-              next.coord,
-              nextTerritory,
-              nextScouted,
-              gridSize,
-              now,
-              speed,
-              next.id,
-              "toStash",
-              0,
-            );
-            if (auto) trip = auto;
-          }
+        // Stockpile full → park with assignment; otherwise loop / Auto (Q8 / Q58).
+        if (scrapYardStockpileRoom(tweaks, stockpile) <= 0) {
+          trip = pauseForFullStockpile(finishedStashId);
+        } else {
+          trip = tryOutbound(finishedStashId) ?? idleScrapperTrip();
         }
+      }
+    }
+
+    // Resume a paused haul once the yard stockpile has room (collect / courier).
+    if (trip.phase === "idle" && trip.assignedStashId && scrapYardStockpileRoom(tweaks, stockpile) > 0) {
+      const resumed = tryOutbound(trip.assignedStashId);
+      if (resumed) {
+        trip = resumed;
+      } else {
+        // Keep the job if the stash is still live (e.g. temporary path failure);
+        // otherwise clear — tryOutbound already attempted Auto when the stash died.
+        const stillAssigned = nextStashes.some(
+          (s) => s.id === trip.assignedStashId && isActiveScrapStash(tweaks, seed, nextPools, s),
+        );
+        trip = stillAssigned
+          ? { ...idleScrapperTrip(), assignedStashId: trip.assignedStashId }
+          : idleScrapperTrip();
       }
     }
 

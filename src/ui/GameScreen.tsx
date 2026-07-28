@@ -1393,6 +1393,15 @@ export function GameScreen({
   function scrapperStatusText(yard: ScrapYardRecord): string {
     if (!yard.scrapperReady) return "Scrapper not ready yet";
     const trip = yard.scrapper;
+    const stockpileCap = tweaks.storage.capacity_base_per_resource;
+    if (
+      trip &&
+      trip.phase === "idle" &&
+      trip.assignedStashId &&
+      yard.stockpile >= stockpileCap
+    ) {
+      return "Scrapper paused — stockpile full";
+    }
     if (!trip || trip.phase === "idle") return "Scrapper idle at yard";
     if (trip.phase === "toStash") return "Scrapper en route to stash";
     if (trip.cargo > 0) return `Scrapper returning with ${Math.floor(trip.cargo)} steel`;
