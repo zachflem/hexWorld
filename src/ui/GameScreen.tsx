@@ -1700,8 +1700,14 @@ export function GameScreen({
   // The lab stays indistinguishable from ordinary unscouted ground until the
   // player actually scouts its exact tile (DESIGN.md §13 — "hidden from
   // normal scouting") — isScouted gates this the same way it gates every
-  // other "reveal what's here" branch below.
-  const selectedIsLab = selected !== null && isScouted(selected) && axialEquals(lab.coord, selected);
+  // other "reveal what's here" branch below. Owned-but-not-scouted is also
+  // treated as known: a pre-fix Improved Optics ring claim could own the
+  // hex without scouting it, which drew the marker but left the sheet as
+  // "Empty tile" with no assault.
+  const selectedIsLab =
+    selected !== null &&
+    axialEquals(lab.coord, selected) &&
+    (isScouted(selected) || isOwned(selected));
   // A den's or outpost's own core coordinate can end up in territory.owned
   // (the hold/starting ring, axialSpiral, includes its center) but still
   // isn't buildable ground — same exclusion as the main base tile.
@@ -3812,7 +3818,7 @@ export function GameScreen({
       );
     }
 
-    if (isScouted(coord) && axialEquals(lab.coord, coord)) {
+    if ((isScouted(coord) || isOwned(coord)) && axialEquals(lab.coord, coord)) {
       const status = lab.secured ? "Secured" : "Guarded";
       return (
         <HoverPanel icon={<FlaskConical size={22} />} title="Research lab" status={status}>

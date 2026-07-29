@@ -492,6 +492,55 @@ describe("stepCorridorWalk territory mode", () => {
     );
     expect(result.claimedTiles.some((c) => axialKey(c) === axialKey(neighbor))).toBe(false);
   });
+
+  it("with ownRange 1, skips dens and lab in unclaimableKeys", () => {
+    const tweaks = loadRealTweaks();
+    const path: Axial[] = [base, { q: 1, r: 0 }];
+    const labTile = { q: 2, r: 0 };
+    const denTile = { q: 1, r: -1 };
+    const result = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      0,
+      noHordes,
+      {
+        ...TERRITORY_CORRIDOR,
+        ownRange: 1,
+        gridSize: 128,
+        unclaimableKeys: new Set([axialKey(labTile), axialKey(denTile)]),
+      },
+    );
+    expect(result.claimedTiles.some((c) => axialKey(c) === axialKey(labTile))).toBe(false);
+    expect(result.claimedTiles.some((c) => axialKey(c) === axialKey(denTile))).toBe(false);
+    expect(result.claimedTiles.some((c) => axialKey(c) === axialKey(path[1]!))).toBe(true);
+  });
+
+  it("free-claim path skips unclaimableKeys without dying", () => {
+    const tweaks = loadRealTweaks();
+    const labTile = { q: 1, r: 0 };
+    const path: Axial[] = [base, labTile, { q: 2, r: 0 }];
+    const result = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      0,
+      noHordes,
+      {
+        ...TERRITORY_CORRIDOR,
+        unclaimableKeys: new Set([axialKey(labTile)]),
+      },
+    );
+    expect(result.death).toBeNull();
+    expect(result.resolvedIndex).toBe(path.length - 1);
+    expect(result.claimedTiles.map(axialKey)).toEqual([axialKey({ q: 2, r: 0 })]);
+  });
 });
 
 describe("provisionsRefund", () => {

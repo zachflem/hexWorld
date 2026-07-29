@@ -1279,6 +1279,8 @@ export default function App() {
 
       // Scrapper yard↔stash hauls (after yard construction + scrap samples).
       // L2+ yards freeze without power — same gate as extraction couriers.
+      const scrapperUnclaimable = new Set(current.game.dens.map((d) => axialKey(d.coord)));
+      if (!labWorking.secured) scrapperUnclaimable.add(axialKey(labWorking.coord));
       const scrapperAdvance = advanceScrappers(
         current.tweaks,
         current.game.world.seed,
@@ -1290,6 +1292,7 @@ export default function App() {
         economyGridSize,
         virtualNow,
         powerNetwork,
+        { unclaimableKeys: scrapperUnclaimable },
       );
       scrapYards = scrapperAdvance.scrapYards;
       scrapStashes = scrapperAdvance.scrapStashes;
@@ -1564,10 +1567,25 @@ export default function App() {
       const gridSize = resolveWorldGridSize(current.game.world, current.tweaks);
       const worldSeed = current.game.world.seed;
       const scoutedForRecall = current.game.scoutedTiles;
-      const territoryCorridor: typeof TERRITORY_CORRIDOR & { ownRange: number; gridSize: number } = {
+      // Dens (incl. just-reverted outposts) + unsecured lab — never free-claim /
+      // optics-claim these hexes or they read as empty owned ground with no assault.
+      const corridorUnclaimableKeys = new Set(
+        [...current.game.dens, ...revertedDens].map((d) => axialKey(d.coord)),
+      );
+      if (!labWorking.secured) corridorUnclaimableKeys.add(axialKey(labWorking.coord));
+      const territoryCorridor: typeof TERRITORY_CORRIDOR & {
+        ownRange: number;
+        gridSize: number;
+        unclaimableKeys: Set<string>;
+      } = {
         ...TERRITORY_CORRIDOR,
         ownRange: expeditionOwnRange(current.tweaks, research),
         gridSize,
+        unclaimableKeys: corridorUnclaimableKeys,
+      };
+      const assaultCorridor: typeof ASSAULT_CORRIDOR & { unclaimableKeys: Set<string> } = {
+        ...ASSAULT_CORRIDOR,
+        unclaimableKeys: corridorUnclaimableKeys,
       };
 
       const applyHomeRecall = (expedition: Expedition): void => {
@@ -1822,7 +1840,7 @@ export default function App() {
           territoryAfterExpeditions.base,
           attackPower,
           hordeSizeByKey,
-          ASSAULT_CORRIDOR,
+          assaultCorridor,
         );
 
         if (step.claimedTiles.length > 0) {
@@ -2063,7 +2081,7 @@ export default function App() {
           territoryAfterExpeditions.base,
           attackPower,
           hordeSizeByKey,
-          ASSAULT_CORRIDOR,
+          assaultCorridor,
         );
 
         if (step.claimedTiles.length > 0) {

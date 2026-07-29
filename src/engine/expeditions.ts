@@ -27,11 +27,20 @@ export interface CorridorWalkOptions {
   engageHordes: boolean;
   /**
    * Axial spiral radius free-claimed around each stepped tile when `freeClaimUnowned`
-   * (Improved Optics). Includes water; skips horde-occupied tiles. Requires `gridSize`.
+   * (Improved Optics). Includes water; skips horde-occupied tiles and
+   * {@link unclaimableKeys}. Requires `gridSize`.
    */
   ownRange?: number;
   /** Map bounds for `ownRange` neighbor claims. */
   gridSize?: number;
+  /**
+   * Hex keys that must never be claimed by corridor walk (active dens + the
+   * unsecured lab). Parties still path across them; ownership stays with the
+   * feature until cleared/secured. Without this, Improved Optics ring claims
+   * (and path free-claims) can turn the lab into an "Empty tile" with no
+   * assault action — the marker draws for owned fog, but UI requires scouted.
+   */
+  unclaimableKeys?: ReadonlySet<string>;
 }
 
 export const TERRITORY_CORRIDOR: CorridorWalkOptions = { freeClaimUnowned: true, engageHordes: true };
@@ -198,6 +207,7 @@ export function stepCorridorWalk(
   const remainingHordes = new Map(hordeSizeByKey);
   const ownRange = options.ownRange ?? 0;
   const gridSize = options.gridSize;
+  const unclaimableKeys = options.unclaimableKeys;
 
   for (let i = resolvedIndex + 1; i <= targetIndex; i++) {
     const tile = path[i];
@@ -218,7 +228,7 @@ export function stepCorridorWalk(
     }
 
     if (!options.freeClaimUnowned) {
-      if (ownedKeys.has(key)) continue;
+      if (ownedKeys.has(key) || unclaimableKeys?.has(key)) continue;
       const defense = tileDefense(tweaks, axialDistance(tile, base));
       if (!resolveHordeTileFight(attackPower, defense)) {
         return {
@@ -233,7 +243,7 @@ export function stepCorridorWalk(
       continue;
     }
 
-    if (!ownedKeys.has(key)) {
+    if (!ownedKeys.has(key) && !unclaimableKeys?.has(key)) {
       claimedTiles.push(tile);
       ownedKeys.add(key);
     }
@@ -243,7 +253,13 @@ export function stepCorridorWalk(
       for (const neighbor of axialSpiral(tile, ownRange)) {
         if (!isWithinMapBounds(neighbor, gridSize)) continue;
         const neighborKey = axialKey(neighbor);
-        if (ownedKeys.has(neighborKey) || remainingHordes.has(neighborKey)) continue;
+        if (
+          ownedKeys.has(neighborKey) ||
+          remainingHordes.has(neighborKey) ||
+          unclaimableKeys?.has(neighborKey)
+        ) {
+          continue;
+        }
         claimedTiles.push(neighbor);
         ownedKeys.add(neighborKey);
       }
