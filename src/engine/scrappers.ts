@@ -296,6 +296,11 @@ export type AdvanceScrappersResult = {
   scoutedTiles: Axial[];
 };
 
+export type AdvanceScrappersOptions = {
+  /** Dens + unsecured lab — never free-claim these hexes on loaded return. */
+  unclaimableKeys?: ReadonlySet<string>;
+};
+
 /**
  * Advance in-flight Scrappers: pickup at stash, deliver to yard stockpile,
  * then loop the same stash until empty (Q8). Auto L3+ picks the next closest
@@ -315,6 +320,7 @@ export function advanceScrappers(
   gridSizeOrNow: number,
   nowOrPower: number | PowerNetworkSnapshot,
   powerNetworkMaybe?: PowerNetworkSnapshot,
+  options?: AdvanceScrappersOptions,
 ): AdvanceScrappersResult {
   const usingLegacyArgs = Array.isArray(territoryOrScouted);
   const hexResourcePools: HexResourcePoolsRecord = usingLegacyArgs ? {} : (hexResourcePoolsOrTerritory as HexResourcePoolsRecord);
@@ -355,7 +361,7 @@ export function advanceScrappers(
           nextTerritory.base,
           Number.MAX_SAFE_INTEGER,
           new Map(),
-          { freeClaimUnowned: true, engageHordes: false },
+          { freeClaimUnowned: true, engageHordes: false, unclaimableKeys: options?.unclaimableKeys },
         );
         trip = { ...trip, resolvedIndex: walk.resolvedIndex };
         if (walk.claimedTiles.length > 0) {
