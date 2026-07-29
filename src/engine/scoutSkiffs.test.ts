@@ -4,7 +4,7 @@ import stripJsonComments from "strip-json-comments";
 import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
 import type { ScoutSkiffRecord } from "../data/scoutSkiffs";
-import { axialKey, axialNeighbors, type Axial } from "./hexCoords";
+import { axialKey, axialNeighbors, axialSpiral, isWithinMapBounds, type Axial } from "./hexCoords";
 import { terrainAt } from "./terrain";
 import { advanceScoutSkiffs } from "./scoutSkiffs";
 
@@ -173,5 +173,107 @@ describe("advanceScoutSkiffs", () => {
     const result = advanceScoutSkiffs(tweaks, skiffs, [], seed, gridSize, tweaks.docks.scout_skiff.seconds_per_step * 10);
 
     expect(axialKey(result.skiffs[0].coord)).not.toBe(axialKey(start));
+  });
+
+  it("with revealRadius 1, scouts the stepped tile plus its full ring", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findWaterCoord(seed);
+
+    const result = advanceScoutSkiffs(
+      tweaks,
+      [makeSkiff(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.docks.scout_skiff.seconds_per_step,
+      { revealRadius: 1 },
+    );
+
+    const stepped = result.skiffs[0].coord;
+    const expectedAll = axialSpiral(stepped, 1).filter((c) => isWithinMapBounds(c, gridSize));
+    expect(result.scoutedTiles.map(axialKey).sort()).toEqual(expectedAll.map(axialKey).sort());
+    expect(result.scoutedTiles.length).toBeGreaterThan(1);
+  });
+
+  it("with claimOwnership, returns claimedTiles matching scouted tiles", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findWaterCoord(seed);
+
+    const result = advanceScoutSkiffs(
+      tweaks,
+      [makeSkiff(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.docks.scout_skiff.seconds_per_step,
+      { claimOwnership: true },
+    );
+
+    expect(result.claimedTiles.length).toBeGreaterThan(0);
+    expect(result.claimedTiles.map(axialKey)).toEqual([axialKey(result.skiffs[0].coord)]);
+  });
+
+  it("with claimOwnership + revealRadius 1, claims the full ring", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findWaterCoord(seed);
+
+    const result = advanceScoutSkiffs(
+      tweaks,
+      [makeSkiff(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.docks.scout_skiff.seconds_per_step,
+      { revealRadius: 1, claimOwnership: true },
+    );
+
+    const stepped = result.skiffs[0].coord;
+    const expectedAll = axialSpiral(stepped, 1).filter((c) => isWithinMapBounds(c, gridSize));
+    expect(result.claimedTiles.map(axialKey).sort()).toEqual(expectedAll.map(axialKey).sort());
+  });
+
+  it("claimOwnership skips unclaimableKeys and hordeKeys", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findWaterCoord(seed);
+
+    const result = advanceScoutSkiffs(
+      tweaks,
+      [makeSkiff(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.docks.scout_skiff.seconds_per_step,
+      {
+        claimOwnership: true,
+        unclaimableKeys: new Set([axialKey(start)]),
+        hordeKeys: new Set([axialKey(start)]),
+      },
+    );
+
+    // The stepped tile is blocked — the skiff moved away from start, so it
+    // should still claim the destination tile (which isn't in the blocked sets).
+    const steppedKey = axialKey(result.skiffs[0].coord);
+    expect(result.claimedTiles.map(axialKey)).toContain(steppedKey);
+  });
+
+  it("without claimOwnership, claimedTiles is empty", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findWaterCoord(seed);
+
+    const result = advanceScoutSkiffs(
+      tweaks,
+      [makeSkiff(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.docks.scout_skiff.seconds_per_step,
+    );
+
+    expect(result.claimedTiles).toEqual([]);
   });
 });

@@ -538,6 +538,10 @@
       "duration_minutes": 12,
       "wandering_scout_reveal_radius": 1,
       "expedition_own_range": 1
+    },
+    "scout_to_own": {
+      "cost": { "stone": 500, "steel": 200, "food": 300 },
+      "duration_minutes": 18
     }
   },
 

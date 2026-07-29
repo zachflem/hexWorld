@@ -353,10 +353,14 @@ export const tweaksSchema = z.object({
     improved_optics: z.object({
       cost: resourceCostMap,
       duration_minutes: z.number(),
-      /** Axial spiral radius revealed per wandering-scout step (land only). 0 without research. */
+      /** Axial spiral radius revealed per wandering-scout/skiff step. 0 without research. */
       wandering_scout_reveal_radius: z.number(),
       /** Axial spiral radius free-claimed around each territory-expedition path tile. 0 without research. */
       expedition_own_range: z.number(),
+    }),
+    scout_to_own: z.object({
+      cost: resourceCostMap,
+      duration_minutes: z.number(),
     }),
   }),
 

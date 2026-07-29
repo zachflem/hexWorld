@@ -65,9 +65,15 @@ export type AdvanceWanderingScoutsOptions = {
   labCoord: Axial;
   /**
    * Axial spiral radius revealed around each stepped hex (Improved Optics).
-   * 0 = stepped tile only. Water tiles in the disk are never revealed.
+   * 0 = stepped tile only. All terrain types (including water) are revealed.
    */
   revealRadius?: number;
+  /** When true (Scout to Own researched), newly-scouted tiles are also claimed. */
+  claimOwnership?: boolean;
+  /** Hex keys that must never be claimed (active dens + unsecured lab). */
+  unclaimableKeys?: ReadonlySet<string>;
+  /** Hex keys of horde-occupied tiles — never claimed. */
+  hordeKeys?: ReadonlySet<string>;
 };
 
 /**
@@ -96,9 +102,9 @@ export function advanceWanderingScouts(
   gridSize: number,
   elapsedSeconds: number,
   options?: AdvanceWanderingScoutsOptions,
-): { scouts: WanderingScoutRecord[]; scoutedTiles: Axial[]; labRevealed: boolean } {
+): { scouts: WanderingScoutRecord[]; scoutedTiles: Axial[]; labRevealed: boolean; claimedTiles: Axial[] } {
   if (elapsedSeconds <= 0 || scouts.length === 0) {
-    return { scouts, scoutedTiles, labRevealed: false };
+    return { scouts, scoutedTiles, labRevealed: false, claimedTiles: [] };
   }
 
   const secondsPerStep = tweaks.units.wandering_scout.seconds_per_step;
@@ -112,10 +118,14 @@ export function advanceWanderingScouts(
   const labCoord = options?.labCoord ?? null;
   const labKey = labCoord ? axialKey(labCoord) : null;
   const revealRadius = options?.revealRadius ?? 0;
+  const claimOwnership = options?.claimOwnership ?? false;
+  const unclaimableKeys = options?.unclaimableKeys;
+  const hordeKeys = options?.hordeKeys;
 
   const scoutedKeys = new Set(scoutedTiles.map(axialKey));
   const labAlreadyKnown = labKey != null && scoutedKeys.has(labKey);
   const newlyScouted: Axial[] = [];
+  const claimedTiles: Axial[] = [];
   let labRevealed = false;
   let anyChanged = false;
 
@@ -152,13 +162,20 @@ export function advanceWanderingScouts(
 
       for (const reveal of axialSpiral(coord, revealRadius)) {
         if (!isWithinMapBounds(reveal, gridSize)) continue;
-        if (terrainAt(seed, reveal) === "water") continue;
         const key = axialKey(reveal);
         if (scoutedKeys.has(key)) continue;
         scoutedKeys.add(key);
         newlyScouted.push(reveal);
         if (labKey != null && key === labKey && !labAlreadyKnown) {
           labRevealed = true;
+        }
+      }
+      if (claimOwnership) {
+        for (const reveal of axialSpiral(coord, revealRadius)) {
+          if (!isWithinMapBounds(reveal, gridSize)) continue;
+          const key = axialKey(reveal);
+          if (unclaimableKeys?.has(key) || hordeKeys?.has(key)) continue;
+          claimedTiles.push(reveal);
         }
       }
     }
@@ -178,5 +195,6 @@ export function advanceWanderingScouts(
     scouts: anyChanged ? nextScouts : scouts,
     scoutedTiles: newlyScouted.length > 0 ? [...scoutedTiles, ...newlyScouted] : scoutedTiles,
     labRevealed,
+    claimedTiles,
   };
 }

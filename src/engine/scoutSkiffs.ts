@@ -1,6 +1,6 @@
 import type { ScoutSkiffRecord } from "../data/scoutSkiffs";
 import type { Tweaks } from "../data/tweaksSchema";
-import { axialKey, axialNeighbors, isWithinMapBounds, type Axial } from "./hexCoords";
+import { axialKey, axialNeighbors, axialSpiral, isWithinMapBounds, type Axial } from "./hexCoords";
 import { seededRandom } from "./noise";
 import { terrainAt } from "./terrain";
 
@@ -22,6 +22,20 @@ function skiffRollIndex(coord: Axial, spawnedAt: number, step: number): number {
  * neighbors at all (shouldn't happen — it spawns on its dock's own water
  * tile) simply stays put for this call (progress still carries).
  */
+export type AdvanceScoutSkiffsOptions = {
+  /**
+   * Axial spiral radius revealed around each stepped hex (Improved Optics).
+   * 0 = stepped tile only. All terrain types (including land) are revealed.
+   */
+  revealRadius?: number;
+  /** When true (Scout to Own researched), newly-scouted tiles are also claimed. */
+  claimOwnership?: boolean;
+  /** Hex keys that must never be claimed (active dens + unsecured lab). */
+  unclaimableKeys?: ReadonlySet<string>;
+  /** Hex keys of horde-occupied tiles — never claimed. */
+  hordeKeys?: ReadonlySet<string>;
+};
+
 export function advanceScoutSkiffs(
   tweaks: Tweaks,
   skiffs: ScoutSkiffRecord[],
@@ -29,12 +43,18 @@ export function advanceScoutSkiffs(
   seed: number,
   gridSize: number,
   elapsedSeconds: number,
-): { skiffs: ScoutSkiffRecord[]; scoutedTiles: Axial[] } {
-  if (elapsedSeconds <= 0 || skiffs.length === 0) return { skiffs, scoutedTiles };
+  options?: AdvanceScoutSkiffsOptions,
+): { skiffs: ScoutSkiffRecord[]; scoutedTiles: Axial[]; claimedTiles: Axial[] } {
+  if (elapsedSeconds <= 0 || skiffs.length === 0) return { skiffs, scoutedTiles, claimedTiles: [] };
 
   const secondsPerStep = tweaks.docks.scout_skiff.seconds_per_step;
+  const revealRadius = options?.revealRadius ?? 0;
+  const claimOwnership = options?.claimOwnership ?? false;
+  const unclaimableKeys = options?.unclaimableKeys;
+  const hordeKeys = options?.hordeKeys;
   const scoutedKeys = new Set(scoutedTiles.map(axialKey));
   const newlyScouted: Axial[] = [];
+  const claimedTiles: Axial[] = [];
   let anyChanged = false;
 
   const nextSkiffs = skiffs.map((skiff) => {
@@ -61,10 +81,20 @@ export function advanceScoutSkiffs(
       prevCoord = coord;
       coord = next;
 
-      const key = axialKey(coord);
-      if (!scoutedKeys.has(key)) {
+      for (const reveal of axialSpiral(coord, revealRadius)) {
+        if (!isWithinMapBounds(reveal, gridSize)) continue;
+        const key = axialKey(reveal);
+        if (scoutedKeys.has(key)) continue;
         scoutedKeys.add(key);
-        newlyScouted.push(coord);
+        newlyScouted.push(reveal);
+      }
+      if (claimOwnership) {
+        for (const reveal of axialSpiral(coord, revealRadius)) {
+          if (!isWithinMapBounds(reveal, gridSize)) continue;
+          const key = axialKey(reveal);
+          if (unclaimableKeys?.has(key) || hordeKeys?.has(key)) continue;
+          claimedTiles.push(reveal);
+        }
       }
     }
 
@@ -82,5 +112,6 @@ export function advanceScoutSkiffs(
   return {
     skiffs: anyChanged ? nextSkiffs : skiffs,
     scoutedTiles: newlyScouted.length > 0 ? [...scoutedTiles, ...newlyScouted] : scoutedTiles,
+    claimedTiles,
   };
 }

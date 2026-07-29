@@ -228,10 +228,10 @@ describe("watchtower signal bias", () => {
     expect(northDelta(biasedPath)).toBeGreaterThan(northDelta(control.path));
   });
 
-  it("with revealRadius 1, scouts the stepped tile plus its first land ring and skips water", () => {
+  it("with revealRadius 1, scouts the stepped tile plus its full ring including water", () => {
     const tweaks = loadRealTweaks();
     const seed = 5;
-    // Shoreline land: at least one water neighbor so the disk would include water if not filtered.
+    // Shoreline land: at least one water neighbor so the disk includes water.
     let start: Axial | null = null;
     for (const coord of axialSpiral({ q: 64, r: 64 }, 50)) {
       if (terrainAt(seed, coord) === "water") continue;
@@ -254,11 +254,11 @@ describe("watchtower signal bias", () => {
     );
 
     const stepped = result.scouts[0].coord;
-    const expectedLand = axialSpiral(stepped, 1).filter(
-      (c) => isWithinMapBounds(c, gridSize) && terrainAt(seed, c) !== "water",
+    const expectedAll = axialSpiral(stepped, 1).filter(
+      (c) => isWithinMapBounds(c, gridSize),
     );
-    expect(result.scoutedTiles.map(axialKey).sort()).toEqual(expectedLand.map(axialKey).sort());
-    expect(result.scoutedTiles.every((c) => terrainAt(seed, c) !== "water")).toBe(true);
+    expect(result.scoutedTiles.map(axialKey).sort()).toEqual(expectedAll.map(axialKey).sort());
+    expect(result.scoutedTiles.some((c) => terrainAt(seed, c) === "water")).toBe(true);
     expect(result.scoutedTiles.length).toBeLessThanOrEqual(7);
     expect(result.scoutedTiles.length).toBeGreaterThan(1);
   });
@@ -347,5 +347,92 @@ describe("watchtower signal bias", () => {
       (n) => isWithinMapBounds(n, gridSize) && terrainAt(seed, n) !== "water",
     ).length;
     expect(hits).toBeGreaterThan(trials / landNeighbors);
+  });
+
+  it("with claimOwnership, returns claimedTiles for the stepped tile", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+
+    const result = advanceWanderingScouts(
+      tweaks,
+      [makeScout(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.units.wandering_scout.seconds_per_step,
+      { signal: null, base: start, labCoord: start, claimOwnership: true },
+    );
+
+    expect(result.claimedTiles.length).toBeGreaterThan(0);
+    expect(result.claimedTiles.map(axialKey)).toContain(axialKey(result.scouts[0].coord));
+  });
+
+  it("without claimOwnership, claimedTiles is empty", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+
+    const result = advanceWanderingScouts(
+      tweaks,
+      [makeScout(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.units.wandering_scout.seconds_per_step,
+      { signal: null, base: start, labCoord: start },
+    );
+
+    expect(result.claimedTiles).toEqual([]);
+  });
+
+  it("claimOwnership skips unclaimableKeys and hordeKeys", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+
+    // Pick a neighbor to block as "den/lab".
+    const denCoord = axialNeighbors(start).find(
+      (n) => isWithinMapBounds(n, gridSize) && terrainAt(seed, n) !== "water",
+    )!;
+    const blocked = new Set([axialKey(denCoord)]);
+    const result = advanceWanderingScouts(
+      tweaks,
+      [makeScout(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.units.wandering_scout.seconds_per_step,
+      {
+        signal: null,
+        base: start,
+        labCoord: start,
+        claimOwnership: true,
+        revealRadius: 1,
+        unclaimableKeys: blocked,
+      },
+    );
+
+    expect(result.claimedTiles.every((c) => !blocked.has(axialKey(c)))).toBe(true);
+  });
+
+  it("with claimOwnership + revealRadius 1, claims the full ring", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+
+    const result = advanceWanderingScouts(
+      tweaks,
+      [makeScout(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.units.wandering_scout.seconds_per_step,
+      { signal: null, base: start, labCoord: start, claimOwnership: true, revealRadius: 1 },
+    );
+
+    const stepped = result.scouts[0].coord;
+    const expectedAll = axialSpiral(stepped, 1).filter((c) => isWithinMapBounds(c, gridSize));
+    expect(result.claimedTiles.map(axialKey).sort()).toEqual(expectedAll.map(axialKey).sort());
   });
 });

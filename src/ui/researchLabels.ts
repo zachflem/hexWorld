@@ -7,4 +7,5 @@ export const RESEARCH_LABEL: Record<ResearchId, string> = {
   game_speed_3: "Game Speed III (unlocks 5x)",
   parallel_upgrades: "Parallel Work Orders (2 tasks per structure)",
   improved_optics: "Improved Optics (+1 scout ring, +1 expedition claim)",
+  scout_to_own: "Scout to Own (scouts claim territory)",
 };

@@ -158,6 +158,7 @@ import {
   researchDurationMs,
   troopSpeedMultiplier,
   unlockedSpeedRates,
+  scoutToOwnEnabled,
   wanderingScoutRevealRadius,
 } from "./engine/research";
 import { isBuildableLand, isTransitionTile, terrainAt } from "./engine/terrain";
@@ -1182,13 +1183,24 @@ export default function App() {
           ? { ...s, buildStartedAt: null, stepProgressSeconds: 0 }
           : s,
       );
-      const { skiffs: scoutSkiffs, scoutedTiles: scoutedTilesAfterSkiffs } = advanceScoutSkiffs(
+      const scoutRevealRadius = wanderingScoutRevealRadius(current.tweaks, current.game.research);
+      const scoutClaim = scoutToOwnEnabled(current.game.research);
+      const scoutUnclaimableKeys = new Set(current.game.dens.map((d) => axialKey(d.coord)));
+      if (!current.game.lab.secured) scoutUnclaimableKeys.add(axialKey(current.game.lab.coord));
+      const hordeKeysForScouts = new Set(current.game.hordes.map((h) => axialKey(h.path[h.pathIndex])));
+      const { skiffs: scoutSkiffs, scoutedTiles: scoutedTilesAfterSkiffs, claimedTiles: skiffClaimedTiles } = advanceScoutSkiffs(
         current.tweaks,
         scoutSkiffsAfterBuild,
         current.game.scoutedTiles,
         current.game.world.seed,
         resolveWorldGridSize(current.game.world, current.tweaks),
         elapsedSeconds,
+        {
+          revealRadius: scoutRevealRadius,
+          claimOwnership: scoutClaim,
+          unclaimableKeys: scoutUnclaimableKeys,
+          hordeKeys: hordeKeysForScouts,
+        },
       );
       const wanderingScoutsAfterBuild = current.game.wanderingScouts.map((s) =>
         s.buildStartedAt != null &&
@@ -1235,6 +1247,7 @@ export default function App() {
         scouts: wanderingScouts,
         scoutedTiles: scoutedTilesAfterWander,
         labRevealed: wanderingLabRevealed,
+        claimedTiles: scoutClaimedTiles,
       } = advanceWanderingScouts(
         current.tweaks,
         wanderingScoutsAfterBuild,
@@ -1246,7 +1259,10 @@ export default function App() {
           signal: labWorking.watchtowerSignal ?? null,
           base: territoryAfterRelocation.base,
           labCoord: labWorking.coord,
-          revealRadius: wanderingScoutRevealRadius(current.tweaks, current.game.research),
+          revealRadius: scoutRevealRadius,
+          claimOwnership: scoutClaim,
+          unclaimableKeys: scoutUnclaimableKeys,
+          hordeKeys: hordeKeysForScouts,
         },
       );
       const scrapSample = applyWanderingScoutScrapSamples(
@@ -1277,6 +1293,19 @@ export default function App() {
         });
       }
 
+      // Merge scout-claimed tiles into territory before scrappers/hordes.
+      const allScoutClaimed = [...skiffClaimedTiles, ...scoutClaimedTiles];
+      const territoryAfterScouts: TerritoryRecord =
+        allScoutClaimed.length > 0
+          ? (() => {
+              const existingKeys = new Set(territoryAfterRelocation.owned.map(axialKey));
+              const deduped = allScoutClaimed.filter((c) => !existingKeys.has(axialKey(c)));
+              return deduped.length > 0
+                ? { ...territoryAfterRelocation, owned: [...territoryAfterRelocation.owned, ...deduped] }
+                : territoryAfterRelocation;
+            })()
+          : territoryAfterRelocation;
+
       // Scrapper yard↔stash hauls (after yard construction + scrap samples).
       // L2+ yards freeze without power — same gate as extraction couriers.
       const scrapperUnclaimable = new Set(current.game.dens.map((d) => axialKey(d.coord)));
@@ -1287,7 +1316,7 @@ export default function App() {
         scrapYards,
         scrapStashes,
         hexResourcePools,
-        territoryAfterRelocation,
+        territoryAfterScouts,
         scoutedTilesAfterWander,
         economyGridSize,
         virtualNow,

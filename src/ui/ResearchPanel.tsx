@@ -130,6 +130,7 @@ export function ResearchPanel({
         <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
           <SheetSectionLabel>Scouting</SheetSectionLabel>
           <ResearchTierRow id="improved_optics" tweaks={tweaks} research={research} resources={resources} now={now} onStartResearch={onStartResearch} />
+          <ResearchTierRow id="scout_to_own" tweaks={tweaks} research={research} resources={resources} now={now} onStartResearch={onStartResearch} />
         </div>
       </div>
     </BottomSheet>

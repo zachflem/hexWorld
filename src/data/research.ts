@@ -12,7 +12,8 @@ export type ResearchId =
   | "game_speed_2"
   | "game_speed_3"
   | "parallel_upgrades"
-  | "improved_optics";
+  | "improved_optics"
+  | "scout_to_own";
 
 /** Every purchasable research id — used for affordability / startable scans. */
 export const ALL_RESEARCH_IDS: readonly ResearchId[] = [
@@ -22,6 +23,7 @@ export const ALL_RESEARCH_IDS: readonly ResearchId[] = [
   "game_speed_3",
   "parallel_upgrades",
   "improved_optics",
+  "scout_to_own",
 ];
 
 export type ResearchRecord = {

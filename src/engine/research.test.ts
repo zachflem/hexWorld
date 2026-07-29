@@ -13,6 +13,7 @@ import {
   researchDurationMs,
   troopSpeedMultiplier,
   unlockedSpeedRates,
+  scoutToOwnEnabled,
   wanderingScoutRevealRadius,
 } from "./research";
 import type { ResourceAmounts } from "../data/resources";
@@ -69,6 +70,18 @@ describe("improved_optics helpers", () => {
     const done: ResearchRecord = { completed: ["improved_optics"], pending: null };
     expect(wanderingScoutRevealRadius(tweaks, done)).toBe(tweaks.research.improved_optics.wandering_scout_reveal_radius);
     expect(expeditionOwnRange(tweaks, done)).toBe(tweaks.research.improved_optics.expedition_own_range);
+  });
+
+  it("scoutToOwnEnabled is false until completed", () => {
+    expect(scoutToOwnEnabled(initialResearch())).toBe(false);
+    expect(scoutToOwnEnabled({ completed: ["improved_optics"], pending: null })).toBe(false);
+    expect(scoutToOwnEnabled({ completed: ["scout_to_own"], pending: null })).toBe(true);
+  });
+
+  it("scout_to_own has cost and duration in tweaks", () => {
+    const tweaks = loadRealTweaks();
+    expect(researchCost(tweaks, "scout_to_own")).toBeDefined();
+    expect(researchDurationMs(tweaks, "scout_to_own")).toBeGreaterThan(0);
   });
 });
 

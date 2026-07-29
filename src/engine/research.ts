@@ -34,6 +34,8 @@ function tierConfig(tweaks: Tweaks, id: ResearchId) {
       return tweaks.research.parallel_upgrades;
     case "improved_optics":
       return tweaks.research.improved_optics;
+    case "scout_to_own":
+      return tweaks.research.scout_to_own;
   }
 }
 
@@ -70,6 +72,11 @@ export function wanderingScoutRevealRadius(tweaks: Tweaks, research: ResearchRec
   return research.completed.includes("improved_optics")
     ? tweaks.research.improved_optics.wandering_scout_reveal_radius
     : 0;
+}
+
+/** True when Scout to Own is researched — scouts/skiffs claim tiles they traverse. */
+export function scoutToOwnEnabled(research: ResearchRecord): boolean {
+  return research.completed.includes("scout_to_own");
 }
 
 /** Axial spiral own-range around each territory-expedition path tile once Improved Optics is done; 0 otherwise. */

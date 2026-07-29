@@ -566,6 +566,26 @@ A converted den becomes a second, independent economic/defensive hub — a real 
 
 ---
 
+## Scout to Own (Research)
+
+*Shipped alongside Improved Optics bug fixes (skiff revealRadius + water inclusion for land scouts).*
+
+- **Cost (default):** 500 stone, 200 steel, 300 food — mid-to-late game pricing, slightly above Improved Optics.
+- **Cost (hard):** 600 stone, 250 steel, 400 food.
+- **Duration (default):** 18 minutes. **(hard):** 22 minutes.
+- **No prerequisite** — complementary to Improved Optics, not successive. Player decides research order.
+- **Behavior:** once researched, wandering scouts and scout skiffs **own** (claim) every tile they newly scout. Combines with Improved Optics to claim the full reveal ring.
+- **Exclusions:** horde-occupied tiles, active dens, and the unsecured lab are never scout-claimed (`unclaimableKeys`).
+- **Not retroactive:** already-scouted tiles stay unowned until a scout/skiff re-covers them.
+- **Cross-water footholds:** with both Scout to Own and Improved Optics, a skiff owning water near shore → optics ring claims land across the water → player has a buildable foothold on the far side. This is intentional for landlocked-island seeds.
+
+### Improved Optics bug fixes (shipped same commit)
+
+- **Wandering scouts:** optics ring now includes water tiles (was erroneously excluded). "Binoculars" — can't walk on water but can see it.
+- **Scout skiffs:** now get the same `revealRadius` as wandering scouts (was entirely missing). Ring includes land tiles — mirroring the land scout's ring including water.
+
+---
+
 ## Open Items (Not Yet Locked)
 
 1. **Terrain-based tile defense (Milestone 10)** — tile defense is currently distance-only (`territory_expansion.tile_defense_per_distance`); a terrain multiplier (mountains harder to take, etc.) was considered but deferred.
