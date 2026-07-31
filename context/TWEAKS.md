@@ -305,13 +305,13 @@ A tile-based structure (exclusive with extraction tiles, towers, and walls — s
 **Militia — standing army:**
 - Trained at a barracks for a flat, cheaper cost: 15 food + 10 wood.
 - Not consumed on use — stands indefinitely once trained, up to militia capacity.
-- Upkeep: 1.75 food/min per **barracks-idle** militia (garrisoned / expedition / assault / recall commitments skip idle upkeep — the march already paid provisions).
+- Upkeep: 0.875 food/min per **barracks-idle** militia (garrisoned / expedition / assault / recall commitments skip idle upkeep — the march already paid provisions). Profile-tunable via `units.*.upkeep_food_per_min`.
 - **Attack:** `militia_count × 2` (attack_per_unit) — this is the assault power used both to claim unowned tiles (Milestone 10) and against zombie dens (Milestone 14), resolving the previously-undefined "assault stats vs den defense" formula.
 - **Defense:** `militia_count × 2` (defense_per_unit) — contributes to base last-stand defense alongside base reinforcement HP (Milestone 12).
 
 **Upkeep and desertion:** every tick, total upkeep for **barracks-idle** troops only (standing totals minus garrisoned / expedition / den-assault / lab-assault / garrison-recall commitments) is deducted from food. If food can't cover it for that tick's elapsed time, food clamps to 0 and exactly one *idle* unit deserts — cheapest-upkeep first (militia, then junkyard knight, then cross-bow sniper). Committed troops never desert from upkeep shortfall.
 
-**CORRECTION (2026-07-21):** food sat permanently full — upkeep raised ~7x (militia 3.5, knight 5.5, sniper 7). **CORRECTION (2026-07-26 playtesting):** lab-sized armies still starved players — halved idle rates (militia 1.75, knight 2.75, sniper 3.5) and charge only the idle pool. Stockpile scout upkeep removed with the unit (#76).
+**CORRECTION (2026-07-21):** food sat permanently full — upkeep raised ~7x (militia 3.5, knight 5.5, sniper 7). **CORRECTION (2026-07-26 playtesting):** lab-sized armies still starved players — halved idle rates (militia 1.75, knight 2.75, sniper 3.5) and charge only the idle pool. Stockpile scout upkeep removed with the unit (#76). **CORRECTION (2026-07-29 #91):** still too aggressive for dispatch windows — halved again (militia 0.875, knight 1.375, sniper 1.75). Hard profile mirrors default.
 
 **Noise:** build noise 20 (`build_barracks`, same weight as a wall or extraction tile). Upgrade noise reuses `upgrade_extraction_tile` (10), same generic "any structure tier-up" value as towers and walls. Training a militia unit makes a small amount of noise (`train_militia`: 3). First pass, untested.
 
