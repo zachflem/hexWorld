@@ -16,7 +16,7 @@ export interface SheetAction {
   /** Short primary label shown in the row (e.g. "Build tower"). */
   title: string;
   /** Secondary line for cost / duration / status. */
-  detail?: string;
+  detail?: ReactNode;
   disabled?: boolean;
   /**
    * True if this action itself is an affordable upgrade — OR (for a category)

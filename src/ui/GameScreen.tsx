@@ -256,7 +256,7 @@ import {
   type PowerStatusPin,
   type PowerStatusPinOverlayHandle,
 } from "./menu/PowerStatusPinOverlay";
-import { formatCost, formatDuration } from "./format";
+import { CostDetail, formatDuration } from "./format";
 import { GarrisonsPanel } from "./panels/GarrisonsPanel";
 import { IntelligencePanel } from "./panels/IntelligencePanel";
 import { PersonnelPanel } from "./panels/PersonnelPanel";
@@ -736,6 +736,15 @@ export function GameScreen({
 
   function affordable(cost: Partial<Record<ResourceType, number>>): boolean {
     return Object.entries(cost).every(([res, amount]) => resources[res as ResourceType] >= (amount ?? 0));
+  }
+
+  /** Sheet-row cost line — lacking resources render red via CostDetail. */
+  function costDetail(
+    cost: Partial<Record<ResourceType, number>>,
+    suffix?: string,
+    prefix?: string,
+  ): ReactNode {
+    return <CostDetail cost={cost} resources={resources} prefix={prefix} suffix={suffix} />;
   }
 
   /** How many units of a given per-unit cost the current resources can actually pay for — used to clamp "Max" buttons to what's affordable, not just what capacity allows. */
@@ -2097,7 +2106,7 @@ export function GameScreen({
         key: "expedition",
         icon: <Swords size={18} />,
         title: "Send expedition",
-        detail: `${formatCost(expedition.provisionsCost)}, ETA ${Math.ceil(expedition.etaMs / 60_000)}m`,
+        detail: costDetail(expedition.provisionsCost, `ETA ${Math.ceil(expedition.etaMs / 60_000)}m`),
         disabled: !expedition.affordable,
         formContent: dispatchFormContent(expedition, undefined, "Send expedition", handleDispatchExpedition),
       },
@@ -2223,7 +2232,7 @@ export function GameScreen({
           key: "relocate",
           icon: <Navigation size={18} />,
           title: "Relocate base here",
-          detail: `${formatCost(relocation.cost)}, ${Math.ceil(relocation.durationMs / 60_000)}m`,
+          detail: costDetail(relocation.cost, `${Math.ceil(relocation.durationMs / 60_000)}m`),
           disabled: !relocation.affordable,
           onClick: handleRelocateBase,
         });
@@ -2237,7 +2246,7 @@ export function GameScreen({
           key: "outpost-upgrade",
           icon: structureIcon("outpost"),
           title: `Upgrade reinforcement to ${Math.floor(upgrade.hp)} HP`,
-          detail: formatCost(upgrade.cost),
+          detail: costDetail(upgrade.cost),
           disabled: !upgrade.affordable,
           upgradeAvailable: upgrade.affordable,
           onClick: handleUpgradeOutpostReinforcement,
@@ -2249,7 +2258,7 @@ export function GameScreen({
           key: "outpost-repair",
           icon: <Wrench size={18} />,
           title: "Repair outpost",
-          detail: formatCost(repair.cost),
+          detail: costDetail(repair.cost),
           disabled: !repair.affordable,
           onClick: handleRepairOutpost,
         });
@@ -2264,7 +2273,7 @@ export function GameScreen({
           key: "base-upgrade",
           icon: structureIcon(structureLevelCandidates("base", baseUpgrade.targetLevel)),
           title: `Upgrade base to L${baseUpgrade.targetLevel}`,
-          detail: formatCost(baseUpgrade.cost),
+          detail: costDetail(baseUpgrade.cost),
           disabled: !baseUpgrade.affordable,
           upgradeAvailable: baseUpgrade.affordable,
           onClick: handleUpgradeBase,
@@ -2276,7 +2285,7 @@ export function GameScreen({
           key: "base-reinforce",
           icon: <ArrowUpCircle size={18} />,
           title: `Upgrade reinforcement to ${Math.floor(reinforce.hp)} HP`,
-          detail: formatCost(reinforce.cost),
+          detail: costDetail(reinforce.cost),
           disabled: !reinforce.affordable,
           upgradeAvailable: reinforce.affordable,
           onClick: handleUpgradeReinforcement,
@@ -2288,7 +2297,7 @@ export function GameScreen({
           key: "base-repair",
           icon: <Wrench size={18} />,
           title: "Repair base",
-          detail: formatCost(repair.cost),
+          detail: costDetail(repair.cost),
           disabled: !repair.affordable || baseAdjacentHordeOccupied,
           onClick: handleRepairBase,
         });
@@ -2308,7 +2317,7 @@ export function GameScreen({
               : `${o.resource} → L${o.level + 1}`,
             detail: o.inProgress
               ? formatDuration(o.inProgress.remainingMs)
-              : `${formatCost(o.cost)}, ${o.durationMinutes}m`,
+              : costDetail(o.cost, `${o.durationMinutes}m`),
             disabled: o.inProgress !== null || baseHubAtTaskCap || !o.affordable,
             upgradeAvailable: o.inProgress === null && !baseHubAtTaskCap && o.affordable,
             onClick: () => handleUpgradeStorage(o.resource),
@@ -2333,7 +2342,7 @@ export function GameScreen({
           key: "dock-upgrade",
           icon: structureIcon(dockSpriteCandidates(dockUpgrade.targetLevel), 45, <Anchor size={18} />),
           title: `Upgrade to L${dockUpgrade.targetLevel}${levelNote}`,
-          detail: `${formatCost(dockUpgrade.cost)}, ${dockUpgrade.durationMinutes}m`,
+          detail: costDetail(dockUpgrade.cost, `${dockUpgrade.durationMinutes}m`),
           disabled: !dockUpgrade.affordable,
           upgradeAvailable: dockUpgrade.affordable,
           onClick: handleUpgradeDockLevel,
@@ -2345,7 +2354,7 @@ export function GameScreen({
           key: "scout-skiff",
           icon: <Ship size={18} />,
           title: "Build scout skiff",
-          detail: `${formatCost(scoutSkiff.cost)}, ${scoutSkiff.durationMinutes}m`,
+          detail: costDetail(scoutSkiff.cost, `${scoutSkiff.durationMinutes}m`),
           disabled: !scoutSkiff.affordable,
           onClick: handleBuildScoutSkiff,
         });
@@ -2361,7 +2370,7 @@ export function GameScreen({
             key: "tile-repair",
             icon: <Wrench size={18} />,
             title: "Repair extraction tile",
-            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            detail: costDetail(repair.cost, `${repair.durationMinutes}m`),
             disabled: !repair.affordable || selectedHordeOccupied,
             onClick: handleRepairStructure,
           });
@@ -2379,7 +2388,7 @@ export function GameScreen({
             key: "tile-upgrade",
             icon: resourceIcon(selectedTile.resource),
             title: `Upgrade to ${extractionTierDisplayLabel(upgrade.targetTier)}${levelNote}`,
-            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("extraction", fromLevel, toLevel)}`,
+            detail: costDetail(upgrade.cost, `${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("extraction", fromLevel, toLevel)}`),
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradeTier,
@@ -2395,7 +2404,7 @@ export function GameScreen({
             key: "tower-repair",
             icon: <Wrench size={18} />,
             title: "Repair tower",
-            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            detail: costDetail(repair.cost, `${repair.durationMinutes}m`),
             disabled: !repair.affordable || selectedHordeOccupied,
             onClick: handleRepairStructure,
           });
@@ -2409,7 +2418,7 @@ export function GameScreen({
             key: "tower-upgrade",
             icon: structureIcon(structureLevelCandidates("tower", upgrade.targetLevel)),
             title: `Upgrade to L${upgrade.targetLevel}`,
-            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("tower", selectedTower.level, upgrade.targetLevel)}`,
+            detail: costDetail(upgrade.cost, `${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("tower", selectedTower.level, upgrade.targetLevel)}`),
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradeTower,
@@ -2425,7 +2434,7 @@ export function GameScreen({
             key: "power-station-repair",
             icon: <Wrench size={18} />,
             title: "Repair power station",
-            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            detail: costDetail(repair.cost, `${repair.durationMinutes}m`),
             disabled: !repair.affordable || selectedHordeOccupied,
             onClick: handleRepairStructure,
           });
@@ -2443,7 +2452,7 @@ export function GameScreen({
             key: "power-station-upgrade",
             icon: structureIcon(powerStationTierIconName(upgrade.targetLevel), 45, <Zap size={18} />),
             title: `Upgrade to L${upgrade.targetLevel}`,
-            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, capacity ${fromCap} → ${toCap}, AoE ${fromAoe} → ${toAoe}`,
+            detail: costDetail(upgrade.cost, `${upgrade.durationMinutes}m, capacity ${fromCap} → ${toCap}, AoE ${fromAoe} → ${toAoe}`),
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradePowerStation,
@@ -2459,7 +2468,7 @@ export function GameScreen({
             key: "scrap-yard-repair",
             icon: <Wrench size={18} />,
             title: "Repair scrap yard",
-            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            detail: costDetail(repair.cost, `${repair.durationMinutes}m`),
             disabled: !repair.affordable || selectedHordeOccupied,
             onClick: handleRepairStructure,
           });
@@ -2473,7 +2482,7 @@ export function GameScreen({
             key: "scrap-yard-upgrade",
             icon: structureIcon(scrapYardSpriteCandidates(upgrade.targetLevel), 45, resourceIcon("steel", 18)),
             title: `Upgrade to L${upgrade.targetLevel}`,
-            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("scrap_yard", selectedScrapYard.level, upgrade.targetLevel)}`,
+            detail: costDetail(upgrade.cost, `${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("scrap_yard", selectedScrapYard.level, upgrade.targetLevel)}`),
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradeScrapYard,
@@ -2527,7 +2536,7 @@ export function GameScreen({
             key: "wall-horde-repair",
             icon: <Wrench size={18} />,
             title: "Repair wall",
-            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            detail: costDetail(repair.cost, `${repair.durationMinutes}m`),
             disabled: !repair.affordable || selectedHordeOccupied,
             onClick: handleRepairStructure,
           });
@@ -2548,7 +2557,7 @@ export function GameScreen({
               key: "wall-upgrade",
               icon: structureIcon(WALL_TIER_ICON_NAMES[selectedWall.tier]),
               title: `Upgrade to ${upgrade.targetTier}`,
-              detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("wall", fromLevel, toLevel)}`,
+              detail: costDetail(upgrade.cost, `${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("wall", fromLevel, toLevel)}`),
               disabled: !upgrade.affordable,
               upgradeAvailable: upgrade.affordable,
               onClick: handleUpgradeWall,
@@ -2560,7 +2569,7 @@ export function GameScreen({
               key: "wall-repair",
               icon: <Wrench size={18} />,
               title: "Repair wall",
-              detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+              detail: costDetail(repair.cost, `${repair.durationMinutes}m`),
               disabled: !repair.affordable,
               onClick: handleRepairWall,
             });
@@ -2576,7 +2585,7 @@ export function GameScreen({
             key: "barracks-repair",
             icon: <Wrench size={18} />,
             title: "Repair barracks",
-            detail: `${formatCost(repair.cost)}, ${repair.durationMinutes}m`,
+            detail: costDetail(repair.cost, `${repair.durationMinutes}m`),
             disabled: !repair.affordable || selectedHordeOccupied,
             onClick: handleRepairStructure,
           });
@@ -2590,7 +2599,7 @@ export function GameScreen({
             key: "barracks-upgrade",
             icon: structureIcon(structureLevelCandidates("barracks", upgrade.targetLevel)),
             title: `Upgrade to L${upgrade.targetLevel}`,
-            detail: `${formatCost(upgrade.cost)}, ${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("barracks", selectedBarracks.level, upgrade.targetLevel)}`,
+            detail: costDetail(upgrade.cost, `${upgrade.durationMinutes}m, ${powerDrawUpgradeSuffix("barracks", selectedBarracks.level, upgrade.targetLevel)}`),
             disabled: !upgrade.affordable,
             upgradeAvailable: upgrade.affordable,
             onClick: handleUpgradeBarracks,
@@ -2606,7 +2615,7 @@ export function GameScreen({
             key: "wandering-scout",
             icon: <Footprints size={18} />,
             title: "Wandering scout",
-            detail: `${formatCost(wanderingScout.cost)}, ${wanderingScout.durationMinutes}m`,
+            detail: costDetail(wanderingScout.cost, `${wanderingScout.durationMinutes}m`),
             disabled: !wanderingScout.affordable,
             onClick: handleBuildWanderingScout,
           });
@@ -2714,7 +2723,7 @@ export function GameScreen({
         key: "build-dock",
         icon: structureIcon(dockSpriteCandidates(false)),
         title: "Build dock",
-        detail: formatCost(dock.cost),
+        detail: costDetail(dock.cost),
         disabled: !dock.affordable,
         onClick: handleBuildDock,
       });
@@ -2732,7 +2741,7 @@ export function GameScreen({
         key: o.resource,
         icon: resourceIcon(o.resource),
         title: o.resource,
-        detail: `${formatCost(o.cost)}, ${o.durationMinutes}m`,
+        detail: costDetail(o.cost, `${o.durationMinutes}m`),
         disabled: !o.affordable,
         onClick: () => handleBuild(o.resource),
       }));
@@ -2741,7 +2750,7 @@ export function GameScreen({
         key: "build-power-station",
         icon: structureIcon(powerStationTierIconName(1), 45, <Zap size={18} />),
         title: "Build power station",
-        detail: `${formatCost(powerStation.cost)}, ${powerStation.durationMinutes}m`,
+        detail: costDetail(powerStation.cost, `${powerStation.durationMinutes}m`),
         disabled: !powerStation.affordable,
         onClick: handleBuildPowerStation,
       });
@@ -2750,7 +2759,7 @@ export function GameScreen({
         key: "build-scrap-yard",
         icon: structureIcon(scrapYardSpriteCandidates(1), 45, resourceIcon("steel", 18)),
         title: "Build scrap yard",
-        detail: `${formatCost(scrapYard.cost)}, ${scrapYard.durationMinutes}m`,
+        detail: costDetail(scrapYard.cost, `${scrapYard.durationMinutes}m`),
         disabled: !scrapYard.affordable,
         onClick: handleBuildScrapYard,
       });
@@ -2761,7 +2770,7 @@ export function GameScreen({
         key: "build-tower",
         icon: structureIcon(structureLevelCandidates("tower", 1)),
         title: "Build tower",
-        detail: `${formatCost(tower.cost)}, ${tower.durationMinutes}m`,
+        detail: costDetail(tower.cost, `${tower.durationMinutes}m`),
         disabled: !tower.affordable,
         onClick: handleBuildTower,
       });
@@ -2770,7 +2779,7 @@ export function GameScreen({
         key: "build-wall",
         icon: structureIcon(WALL_TIER_ICON_NAMES.wood),
         title: "Build wall",
-        detail: `${formatCost(wall.cost)}, ${wall.durationMinutes}m`,
+        detail: costDetail(wall.cost, `${wall.durationMinutes}m`),
         disabled: !wall.affordable,
         onClick: handleBuildWall,
       });
@@ -2779,7 +2788,7 @@ export function GameScreen({
         key: "build-barracks",
         icon: structureIcon(structureLevelCandidates("barracks", 1)),
         title: "Build barracks",
-        detail: `${formatCost(barracks.cost)}, ${barracks.durationMinutes}m`,
+        detail: costDetail(barracks.cost, `${barracks.durationMinutes}m`),
         disabled: !barracks.affordable,
         onClick: handleBuildBarracks,
       });
@@ -4129,7 +4138,7 @@ export function GameScreen({
       key: "arrival-send-help",
       icon: <Swords size={18} />,
       title: "Reinforce",
-      detail: `½ cost/time — ${formatCost(provisionsCost)}`,
+      detail: costDetail(provisionsCost, undefined, "½ cost/time — "),
       disabled: !option.affordable,
       formContent: dispatchFormContent(
         option,
