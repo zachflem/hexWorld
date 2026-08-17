@@ -1,0 +1,34 @@
+name: UI
+description: Visual / layout issue or polish
+title: "[UI] "
+labels: ["ui"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What looks wrong, where, viewport/device if relevant
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance / testable outcome
+    validations:
+      required: true
+  - type: textarea
+    id: refs
+    attributes:
+      label: Refs
+      value: |
+        - `src/ui/`
+  - type: textarea
+    id: status_notes
+    attributes:
+      label: Status notes

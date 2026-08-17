@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import {
   axialEquals,
   axialKey,
+  axialNeighbors,
   axialSpiral,
   axialToPixel,
   hexCorners,
@@ -10,25 +11,34 @@ import {
   type Axial,
 } from "../engine/hexCoords";
 import { computeFogTiers, fogTierFor, type FogTier } from "../engine/fog";
+import { labSearchZoneTileKeys } from "../engine/lab";
+import type { LabRecord } from "../data/lab";
 import { terrainAt, type TerrainType } from "../engine/terrain";
 import { towerRange } from "../engine/towers";
 import { sniperDamagePerSecond, towerDamagePerSecond, towersInRange } from "../engine/hordes";
 import { garrisonAt, garrisonWallRangeBonus } from "../engine/garrisons";
 import { maxWallDurability } from "../engine/walls";
 import { outpostReinforcementHp } from "../engine/outposts";
+import { powerStationAoeRadius } from "../engine/power";
 import type { ExtractionTile } from "../data/extractionTiles";
-import type { PathTier, PathTile } from "../data/pathTiles";
+import type { PowerStation } from "../data/powerStations";
+import type { ScrapYardRecord } from "../data/scrapYards";
+import { scrapperWorldCoord } from "../engine/scrappers";
 import type { ResourceType } from "../data/resources";
 import type { Tower } from "../data/towers";
 import type { Wall, WallTier } from "../data/walls";
 import type { Barracks } from "../data/barracks";
 import type { GarrisonsRecord } from "../data/garrisons";
 import type { DenRecord } from "../data/dens";
+import type { ScrapStashRecord, ScrapStashesRecord } from "../data/scrapStashes";
+import { isActiveScrapStash } from "../data/scrapStashes";
+import type { HexResourcePoolsRecord } from "../data/hexResourcePools";
 import type { OutpostRecord } from "../data/outposts";
 import type { HordeRecord } from "../data/hordes";
 import type { Expedition, ExpeditionsRecord } from "../data/expeditions";
-import { expeditionPathIndexAt } from "../engine/expeditions";
+import { expeditionMarkerIndex, expeditionPathIndexAt } from "../engine/expeditions";
 import type { DenAssaultRecord, DenAssaultsRecord } from "../data/denAssaults";
+import type { LabAssaultRecord, LabAssaultsRecord } from "../data/labAssaults";
 import type { TombstoneRecord, TombstonesRecord } from "../data/tombstones";
 import type { DockRecord, DocksRecord } from "../data/docks";
 import type { ScoutSkiffRecord, ScoutSkiffsRecord } from "../data/scoutSkiffs";
@@ -38,22 +48,55 @@ import {
   drawHexTileOverlay,
   drawHexTileTexture,
   drawImageAtWidth,
-  getPathTileTexture,
   getResourceTexture,
+  getScrapTexture,
   getStructureIconTexture,
+  getStructureIconTextureCandidates,
   getTerrainTexture,
   getUnitIconTexture,
   onTextureLoad,
 } from "./tileTextures";
+import { drawPlacedResourceIcon, drawPlacedScrapIcon, drawPlacedStructureIcon } from "./structurePlacement";
+import {
+  dockSpriteCandidates,
+  extractionTierCandidates,
+  powerStationSpriteCandidates,
+  powerStationVariantStem,
+  scrapYardSpriteCandidates,
+  scrapYardVariantStem,
+  structureLevelCandidates,
+  structureLevelName,
+} from "./structureSprites";
+import { extractionTierLevel } from "../engine/tiers";
 
-/** Exported so DOM overlays (TileActionRing) can compute the same on-screen hex circumradius (BASE_HEX_SIZE * zoom) the canvas itself draws with, and size themselves to genuinely overlay a tile rather than approximate it. */
+/** Exported so DOM overlays (e.g. HoverTooltip) can compute the same on-screen hex circumradius (BASE_HEX_SIZE * zoom) the canvas itself draws with. */
 export const BASE_HEX_SIZE = 24;
+
+/** Pan offset that places `coord` at the center of a view with the given pixel dimensions. */
+export function centerPanOnCoord(coord: Axial, viewWidth: number, viewHeight: number): { x: number; y: number } {
+  const pixel = axialToPixel(coord, BASE_HEX_SIZE);
+  return { x: viewWidth / 2 - pixel.x, y: viewHeight / 2 - pixel.y };
+}
+
+/** @deprecated Use centerPanOnCoord — kept for call sites that predate the rename. */
+export function centerPanOnBase(base: Axial, viewWidth: number, viewHeight: number): { x: number; y: number } {
+  return centerPanOnCoord(base, viewWidth, viewHeight);
+}
 const MIN_ZOOM = 0.3;
 const MAX_ZOOM = 3;
-const CLICK_DRAG_THRESHOLD_PX = 6;
+/**
+ * Finger jitter on Android touchscreens routinely exceeds ~6–10px during a
+ * deliberate tap; below this threshold the gesture is still a tile click,
+ * above it becomes a pan. iOS/macOS rarely hit the old 6px value, which is
+ * why short taps worked there while Android needed a long-press (finger
+ * planted still enough to stay under threshold).
+ */
+const CLICK_DRAG_THRESHOLD_PX = 18;
 
 const TERRAIN_COLORS: Record<TerrainType, string> = {
-  water: "#2f6f9f",
+  // Under-texture fill shows through soft AA at hex seams — keep this darker
+  // than the water art so gaps read as deep water, not a bright blue grid.
+  water: "#1a3548",
   shore: "#d9c98a",
   grassland: "#5a9e4f",
   forest: "#2f5a34",
@@ -68,37 +111,99 @@ const FOG_OVERLAY: Record<FogTier, string | null> = {
   hidden: "#0a0a0c",
 };
 
+/**
+ * Final-clue lab search cluster (DESIGN.md §13) — tweakable first-pass values.
+ * Scouted tiles in the zone get a player-color wash; unscouted fog is eased
+ * by LAB_SEARCH_ZONE_FOG_REDUCTION so the cluster reads without revealing the tile.
+ */
+const LAB_SEARCH_ZONE_SCOUTED_ALPHA = 0.1;
+const LAB_SEARCH_ZONE_FOG_REDUCTION = 0.1;
+const LAB_SEARCH_ZONE_FOG: Record<"heavy" | "light" | "hidden", string> = {
+  heavy: `rgba(0, 0, 0, ${0.7 - LAB_SEARCH_ZONE_FOG_REDUCTION})`,
+  light: `rgba(0, 0, 0, ${0.9 - LAB_SEARCH_ZONE_FOG_REDUCTION})`,
+  hidden: `rgba(10, 10, 12, ${1 - LAB_SEARCH_ZONE_FOG_REDUCTION})`,
+};
+
+/**
+ * Pointy-top corner index (hexCorners starts at top, clockwise) for the edge
+ * facing each axialNeighbors direction (E, NE, NW, W, SW, SE). The outer edge
+ * runs from that corner to the next clockwise.
+ */
+const OUTER_EDGE_CORNER_START = [1, 0, 5, 4, 3, 2] as const;
+
+/**
+ * Dev-server-only map perimeter — strokes hex edges that face out of bounds so
+ * spawn position is visible at a glance through fog. Gated by import.meta.env.DEV
+ * (Vite strips the call site in production builds).
+ */
+function drawDevMapEdgeOutline(
+  ctx: CanvasRenderingContext2D,
+  gridSize: number,
+  pan: { x: number; y: number },
+  zoom: number,
+  size: number,
+  viewWidth: number,
+  viewHeight: number,
+): void {
+  ctx.save();
+  ctx.strokeStyle = "rgba(220, 218, 210, 0.5)";
+  ctx.lineWidth = Math.max(1.5, size * 0.07);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+
+  const cullPad = size * 3;
+  const strokeOuterEdges = (coord: Axial) => {
+    const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
+    const screenCenter = { x: worldPixel.x * zoom + pan.x, y: worldPixel.y * zoom + pan.y };
+    if (
+      screenCenter.x < -cullPad ||
+      screenCenter.x > viewWidth + cullPad ||
+      screenCenter.y < -cullPad ||
+      screenCenter.y > viewHeight + cullPad
+    ) {
+      return;
+    }
+
+    const corners = hexCorners(screenCenter, size);
+    const neighbors = axialNeighbors(coord);
+    for (let d = 0; d < 6; d++) {
+      if (isWithinMapBounds(neighbors[d], gridSize)) continue;
+      const a = OUTER_EDGE_CORNER_START[d];
+      const b = (a + 1) % 6;
+      ctx.moveTo(corners[a].x, corners[a].y);
+      ctx.lineTo(corners[b].x, corners[b].y);
+    }
+  };
+
+  for (let r = 0; r < gridSize; r++) {
+    const rowHalf = Math.floor(r / 2);
+    if (r === 0 || r === gridSize - 1) {
+      for (let col = 0; col < gridSize; col++) {
+        strokeOuterEdges({ q: col - rowHalf, r });
+      }
+    } else {
+      strokeOuterEdges({ q: 0 - rowHalf, r });
+      strokeOuterEdges({ q: gridSize - 1 - rowHalf, r });
+    }
+  }
+
+  ctx.stroke();
+  ctx.restore();
+}
+
 const RESOURCE_MARKER_COLORS: Record<ResourceType, string> = {
   food: "#ffd76a",
   wood: "#8a5a2b",
   stone: "#c9c9c9",
   steel: "#7fa8c9",
-  power: "#f2f2f2",
 };
 
-/** Per-resource icon width multiplier (of `size`) — wood's source art reads oversized at the shared 1.6 scale, so it gets its own. */
-const RESOURCE_ICON_SCALE: Record<ResourceType, number> = {
-  food: 1.6,
-  wood: 1.2,
-  stone: 1.6,
-  steel: 1.6,
-  power: 1.6,
-};
+const POWER_STATION_COLOR = "#f2f2f2";
+const SCRAP_YARD_COLOR = "#8a8f98";
+const POWER_AOE_TINT_SELECTED = "rgba(255, 220, 80, 0.18)";
 
-const PATH_TIER_COLORS: Record<PathTier, string> = {
-  goat_track: "#a67c52",
-  stone_road: "#d9d9d9",
-  highway: "#ffdd55",
-};
-
-/** getPathTileTexture names for each path tier's sprite (tiles/structures/path-{track,stone,highway}.png) — falls back to PATH_TIER_COLORS's flat fill until/unless a given sprite is missing. Exported so TileActionRing can reuse the same sprite for its build/upgrade-path ring hex. */
-export const PATH_TIER_ICON_NAMES: Record<PathTier, string> = {
-  goat_track: "path-track",
-  stone_road: "path-stone",
-  highway: "path-highway",
-};
-
-/** getStructureIconTexture names for each wall tier's sprite (tiles/structures/wall-{small,medium,large}.png) — falls back to WALL_TIER_COLORS's flat dot until/unless a given sprite is missing. Exported so TileActionRing can reuse the same sprite for its build/upgrade-wall ring hex. */
+/** getStructureIconTexture names for each wall tier's sprite (tiles/structures/wall-{small,medium,large}.png) — falls back to WALL_TIER_COLORS's flat dot until/unless a given sprite is missing. Exported so UI can reuse the same sprite for wall build/upgrade actions. */
 export const WALL_TIER_ICON_NAMES: Record<WallTier, string> = {
   wood: "wall-small",
   rock: "wall-medium",
@@ -114,14 +219,21 @@ const WALL_TIER_COLORS: Record<WallTier, string> = {
 const TOWER_COLOR = "#c0392b";
 const TOWER_RANGE_TINT_SELECTED = "rgba(192, 57, 43, 0.6)";
 /** Ring drawn around any tower currently within range of a live horde — makes it visible towers are actually fighting, not just standing there. */
+/** Ring around a known, non-depleted scrap stash (ScrapperEconomy Q9). */
+const SCRAP_STASH_RING_COLOR = "rgba(140, 150, 160, 0.95)";
+
 const TOWER_ACTIVE_RING_COLOR = "#ffd23f";
 const BARRACKS_COLOR = "#8e44ad";
 const DOCK_COLOR = "#8a6d3b";
 const DEN_COLOR = "#4a1a1a";
+/** Fallback when structures/lab.png hasn't loaded — cool teal so it reads apart from dens. */
+const LAB_COLOR = "#1a5a6b";
 /** Fallback for a converted outpost when tiles/structures/outpost.png hasn't loaded yet — reuses the base's ⌂ glyph (it IS a base, functionally) but a distinct color so it reads as base-like without being mistaken for the player's actual main base. */
 const OUTPOST_COLOR = "#3a6b8a";
 /** Ring drawn around a den currently under siege (hold period) — same technique as TOWER_ACTIVE_RING_COLOR. */
 const SIEGE_RING_COLOR = "#ff6b35";
+/** Track for in-progress build/upgrade/repair rings on structure tiles (#74). Fill color comes from StructureProgressKind. */
+const STRUCTURE_PROGRESS_TRACK = "rgba(255, 255, 255, 0.22)";
 /** Deep danger red (playtesting feedback: green read as "safe," not a threat) — distinct from TOWER_COLOR's red so friend/foe stay visually distinguishable. */
 const HORDE_COLOR = "#b71c1c";
 const GARRISON_COLOR = "#2e7d32";
@@ -142,9 +254,46 @@ function contrastingInk(hex: string): string {
   return luminance > 0.6 ? "#1a1a1a" : "#ffffff";
 }
 
+/** `#rrggbb` → `rgba(...)` for fog/knowledge tints. Falls back if the color is malformed. */
+function colorWithAlpha(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) {
+    return `rgba(40, 70, 110, ${alpha})`;
+  }
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
+ * Soft player-color disc under mobile unit sprites (expeditions, scouts, skiffs)
+ * so they stay readable on busy terrain. `radius` ≈ one hex size → roughly a
+ * tile-wide footprint; sprite is drawn on top afterward.
+ */
+function drawPlayerUnitHalo(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  playerColor: string,
+) {
+  const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+  gradient.addColorStop(0, colorWithAlpha(playerColor, 0.55));
+  gradient.addColorStop(0.4, colorWithAlpha(playerColor, 0.28));
+  gradient.addColorStop(1, colorWithAlpha(playerColor, 0));
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 /** Imperative handle exposed via ref, since pan/zoom are internal state here — lets a parent (e.g. a "recenter" button in the header) drive the view without lifting that state up. */
 export interface HexCanvasHandle {
   recenterOnBase: () => void;
+  /** Pan the view so `coord` sits at the center of the canvas. */
+  centerOnCoord: (coord: Axial) => void;
+  /** Zoom toward the canvas centre by `factor` (>1 in, <1 out), clamped to MIN/MAX_ZOOM. */
+  zoomBy: (factor: number) => void;
   /** Current on-screen pixel position of a tile's center, or null before the initial center-on-base pan has been computed. Recomputed fresh on every call against the latest pan/zoom — safe to call every frame (e.g. to keep a DOM overlay glued to a selected tile). */
   getTileScreenPosition: (coord: Axial) => { x: number; y: number } | null;
 }
@@ -158,17 +307,23 @@ export const HexCanvas = forwardRef<
     base: Axial;
     owned: Axial[];
     extractionTiles: ExtractionTile[];
-    pathTiles: PathTile[];
     towers: Tower[];
     walls: Wall[];
     barracksList: Barracks[];
+    powerStations: PowerStation[];
+    scrapYards: ScrapYardRecord[];
     garrisons: GarrisonsRecord;
     scoutedTiles: Axial[];
+    /** Hidden lab + clue progress — drives the final-clue search-zone highlight. */
+    lab: LabRecord;
     dens: DenRecord[];
+    scrapStashes: ScrapStashesRecord;
+    hexResourcePools: HexResourcePoolsRecord;
     outposts: OutpostRecord[];
     hordes: HordeRecord[];
     expeditions: ExpeditionsRecord;
     denAssaults: DenAssaultsRecord;
+    labAssaults: LabAssaultsRecord;
     tombstones: TombstonesRecord;
     /** The virtual clock (data/clock.ts:ClockRecord.virtualNow) — used to interpolate each in-flight expedition's current position along its route, same units as Expedition.departedAt/arriveAt. */
     now: number;
@@ -201,6 +356,15 @@ export const HexCanvas = forwardRef<
     upgradeAvailableKeys: Set<string>;
     /** Coord keys (axialKey) of owned, empty, buildable-land tiles where at least one structure type is currently affordable — tinted teal while build-mode (the hammer slot in the global hex cluster) is active. Empty set when build-mode is off. */
     buildModeEligibleKeys: Set<string>;
+    /**
+     * Per-tile build/upgrade/repair progress (0 = just started, approaching 1)
+     * for circular rings drawn on busy structures. Absent keys are idle.
+     * Rebuilt each tick from GameScreen countdown rows so the draw effect
+     * refreshes as the virtual clock advances (unlike `now`, which is only
+     * used for expedition interpolation today).
+     */
+    /** Per-tile progress ring data (progress 0..1 + fill color). Absent = idle. */
+    structureProgressByKey: Map<string, { progress: number; color: string }>;
     selected: Axial | null;
     playerColor: string;
     onTileClick?: (coord: Axial) => void;
@@ -215,6 +379,18 @@ export const HexCanvas = forwardRef<
     onTileHover?: (coord: Axial | null) => void;
     /** Fired after every redraw with the viewport currently on screen — lets a parent keep a DOM overlay (e.g. a per-tile action ring) glued to a tile through pan/zoom. Read via a ref internally, not a draw-effect dependency, so an unstable callback identity from the parent doesn't itself trigger extra redraws. */
     onViewportChange?: (viewport: { pan: { x: number; y: number }; zoom: number }) => void;
+    /**
+     * Dev-server-only: skip fog-of-war culling and overlays so the whole map
+     * is visible. Gated by the caller with import.meta.env.DEV — production
+     * builds should always pass false/omit.
+     */
+    fogDisabled?: boolean;
+    /**
+     * Dev-server-only lab preview (Dev tools cycle):
+     * - `hint` — paint the final-clue search cluster even before clues are in
+     * - `reveal` — highlight the exact lab tile
+     */
+    devLabMode?: "off" | "hint" | "reveal";
   }
 >(function HexCanvas(
   {
@@ -224,17 +400,22 @@ export const HexCanvas = forwardRef<
     base,
     owned,
     extractionTiles,
-    pathTiles,
     towers,
     walls,
     barracksList,
+    powerStations,
+    scrapYards,
     garrisons,
     scoutedTiles,
+    lab,
     dens,
+    scrapStashes,
+    hexResourcePools,
     outposts,
     hordes,
     expeditions,
     denAssaults,
+    labAssaults,
     tombstones,
     now,
     docks,
@@ -246,11 +427,14 @@ export const HexCanvas = forwardRef<
     baseMaxHp,
     upgradeAvailableKeys,
     buildModeEligibleKeys,
+    structureProgressByKey,
     selected,
     playerColor,
     onTileClick,
     onTileHover,
     onViewportChange,
+    fogDisabled = false,
+    devLabMode = "off",
   },
   ref,
 ) {
@@ -259,11 +443,6 @@ export const HexCanvas = forwardRef<
     for (const tile of extractionTiles) map.set(axialKey(tile.coord), tile);
     return map;
   }, [extractionTiles]);
-  const pathTilesByKey = useMemo(() => {
-    const map = new Map<string, PathTile>();
-    for (const tile of pathTiles) map.set(axialKey(tile.coord), tile);
-    return map;
-  }, [pathTiles]);
   const towersByKey = useMemo(() => {
     const map = new Map<string, Tower>();
     for (const tower of towers) map.set(axialKey(tower.coord), tower);
@@ -279,6 +458,16 @@ export const HexCanvas = forwardRef<
     for (const b of barracksList) map.set(axialKey(b.coord), b);
     return map;
   }, [barracksList]);
+  const powerStationsByKey = useMemo(() => {
+    const map = new Map<string, PowerStation>();
+    for (const station of powerStations) map.set(axialKey(station.coord), station);
+    return map;
+  }, [powerStations]);
+  const scrapYardsByKey = useMemo(() => {
+    const map = new Map<string, ScrapYardRecord>();
+    for (const yard of scrapYards) map.set(axialKey(yard.coord), yard);
+    return map;
+  }, [scrapYards]);
   const garrisonsByKey = useMemo(() => {
     const map = new Map<string, number>();
     for (const g of garrisons) map.set(axialKey(g.coord), g.militiaCount + g.junkyardKnightCount + g.crossBowSniperCount);
@@ -289,6 +478,11 @@ export const HexCanvas = forwardRef<
     for (const den of dens) map.set(axialKey(den.coord), den);
     return map;
   }, [dens]);
+  const scrapStashesByKey = useMemo(() => {
+    const map = new Map<string, ScrapStashRecord>();
+    for (const stash of scrapStashes) map.set(axialKey(stash.coord), stash);
+    return map;
+  }, [scrapStashes]);
   const outpostsByKey = useMemo(() => {
     const map = new Map<string, OutpostRecord>();
     for (const outpost of outposts) map.set(axialKey(outpost.coord), outpost);
@@ -338,11 +532,21 @@ export const HexCanvas = forwardRef<
   const expeditionsByKey = useMemo(() => {
     const map = new Map<string, Expedition>();
     for (const expedition of expeditions) {
-      const index = expeditionPathIndexAt(expedition.departedAt, expedition.arriveAt, now, expedition.path.length);
+      const index = expeditionMarkerIndex(expedition, now);
       map.set(axialKey(expedition.path[index]), expedition);
     }
     return map;
   }, [expeditions, now]);
+  // In-flight Scrapper positions — same interpolation as expeditions.
+  const scrappersByKey = useMemo(() => {
+    const map = new Map<string, ScrapYardRecord>();
+    for (const yard of scrapYards) {
+      const trip = yard.scrapper;
+      if (!trip || trip.phase === "idle" || trip.path.length === 0) continue;
+      map.set(axialKey(scrapperWorldCoord(yard, now)), yard);
+    }
+    return map;
+  }, [scrapYards, now]);
   // Destination of an in-flight den assault (data/denAssaults.ts) — same
   // "where is this headed" corner badge as expeditionTargetKeys above.
   const denAssaultTargetKeys = useMemo(() => {
@@ -362,7 +566,27 @@ export const HexCanvas = forwardRef<
     }
     return map;
   }, [denAssaults, now]);
+  // Destination of an in-flight lab assault — same corner badge as den assaults.
+  const labAssaultTargetKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const assault of labAssaults) set.add(axialKey(assault.target));
+    return set;
+  }, [labAssaults]);
+  // Live en-route position — LabAssaultRecord mirrors DenAssaultRecord's path timers.
+  const labAssaultsByKey = useMemo(() => {
+    const map = new Map<string, LabAssaultRecord>();
+    for (const assault of labAssaults) {
+      const index = expeditionPathIndexAt(assault.departedAt, assault.arriveAt, now, assault.path.length);
+      map.set(axialKey(assault.path[index]), assault);
+    }
+    return map;
+  }, [labAssaults, now]);
   const fogByKey = useMemo(() => computeFogTiers(owned, scoutedTiles), [owned, scoutedTiles]);
+  const labSearchZoneKeys = useMemo(
+    () => labSearchZoneTileKeys(seed, lab, tweaks, gridSize, { force: devLabMode === "hint" }),
+    [seed, lab, tweaks, gridSize, devLabMode],
+  );
+  const devHighlightLab = devLabMode === "reveal";
   // Only the selected tower's range is shaded (towerRange scales with level,
   // engine/towers.ts) — shading every tower's range at once buried the whole
   // map under a red tint, so coverage is only shown on demand.
@@ -370,11 +594,21 @@ export const HexCanvas = forwardRef<
     const selectedTower = selected && towersByKey.get(axialKey(selected));
     if (!selectedTower) return null;
     const set = new Set<string>();
-    for (const coord of axialSpiral(selectedTower.coord, towerRange(tweaks, selectedTower.level))) {
+    const range = towerRange(tweaks, selectedTower.level, terrainAt(seed, selectedTower.coord));
+    for (const coord of axialSpiral(selectedTower.coord, range)) {
       set.add(axialKey(coord));
     }
     return set;
-  }, [selected, towersByKey, tweaks]);
+  }, [selected, towersByKey, tweaks, seed]);
+  const selectedPowerAoeKeys = useMemo(() => {
+    const selectedStation = selected && powerStationsByKey.get(axialKey(selected));
+    if (!selectedStation) return null;
+    const set = new Set<string>();
+    for (const coord of axialSpiral(selectedStation.coord, powerStationAoeRadius(tweaks, selectedStation.level))) {
+      set.add(axialKey(coord));
+    }
+    return set;
+  }, [selected, powerStationsByKey, tweaks]);
   // Same on-demand-only shading as selectedTowerRangeKeys, for the selected
   // tile's garrison. Radius depends on what's actually stationed there: a
   // garrison with cross-bow snipers reaches units.cross_bow_sniper.range_tiles
@@ -401,12 +635,12 @@ export const HexCanvas = forwardRef<
   const activeTowerKeys = useMemo(() => {
     const set = new Set<string>();
     for (const horde of hordes) {
-      for (const tower of towersInRange(tweaks, towers, horde.path[horde.pathIndex])) {
+      for (const tower of towersInRange(tweaks, towers, horde.path[horde.pathIndex], seed)) {
         set.add(axialKey(tower.coord));
       }
     }
     return set;
-  }, [hordes, towers, tweaks]);
+  }, [hordes, towers, tweaks, seed]);
   // Per-horde incoming dps (towers + garrisoned cross-bow snipers in range)
   // and whether it's currently slowed — same combat math advanceHordes uses
   // (engine/hordes.ts), just read-only here for display.
@@ -414,17 +648,23 @@ export const HexCanvas = forwardRef<
     const map = new Map<string, { dps: number; slowed: boolean }>();
     for (const horde of hordes) {
       const coord = horde.path[horde.pathIndex];
-      const inRangeTowers = towersInRange(tweaks, towers, coord);
+      const inRangeTowers = towersInRange(tweaks, towers, coord, seed);
       const dps =
         towerDamagePerSecond(tweaks, inRangeTowers, horde.size, garrisons) + sniperDamagePerSecond(tweaks, garrisons, walls, coord);
       map.set(axialKey(coord), { dps, slowed: inRangeTowers.length > 0 });
     }
     return map;
-  }, [hordes, towers, garrisons, walls, tweaks]);
+  }, [hordes, towers, garrisons, walls, tweaks, seed]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<{ x: number; y: number } | null>(null);
+  // Keep latest zoom/pan in refs so imperative zoomBy (hold-to-repeat) doesn't
+  // stack steps on a stale closure between React commits.
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  zoomRef.current = zoom;
+  panRef.current = pan;
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   // Mobile pinch-to-zoom — every currently-touching pointer's latest screen
   // position, keyed by pointerId (pointer events unify mouse/touch/pen, so
@@ -441,15 +681,8 @@ export const HexCanvas = forwardRef<
   // pinch that happens to end on a single remaining finger doesn't get
   // mistaken for a tap-to-select-tile in handlePointerUp's last branch.
   const multiTouchRef = useRef(false);
-
-  // Center the view on the base tile once we know the canvas size.
-  useEffect(() => {
-    if (pan !== null) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const basePixel = axialToPixel(base, BASE_HEX_SIZE);
-    setPan({ x: canvas.width / 2 - basePixel.x, y: canvas.height / 2 - basePixel.y });
-  }, [pan, base]);
+  /** False once the view has been centered on the base at the container's real layout size — avoids a stale pan from the canvas's default 300×150 backing store before ResizeObserver runs (ROADMAP #15). */
+  const pendingInitialCenterRef = useRef(true);
 
   // Tile textures load async and are cached forever once loaded — this counter
   // just forces the draw effect below to rerun the first time each one resolves.
@@ -479,27 +712,63 @@ export const HexCanvas = forwardRef<
     () => ({
       recenterOnBase() {
         const canvas = canvasRef.current;
-        if (!canvas) return;
-        const basePixel = axialToPixel(base, BASE_HEX_SIZE);
+        const container = containerRef.current;
+        if (!canvas || !container) return;
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
         setZoom(1);
-        setPan({ x: canvas.width / 2 - basePixel.x, y: canvas.height / 2 - basePixel.y });
+        zoomRef.current = 1;
+        setPan(centerPanOnCoord(base, canvas.width, canvas.height));
+        pendingInitialCenterRef.current = false;
+      },
+      centerOnCoord(coord: Axial) {
+        const canvas = canvasRef.current;
+        const container = containerRef.current;
+        if (!canvas || !container) return;
+        if (canvas.width === 0 || canvas.height === 0) {
+          canvas.width = container.clientWidth;
+          canvas.height = container.clientHeight;
+        }
+        setPan(centerPanOnCoord(coord, canvas.width, canvas.height));
+        pendingInitialCenterRef.current = false;
+      },
+      zoomBy(factor: number) {
+        const canvas = canvasRef.current;
+        const currentPan = panRef.current;
+        const currentZoom = zoomRef.current;
+        if (!canvas || currentPan === null) return;
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const worldX = (centerX - currentPan.x) / currentZoom;
+        const worldY = (centerY - currentPan.y) / currentZoom;
+        const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, currentZoom * factor));
+        const nextPan = { x: centerX - worldX * nextZoom, y: centerY - worldY * nextZoom };
+        zoomRef.current = nextZoom;
+        panRef.current = nextPan;
+        setPan(nextPan);
+        setZoom(nextZoom);
       },
       getTileScreenPosition(coord: Axial) {
-        if (pan === null) return null;
+        const currentPan = panRef.current;
+        const currentZoom = zoomRef.current;
+        if (currentPan === null) return null;
         const canvas = canvasRef.current;
         if (!canvas) return null;
         // pan/zoom operate in the canvas's own backing-buffer coordinate
         // space (0,0 = the canvas element's own top-left corner) — but this
-        // is meant for viewport-fixed DOM overlays (TileActionRing), so it
+        // is meant for viewport-fixed DOM overlays (HoverTooltip), so it
         // needs the canvas's own on-page offset added, or an overlay renders
         // shifted by however far the canvas sits from the viewport origin
         // (e.g. up and left, since the header above it pushes it down).
         const rect = canvas.getBoundingClientRect();
         const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
-        return { x: worldPixel.x * zoom + pan.x + rect.left, y: worldPixel.y * zoom + pan.y + rect.top };
+        return {
+          x: worldPixel.x * currentZoom + currentPan.x + rect.left,
+          y: worldPixel.y * currentZoom + currentPan.y + rect.top,
+        };
       },
     }),
-    [base, zoom, pan],
+    [base],
   );
 
   useEffect(() => {
@@ -511,6 +780,15 @@ export const HexCanvas = forwardRef<
       if (!canvas || !container) return;
       canvas.width = container.clientWidth;
       canvas.height = container.clientHeight;
+      if (
+        pendingInitialCenterRef.current &&
+        container.clientWidth > 0 &&
+        container.clientHeight > 0
+      ) {
+        setPan(centerPanOnBase(base, canvas.width, canvas.height));
+        pendingInitialCenterRef.current = false;
+        return;
+      }
       draw();
     }
 
@@ -543,39 +821,85 @@ export const HexCanvas = forwardRef<
         context.stroke();
       };
 
-      // Bottom-left corner badge for a structure's level (base/den/tower/barracks)
-      // — the opposite corner from the garrison count badge (top-right,
-      // further below), so the two never collide on a tile that has both.
-      // A black dot with a white number by default, regardless of whether the
-      // structure's own icon has loaded yet — pass badgeColor to flag an
-      // available+affordable upgrade instead (UPGRADE_AVAILABLE_BADGE_COLOR).
+      // Level badge for a structure (base/den/tower/barracks/extraction) —
+      // bottom-centre so taller building sprites don't cover it. Opposite the
+      // garrison count badge (top-right). Black by default; pass badgeColor
+      // to flag an available+affordable upgrade (UPGRADE_AVAILABLE_BADGE_COLOR).
       const drawLevelBadge = (screenCenter: { x: number; y: number }, level: number, badgeColor: string = "#000000") => {
-        const badgeX = screenCenter.x - size * 0.55;
-        const badgeY = screenCenter.y + size * 0.55;
+        const badgeX = screenCenter.x;
+        const badgeY = screenCenter.y + size * 0.6;
+        context.save();
+        context.globalAlpha = 0.85;
         context.beginPath();
-        context.arc(badgeX, badgeY, size * 0.3, 0, Math.PI * 2);
+        context.arc(badgeX, badgeY, size * 0.250, 0, Math.PI * 2);
         context.fillStyle = badgeColor;
         context.fill();
         context.strokeStyle = "rgba(255, 255, 255, 0.6)";
         context.stroke();
         context.fillStyle = "#ffffff";
-        context.font = `${Math.max(8, size * 0.38)}px sans-serif`;
+        context.font = `${Math.max(6, size * 0.285)}px sans-serif`;
         context.textAlign = "center";
         context.textBaseline = "middle";
         context.fillText(String(level), badgeX, badgeY);
+        context.restore();
       };
 
-      // Bottom-right edge bar for anything with an HP/durability-style stat
-      // (base, outpost, wall) — "at a glance" on the map itself rather than
-      // requiring a click, red/orange/green banding matching how players
-      // already read health bars in most games (<30% / 30-60% / 60%+).
-      const drawHealthBar = (screenCenter: { x: number; y: number }, current: number, max: number) => {
+      // Circular fill for a structure-tied timer (build/upgrade/repair/…).
+      // Same radius band as the siege/active-tower rings so it frames the
+      // icon without fighting the bottom-centre level badge.
+      const drawProgressRing = (
+        screenCenter: { x: number; y: number },
+        entry: { progress: number; color: string },
+      ) => {
+        const fraction = Math.max(0, Math.min(1, entry.progress));
+        const radius = size * 0.58;
+        const lineWidth = Math.max(2, size * 0.12);
+        context.save();
+        context.lineWidth = lineWidth;
+        context.lineCap = "round";
+        context.beginPath();
+        context.arc(screenCenter.x, screenCenter.y, radius, 0, Math.PI * 2);
+        context.strokeStyle = STRUCTURE_PROGRESS_TRACK;
+        context.stroke();
+        if (fraction > 0) {
+          context.beginPath();
+          context.arc(
+            screenCenter.x,
+            screenCenter.y,
+            radius,
+            -Math.PI / 2,
+            -Math.PI / 2 + fraction * Math.PI * 2,
+          );
+          context.strokeStyle = entry.color;
+          context.stroke();
+        }
+        context.restore();
+      };
+
+      // HP/durability edge bar (base, outpost, wall) — "at a glance" on the
+      // map itself rather than requiring a click, red/orange/green banding
+      // matching how players already read health bars in most games
+      // (<30% / 30-60% / 60%+). Default bottom-right; base uses top-centre so
+      // the tall base sprite doesn't cover it.
+      const drawHealthBar = (
+        screenCenter: { x: number; y: number },
+        current: number,
+        max: number,
+        placement: "bottom-right" | "top-center" = "bottom-right",
+      ) => {
         if (max <= 0) return;
+        if (current >= max) return;
         const fraction = Math.max(0, Math.min(1, current / max));
         const barWidth = size * 0.75;
         const barHeight = Math.max(3, size * 0.16);
-        const barX = screenCenter.x + size * 0.55 - barWidth / 2;
-        const barY = screenCenter.y + size * 0.55 - barHeight / 2;
+        const barX =
+          placement === "top-center"
+            ? screenCenter.x - barWidth / 2
+            : screenCenter.x + size * 0.55 - barWidth / 2;
+        const barY =
+          placement === "top-center"
+            ? screenCenter.y - size * 0.99 - barHeight / 2
+            : screenCenter.y + size * 0.55 - barHeight / 2;
         const fillColor = fraction < 0.3 ? "#e74c3c" : fraction < 0.6 ? "#f39c12" : "#2ecc71";
         context.fillStyle = "rgba(0, 0, 0, 0.6)";
         context.fillRect(barX, barY, barWidth, barHeight);
@@ -611,7 +935,10 @@ export const HexCanvas = forwardRef<
         for (let q = qMin; q <= qMax; q++) {
           const coord: Axial = { q, r };
           if (!isWithinMapBounds(coord, gridSize)) continue;
-          if (fogTierFor(coord, fogByKey) === "hidden") continue;
+          const inLabSearchZone = labSearchZoneKeys?.has(axialKey(coord)) ?? false;
+          // Hidden tiles normally skip terrain; draw them inside the final-clue
+          // search zone so a reduced fog overlay can show a faint peek.
+          if (!fogDisabled && fogTierFor(coord, fogByKey) === "hidden" && !inLabSearchZone) continue;
 
           const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
           const screenCenter = { x: worldPixel.x * zoom + pan.x, y: worldPixel.y * zoom + pan.y };
@@ -642,26 +969,13 @@ export const HexCanvas = forwardRef<
             drawHexTileOverlay(ctx, terrainImg, screenCenter.x, screenCenter.y - size, size * sqrt3, size * 2);
           }
 
-          // A path tile covers the whole tile (it's not a decoration on top
-          // of the terrain), so it fully replaces the terrain fill here
-          // rather than just outlining it.
-          const pathTile = pathTilesByKey.get(axialKey(coord));
-          if (pathTile) {
-            ctx.fillStyle = PATH_TIER_COLORS[pathTile.tier];
-            ctx.fill();
-            const pathImg = getPathTileTexture(PATH_TIER_ICON_NAMES[pathTile.tier]);
-            if (pathImg) {
-              drawHexTileTexture(ctx, pathImg, screenCenter.x, screenCenter.y, size * sqrt3, size * 2);
-              drawHexTileOverlay(ctx, pathImg, screenCenter.x, screenCenter.y - size, size * sqrt3, size * 2);
-            }
-          }
         }
       }
 
-      // Pass 2: fog, structures, markers, and every other per-tile
-      // decoration — drawn after the whole terrain layer above so fog tint
-      // and the hidden-tile fill always paint over any texture bleed from
-      // pass 1.
+      // Pass 2: fog/tints → selection ring → structures → markers.
+      // Drawn after the whole terrain layer so fog tint and the
+      // hidden-tile fill always paint over any texture bleed from pass 1;
+      // selection is intentionally under structure sprites.
       for (let r = Math.max(0, rMin); r <= Math.min(gridSize - 1, rMax); r++) {
         const qMin = Math.floor(worldLeft / (BASE_HEX_SIZE * sqrt3) - r / 2) - 1;
         const qMax = Math.ceil(worldRight / (BASE_HEX_SIZE * sqrt3) - r / 2) + 1;
@@ -670,8 +984,9 @@ export const HexCanvas = forwardRef<
           const coord: Axial = { q, r };
           if (!isWithinMapBounds(coord, gridSize)) continue;
 
-          const tier = fogTierFor(coord, fogByKey);
+          const tier = fogDisabled ? "owned" : fogTierFor(coord, fogByKey);
           const isSelected = selected !== null && axialEquals(coord, selected);
+          const isDevLabHighlight = devHighlightLab && axialEquals(coord, lab.coord);
 
           const worldPixel = axialToPixel(coord, BASE_HEX_SIZE);
           const screenCenter = { x: worldPixel.x * zoom + pan.x, y: worldPixel.y * zoom + pan.y };
@@ -684,22 +999,40 @@ export const HexCanvas = forwardRef<
           });
           ctx.closePath();
 
+          const coordKey = axialKey(coord);
+          const inLabSearchZone = labSearchZoneKeys?.has(coordKey) ?? false;
+
           if (tier === "hidden") {
-            ctx.fillStyle = FOG_OVERLAY.hidden as string;
+            ctx.fillStyle = inLabSearchZone ? LAB_SEARCH_ZONE_FOG.hidden : (FOG_OVERLAY.hidden as string);
             ctx.fill();
-            if (isSelected) strokeSelection(corners);
+            if (isSelected || isDevLabHighlight) strokeSelection(corners);
             continue;
           }
 
-          const overlay = FOG_OVERLAY[tier];
-          if (overlay) {
-            ctx.fillStyle = overlay;
+          if (tier === "scouted") {
+            // Final-clue cluster: light player-color wash instead of the usual
+            // blue knowledge tint so the search area reads clearly.
+            ctx.fillStyle = inLabSearchZone
+              ? colorWithAlpha(playerColor, LAB_SEARCH_ZONE_SCOUTED_ALPHA)
+              : (FOG_OVERLAY.scouted as string);
             ctx.fill();
+          } else if (inLabSearchZone && (tier === "heavy" || tier === "light")) {
+            ctx.fillStyle = LAB_SEARCH_ZONE_FOG[tier];
+            ctx.fill();
+          } else {
+            const overlay = FOG_OVERLAY[tier];
+            if (overlay) {
+              ctx.fillStyle = overlay;
+              ctx.fill();
+            }
           }
 
-          const coordKey = axialKey(coord);
           if (selectedTowerRangeKeys?.has(coordKey)) {
             ctx.fillStyle = TOWER_RANGE_TINT_SELECTED;
+            ctx.fill();
+          }
+          if (selectedPowerAoeKeys?.has(coordKey)) {
+            ctx.fillStyle = POWER_AOE_TINT_SELECTED;
             ctx.fill();
           }
           if (selectedGarrisonRangeKeys?.has(coordKey)) {
@@ -710,11 +1043,53 @@ export const HexCanvas = forwardRef<
             ctx.fillStyle = BUILD_MODE_TINT;
             ctx.fill();
           }
+          if (isDevLabHighlight) {
+            ctx.fillStyle = colorWithAlpha(playerColor, 0.35);
+            ctx.fill();
+          }
+
+          // Selection ring after terrain/path (pass 1) and fog/tints, but
+          // before structure sprites so the stroke sits under buildings
+          // instead of clipping their lower edge.
+          if (isSelected || isDevLabHighlight) strokeSelection(corners);
+
+          // Known scrap stashes (owned/scouted fog) — resource-pin art + grey ring (Q9/Q70).
+          const scrapStash = scrapStashesByKey.get(coordKey);
+          if (
+            scrapStash &&
+            isActiveScrapStash(tweaks, seed, hexResourcePools, scrapStash) &&
+            (tier === "owned" || tier === "scouted")
+          ) {
+            ctx.beginPath();
+            ctx.arc(screenCenter.x, screenCenter.y, size * 0.52, 0, Math.PI * 2);
+            ctx.strokeStyle = SCRAP_STASH_RING_COLOR;
+            ctx.lineWidth = Math.max(2, size * 0.1);
+            ctx.stroke();
+            const scrapImg = getScrapTexture(scrapStash.artVariant);
+            if (scrapImg) {
+              drawPlacedScrapIcon(ctx, scrapImg, screenCenter.x, screenCenter.y, size);
+            } else {
+              ctx.beginPath();
+              ctx.arc(screenCenter.x, screenCenter.y, size * 0.28, 0, Math.PI * 2);
+              ctx.fillStyle = RESOURCE_MARKER_COLORS.steel;
+              ctx.fill();
+              ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
+              ctx.stroke();
+            }
+          }
 
           if (axialEquals(coord, base)) {
-            const baseIcon = getStructureIconTexture("base");
+            const baseIcon = getStructureIconTextureCandidates(structureLevelCandidates("base", baseLevel));
             if (baseIcon) {
-              drawImageAtWidth(ctx, baseIcon, screenCenter.x, screenCenter.y, size * 2.2);
+              drawPlacedStructureIcon(
+                ctx,
+                baseIcon,
+                screenCenter.x,
+                screenCenter.y,
+                size,
+                "base",
+                structureLevelName("base", baseLevel),
+              );
             } else {
               ctx.beginPath();
               ctx.arc(screenCenter.x, screenCenter.y, size * 0.55, 0, Math.PI * 2);
@@ -734,21 +1109,26 @@ export const HexCanvas = forwardRef<
               baseLevel,
               upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
             );
-            drawHealthBar(screenCenter, baseCurrentHp, baseMaxHp);
+            drawHealthBar(screenCenter, baseCurrentHp, baseMaxHp, "top-center");
+            const baseProgress = structureProgressByKey.get(coordKey);
+            if (baseProgress != null && baseProgress.progress < 1) {
+              drawProgressRing(screenCenter, baseProgress);
+            }
           } else {
             const tower = towersByKey.get(axialKey(coord));
             const wall = wallsByKey.get(axialKey(coord));
             const barracks = barracksByKey.get(axialKey(coord));
+            const powerStation = powerStationsByKey.get(axialKey(coord));
+            const scrapYard = scrapYardsByKey.get(axialKey(coord));
             const tile = tilesByKey.get(axialKey(coord));
             const den = densByKey.get(axialKey(coord));
             const outpost = outpostsByKey.get(axialKey(coord));
             const dock = docksByKey.get(axialKey(coord));
-            const pathTile = pathTilesByKey.get(axialKey(coord));
 
             if (outpost) {
               const outpostIcon = getStructureIconTexture("outpost");
               if (outpostIcon) {
-                drawImageAtWidth(ctx, outpostIcon, screenCenter.x, screenCenter.y, size * 2.2);
+                drawPlacedStructureIcon(ctx, outpostIcon, screenCenter.x, screenCenter.y, size, "outpost");
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.55, 0, Math.PI * 2);
@@ -774,7 +1154,7 @@ export const HexCanvas = forwardRef<
               }
               const denIcon = getStructureIconTexture("den");
               if (denIcon) {
-                drawImageAtWidth(ctx, denIcon, screenCenter.x, screenCenter.y, size * 1.6);
+                drawPlacedStructureIcon(ctx, denIcon, screenCenter.x, screenCenter.y, size, "den");
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.4, 0, Math.PI * 2);
@@ -787,6 +1167,28 @@ export const HexCanvas = forwardRef<
               // (see the upgradeAvailableKeys doc comment above) — never
               // upgradeable, so it never gets the orange treatment.
               drawLevelBadge(screenCenter, den.level);
+            } else if (
+              axialEquals(coord, lab.coord) &&
+              (fogDisabled || tier === "scouted" || tier === "owned")
+            ) {
+              // Scouted (or owned after claim) lab hex — asset exists but was
+              // never drawn, so "Scouts found the lab" toasts left an empty tile.
+              const labIcon = getStructureIconTexture("lab");
+              if (labIcon) {
+                drawPlacedStructureIcon(ctx, labIcon, screenCenter.x, screenCenter.y, size, "lab");
+              } else {
+                ctx.beginPath();
+                ctx.arc(screenCenter.x, screenCenter.y, size * 0.42, 0, Math.PI * 2);
+                ctx.fillStyle = LAB_COLOR;
+                ctx.fill();
+                ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+                ctx.stroke();
+                ctx.fillStyle = "#ffffff";
+                ctx.font = `bold ${Math.max(9, size * 0.4)}px sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("LAB", screenCenter.x, screenCenter.y);
+              }
             } else if (tower) {
               if (activeTowerKeys.has(coordKey)) {
                 ctx.beginPath();
@@ -797,9 +1199,17 @@ export const HexCanvas = forwardRef<
               }
               const towerIcon = tower.buildStartedAt
                 ? getStructureIconTexture("construction")
-                : getStructureIconTexture("tower");
+                : getStructureIconTextureCandidates(structureLevelCandidates("tower", tower.level));
               if (towerIcon) {
-                drawImageAtWidth(ctx, towerIcon, screenCenter.x, screenCenter.y, size * 1.2);
+                drawPlacedStructureIcon(
+                  ctx,
+                  towerIcon,
+                  screenCenter.x,
+                  screenCenter.y,
+                  size,
+                  tower.buildStartedAt ? "construction" : "tower",
+                  tower.buildStartedAt ? null : structureLevelName("tower", tower.level),
+                );
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.4, 0, Math.PI * 2);
@@ -809,12 +1219,74 @@ export const HexCanvas = forwardRef<
                 ctx.stroke();
               }
               drawLevelBadge(screenCenter, tower.level, upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined);
+            } else if (powerStation) {
+              const stationIcon = powerStation.buildStartedAt
+                ? getStructureIconTexture("construction")
+                : getStructureIconTextureCandidates(powerStationSpriteCandidates(powerStation.level));
+              if (stationIcon) {
+                drawPlacedStructureIcon(
+                  ctx,
+                  stationIcon,
+                  screenCenter.x,
+                  screenCenter.y,
+                  size,
+                  powerStation.buildStartedAt ? "construction" : "powerStation",
+                  powerStation.buildStartedAt ? null : powerStationVariantStem(powerStation.level),
+                );
+              } else {
+                ctx.beginPath();
+                ctx.arc(screenCenter.x, screenCenter.y, size * 0.4, 0, Math.PI * 2);
+                ctx.fillStyle = POWER_STATION_COLOR;
+                ctx.fill();
+                ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+                ctx.stroke();
+              }
+              drawLevelBadge(
+                screenCenter,
+                powerStation.level,
+                upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
+              );
+            } else if (scrapYard) {
+              const yardIcon = scrapYard.buildStartedAt
+                ? getStructureIconTexture("construction")
+                : getStructureIconTextureCandidates(scrapYardSpriteCandidates(scrapYard.level));
+              if (yardIcon) {
+                drawPlacedStructureIcon(
+                  ctx,
+                  yardIcon,
+                  screenCenter.x,
+                  screenCenter.y,
+                  size,
+                  scrapYard.buildStartedAt ? "construction" : "scrapYard",
+                  scrapYard.buildStartedAt ? null : scrapYardVariantStem(scrapYard.level),
+                );
+              } else {
+                ctx.beginPath();
+                ctx.arc(screenCenter.x, screenCenter.y, size * 0.4, 0, Math.PI * 2);
+                ctx.fillStyle = SCRAP_YARD_COLOR;
+                ctx.fill();
+                ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+                ctx.stroke();
+              }
+              drawLevelBadge(
+                screenCenter,
+                scrapYard.level,
+                upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
+              );
             } else if (barracks) {
               const barracksIcon = barracks.buildStartedAt
                 ? getStructureIconTexture("construction")
-                : getStructureIconTexture("barracks");
+                : getStructureIconTextureCandidates(structureLevelCandidates("barracks", barracks.level));
               if (barracksIcon) {
-                drawImageAtWidth(ctx, barracksIcon, screenCenter.x, screenCenter.y, size * 1.6);
+                drawPlacedStructureIcon(
+                  ctx,
+                  barracksIcon,
+                  screenCenter.x,
+                  screenCenter.y,
+                  size,
+                  barracks.buildStartedAt ? "construction" : "barracks",
+                  barracks.buildStartedAt ? null : structureLevelName("barracks", barracks.level),
+                );
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.4, 0, Math.PI * 2);
@@ -833,7 +1305,15 @@ export const HexCanvas = forwardRef<
                 ? getStructureIconTexture("construction")
                 : getStructureIconTexture(WALL_TIER_ICON_NAMES[wall.tier]);
               if (wallIcon) {
-                drawImageAtWidth(ctx, wallIcon, screenCenter.x, screenCenter.y, size * 1.4);
+                drawPlacedStructureIcon(
+                  ctx,
+                  wallIcon,
+                  screenCenter.x,
+                  screenCenter.y,
+                  size,
+                  wall.buildStartedAt ? "construction" : "wall",
+                  wall.buildStartedAt ? null : WALL_TIER_ICON_NAMES[wall.tier],
+                );
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.45, 0, Math.PI * 2);
@@ -844,31 +1324,59 @@ export const HexCanvas = forwardRef<
               }
               drawHealthBar(screenCenter, wall.durability, maxWallDurability(tweaks, wall.tier));
             } else if (tile) {
-              const resourceImg = tile.buildStartedAt
-                ? getStructureIconTexture("construction")
-                : getResourceTexture(tile.resource);
-              if (resourceImg) {
-                drawImageAtWidth(ctx, resourceImg, screenCenter.x, screenCenter.y, size * RESOURCE_ICON_SCALE[tile.resource]);
+              if (tile.buildStartedAt) {
+                const constructionIcon = getStructureIconTexture("construction");
+                if (constructionIcon) {
+                  drawPlacedStructureIcon(ctx, constructionIcon, screenCenter.x, screenCenter.y, size, "construction");
+                } else {
+                  ctx.beginPath();
+                  ctx.arc(screenCenter.x, screenCenter.y, size * 0.35, 0, Math.PI * 2);
+                  ctx.fillStyle = RESOURCE_MARKER_COLORS[tile.resource];
+                  ctx.fill();
+                  ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
+                  ctx.stroke();
+                }
               } else {
-                ctx.beginPath();
-                ctx.arc(screenCenter.x, screenCenter.y, size * 0.35, 0, Math.PI * 2);
-                ctx.fillStyle = RESOURCE_MARKER_COLORS[tile.resource];
-                ctx.fill();
-                ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
-                ctx.stroke();
+                const extractionIcon = getStructureIconTextureCandidates(
+                  extractionTierCandidates(tile.resource, tile.tier),
+                );
+                if (extractionIcon) {
+                  drawPlacedStructureIcon(
+                    ctx,
+                    extractionIcon,
+                    screenCenter.x,
+                    screenCenter.y,
+                    size,
+                    "extraction",
+                    `${tile.resource}-${tile.tier}`,
+                  );
+                } else {
+                  const resourceImg = getResourceTexture(tile.resource);
+                  if (resourceImg) {
+                    drawPlacedResourceIcon(ctx, resourceImg, screenCenter.x, screenCenter.y, size, tile.resource);
+                  } else {
+                    ctx.beginPath();
+                    ctx.arc(screenCenter.x, screenCenter.y, size * 0.35, 0, Math.PI * 2);
+                    ctx.fillStyle = RESOURCE_MARKER_COLORS[tile.resource];
+                    ctx.fill();
+                    ctx.strokeStyle = "rgba(0, 0, 0, 0.5)";
+                    ctx.stroke();
+                  }
+                }
               }
-            } else if (pathTile && pathTile.buildStartedAt) {
-              // Path tiles otherwise have no persistent icon (just the tier
-              // color fill in pass 1) — this only ever fires while under
-              // construction, falling through to no marker at all once built.
-              const constructionIcon = getStructureIconTexture("construction");
-              if (constructionIcon) {
-                drawImageAtWidth(ctx, constructionIcon, screenCenter.x, screenCenter.y, size * 1.0);
+              if (!tile.buildStartedAt && !tile.damaged) {
+                drawLevelBadge(
+                  screenCenter,
+                  extractionTierLevel(tile.tier),
+                  upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
+                );
               }
             } else if (dock) {
-              const dockIcon = getStructureIconTexture("dock");
+              const level = dock.level ?? (dock.fishingBoat ? 3 : 1);
+              const dockStem = level >= 3 || dock.fishingBoat ? "dock-boat" : `dock-${level}`;
+              const dockIcon = getStructureIconTextureCandidates(dockSpriteCandidates(level));
               if (dockIcon) {
-                drawImageAtWidth(ctx, dockIcon, screenCenter.x, screenCenter.y, size * 1.6);
+                drawPlacedStructureIcon(ctx, dockIcon, screenCenter.x, screenCenter.y, size, "dock", dockStem);
               } else {
                 ctx.beginPath();
                 ctx.arc(screenCenter.x, screenCenter.y, size * 0.4, 0, Math.PI * 2);
@@ -877,12 +1385,25 @@ export const HexCanvas = forwardRef<
                 ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
                 ctx.stroke();
               }
-              if (dock.fishingBoat) {
+              // Emoji boat marker only when there is no dedicated dock-boat sprite yet.
+              if ((level >= 3 || dock.fishingBoat) && !getStructureIconTexture("dock-boat")) {
                 ctx.font = `${Math.max(9, size * 0.5)}px sans-serif`;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
                 ctx.fillText("⛵", screenCenter.x, screenCenter.y);
               }
+              if (!dock.buildStartedAt) {
+                drawLevelBadge(
+                  screenCenter,
+                  level,
+                  upgradeAvailableKeys.has(coordKey) ? UPGRADE_AVAILABLE_BADGE_COLOR : undefined,
+                );
+              }
+            }
+
+            const structureProgress = structureProgressByKey.get(coordKey);
+            if (structureProgress != null && structureProgress.progress < 1) {
+              drawProgressRing(screenCenter, structureProgress);
             }
 
             // A horde-captured structure of any kind goes non-functional
@@ -891,7 +1412,7 @@ export const HexCanvas = forwardRef<
             // isn't working right now" reads at a glance, not just from the
             // tile popup's text. Docks are immune to horde capture, so
             // they're deliberately excluded here.
-            if (tower?.damaged || wall?.damaged || barracks?.damaged || tile?.damaged || pathTile?.damaged) {
+            if (tower?.damaged || wall?.damaged || barracks?.damaged || tile?.damaged || powerStation?.damaged || scrapYard?.damaged) {
               ctx.font = `${Math.max(10, size * 0.55)}px sans-serif`;
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
@@ -904,7 +1425,10 @@ export const HexCanvas = forwardRef<
           // per-tile structure marker above, since it's a transient mobile
           // unit, not something standing on this specific tile permanently.
           const scoutSkiff = scoutSkiffsByKey.get(coordKey);
-          if (scoutSkiff) {
+          // Hide while training — tray shows the build timer; drawing the unit
+          // on the dock made unfinished skiffs look idle/stuck.
+          if (scoutSkiff && scoutSkiff.buildStartedAt == null) {
+            drawPlayerUnitHalo(ctx, screenCenter.x, screenCenter.y, size, playerColor);
             const skiffIcon = getUnitIconTexture("skiff");
             if (skiffIcon) {
               drawImageAtWidth(ctx, skiffIcon, screenCenter.x, screenCenter.y, size);
@@ -919,7 +1443,8 @@ export const HexCanvas = forwardRef<
           // Land counterpart of the scout skiff above — same top-layer,
           // transient-marker treatment.
           const wanderingScout = wanderingScoutsByKey.get(coordKey);
-          if (wanderingScout) {
+          if (wanderingScout && wanderingScout.buildStartedAt == null) {
+            drawPlayerUnitHalo(ctx, screenCenter.x, screenCenter.y, size, playerColor);
             const wanderingScoutImg = getUnitIconTexture("wandering-scout");
             if (wanderingScoutImg) {
               drawImageAtWidth(ctx, wanderingScoutImg, screenCenter.x, screenCenter.y, size);
@@ -931,6 +1456,25 @@ export const HexCanvas = forwardRef<
             }
           }
 
+          // In-flight Scrapper haul — cargo > 0 uses scrapper-2 (loaded), else
+          // scrapper-1 / level-based scrapper-N.
+          const scrapperYard = scrappersByKey.get(coordKey);
+          if (scrapperYard?.scrapper) {
+            const cargo = scrapperYard.scrapper.cargo;
+            const levelStem = `scrapper-${Math.max(1, Math.min(5, scrapperYard.level))}`;
+            const scrapperIcon =
+              getUnitIconTexture(cargo > 0 ? "scrapper-2" : "scrapper-1") ??
+              getUnitIconTexture(levelStem);
+            if (scrapperIcon) {
+              drawImageAtWidth(ctx, scrapperIcon, screenCenter.x, screenCenter.y, size);
+            } else {
+              ctx.font = `${Math.max(10, size * 0.55)}px sans-serif`;
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(cargo > 0 ? "🏗️" : "🛠️", screenCenter.x, screenCenter.y);
+            }
+          }
+
           // Live en-route marker for an in-flight expedition (expeditionsByKey,
           // interpolated from elapsed time) — same top-layer, transient-marker
           // treatment as the scout skiff/wandering scout above. The
@@ -938,6 +1482,7 @@ export const HexCanvas = forwardRef<
           // "where is this headed"; this answers "how far along is it."
           const expedition = expeditionsByKey.get(coordKey);
           if (expedition) {
+            drawPlayerUnitHalo(ctx, screenCenter.x, screenCenter.y, size, playerColor);
             const expeditionIcon = getUnitIconTexture("expedition");
             if (expeditionIcon) {
               drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size * 2.0);
@@ -955,6 +1500,23 @@ export const HexCanvas = forwardRef<
           // one (data/denAssaults.ts).
           const denAssault = denAssaultsByKey.get(coordKey);
           if (denAssault) {
+            drawPlayerUnitHalo(ctx, screenCenter.x, screenCenter.y, size, playerColor);
+            const expeditionIcon = getUnitIconTexture("expedition");
+            if (expeditionIcon) {
+              drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size * 2.0);
+            } else {
+              ctx.font = `${Math.max(10, size * 0.55)}px sans-serif`;
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText("🎒", screenCenter.x, screenCenter.y);
+            }
+          }
+
+          // Lab assault party — same expedition sprite / path interpolation as
+          // den assaults (was missing from the canvas until the ceremony HUD).
+          const labAssault = labAssaultsByKey.get(coordKey);
+          if (labAssault) {
+            drawPlayerUnitHalo(ctx, screenCenter.x, screenCenter.y, size, playerColor);
             const expeditionIcon = getUnitIconTexture("expedition");
             if (expeditionIcon) {
               drawImageAtWidth(ctx, expeditionIcon, screenCenter.x, screenCenter.y, size * 2.0);
@@ -982,6 +1544,19 @@ export const HexCanvas = forwardRef<
               ctx.textBaseline = "middle";
               ctx.fillText("🪦", screenCenter.x, screenCenter.y);
             }
+          }
+
+          // Dev Show-lab toggle — label on top of the tint/ring so the tile
+          // is unmistakable even on busy terrain.
+          if (isDevLabHighlight) {
+            ctx.font = `bold ${Math.max(11, size * 0.5)}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.lineWidth = Math.max(3, size * 0.12);
+            ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+            ctx.strokeText("LAB", screenCenter.x, screenCenter.y);
+            ctx.fillStyle = "#ffffff";
+            ctx.fillText("LAB", screenCenter.x, screenCenter.y);
           }
 
           // Drawn on top of everything else, including the base icon — a
@@ -1091,9 +1666,26 @@ export const HexCanvas = forwardRef<
             ctx.fillText("⛺", badgeX, badgeY);
           }
 
+          // Lab destination badge while the assault party is still in transit.
+          if (labAssaultTargetKeys.has(coordKey)) {
+            const badgeX = screenCenter.x - size * 0.55;
+            const badgeY = screenCenter.y - size * 0.55;
+            ctx.beginPath();
+            ctx.arc(badgeX, badgeY, size * 0.3, 0, Math.PI * 2);
+            ctx.fillStyle = EXPEDITION_TARGET_COLOR;
+            ctx.fill();
+            ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+            ctx.stroke();
+            ctx.font = `${Math.max(10, size * 0.4)}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText("⛺", badgeX, badgeY);
+          }
+
           // Bottom-right corner — the other three are taken by the garrison
           // badge (top-right) and expedition badge (top-left), with the
           // horde triangle and 💀 overlay both centered on the tile.
+          // (Power-station grid status uses a DOM collect-style pin instead.)
           if (relocationDestination && axialEquals(coord, relocationDestination)) {
             const badgeX = screenCenter.x + size * 0.55;
             const badgeY = screenCenter.y + size * 0.55;
@@ -1108,9 +1700,12 @@ export const HexCanvas = forwardRef<
             ctx.textBaseline = "middle";
             ctx.fillText("🚩", badgeX, badgeY);
           }
-
-          if (isSelected) strokeSelection(corners);
         }
+      }
+
+      // After fog so the perimeter stays visible on hidden tiles (spawn debug).
+      if (import.meta.env.DEV) {
+        drawDevMapEdgeOutline(ctx, gridSize, pan, zoom, size, canvas.width, canvas.height);
       }
     }
 
@@ -1130,17 +1725,22 @@ export const HexCanvas = forwardRef<
     zoom,
     pan,
     tilesByKey,
-    pathTilesByKey,
     towersByKey,
     wallsByKey,
     barracksByKey,
+    powerStationsByKey,
+    scrapYardsByKey,
     garrisonsByKey,
     densByKey,
+    scrapStashesByKey,
+    hexResourcePools,
     hordesByKey,
     docksByKey,
     scoutSkiffsByKey,
     wanderingScoutsByKey,
+    scrappersByKey,
     selectedTowerRangeKeys,
+    selectedPowerAoeKeys,
     selectedGarrisonRangeKeys,
     activeTowerKeys,
     hordeCombatByKey,
@@ -1148,13 +1748,20 @@ export const HexCanvas = forwardRef<
     expeditionsByKey,
     denAssaultTargetKeys,
     denAssaultsByKey,
+    labAssaultTargetKeys,
+    labAssaultsByKey,
     relocationDestination,
     baseLevel,
     baseCurrentHp,
     baseMaxHp,
     upgradeAvailableKeys,
     buildModeEligibleKeys,
+    structureProgressByKey,
     fogByKey,
+    labSearchZoneKeys,
+    fogDisabled,
+    devLabMode,
+    lab,
     selected,
     playerColor,
     textureVersion,
@@ -1252,15 +1859,21 @@ export const HexCanvas = forwardRef<
 
     const drag = dragRef.current;
     if (!drag) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    // Defer pan until past the tap threshold so Android finger-jitter during
+    // a short tap doesn't nudge the map (and so the eventual pointerup still
+    // counts as a click rather than a drag).
+    if (Math.hypot(dx, dy) <= CLICK_DRAG_THRESHOLD_PX) return;
     setPan({
-      x: drag.panX + (event.clientX - drag.startX),
-      y: drag.panY + (event.clientY - drag.startY),
+      x: drag.panX + dx,
+      y: drag.panY + dy,
     });
   }
 
-  function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
-    // Covers pointerup/cancel/leave alike — leaving the canvas (mouse) or
-    // releasing (touch) both end whatever hover was in effect.
+  function endPointerGesture(event: React.PointerEvent<HTMLCanvasElement>, allowTap: boolean) {
+    // Leaving the canvas (mouse) or releasing/cancelling (touch) both end
+    // whatever hover was in effect.
     if (hoveredKeyRef.current !== null) {
       hoveredKeyRef.current = null;
       onTileHoverRef.current?.(null);
@@ -1298,7 +1911,7 @@ export const HexCanvas = forwardRef<
     dragRef.current = null;
     const wasMultiTouch = multiTouchRef.current;
     multiTouchRef.current = false;
-    if (!drag || wasMultiTouch) return;
+    if (!allowTap || !drag || wasMultiTouch) return;
 
     const movedDistance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
     if (movedDistance > CLICK_DRAG_THRESHOLD_PX) return;
@@ -1313,16 +1926,29 @@ export const HexCanvas = forwardRef<
     onTileClick(pixelToAxial({ x: worldX, y: worldY }, BASE_HEX_SIZE));
   }
 
+  function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
+    // pointerup and pointercancel can both resolve a tap on Android — Chrome
+    // sometimes cancels a short touch instead of delivering pointerup, and
+    // treating that as a tap (when under the drag threshold) is what makes
+    // the tile sheet open. pointerleave only cleans up (no tap).
+    endPointerGesture(event, true);
+  }
+
+  function handlePointerLeave(event: React.PointerEvent<HTMLCanvasElement>) {
+    endPointerGesture(event, false);
+  }
+
   return (
-    <div ref={containerRef} style={{ width: "100%", height: "100%" }}>
+    <div ref={containerRef} style={{ width: "100%", height: "100%", touchAction: "none" }}>
       <canvas
         ref={canvasRef}
         onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
         onPointerCancel={handlePointerUp}
+        onContextMenu={(event) => event.preventDefault()}
         style={{ display: "block", cursor: "grab", touchAction: "none" }}
       />
     </div>

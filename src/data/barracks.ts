@@ -1,6 +1,17 @@
 import type { Axial } from "../engine/hexCoords";
 import type { ResourceType } from "./resources";
 
+export type TrainingUnitType = "militia" | "junkyard_knight" | "cross_bow_sniper";
+
+/** One trickle-delivery batch at a single barracks — any unit type, one queue per barracks. */
+export interface BarracksTrainingQueue {
+  unitType: TrainingUnitType;
+  /** How many units are still left to deliver, including the one currently training. */
+  remaining: number;
+  /** When the currently-training unit's timer started. */
+  currentUnitStartedAt: number;
+}
+
 export interface Barracks {
   coord: Axial;
   level: number;
@@ -15,6 +26,8 @@ export interface Barracks {
   damageRepair?: { startedAt: number } | null;
   /** Set at build time, cleared once the construction timer elapses — non-functional (engine/formulas.ts:isStructureActive) until then. Optional, same reasoning as damageRepair. */
   buildStartedAt?: number | null;
+  /** At most one training batch at a time — any unit type. Optional; absent means idle. Pauses while damaged or under construction (engine/barracks.ts:advanceBarracksTraining). */
+  trainingQueue?: BarracksTrainingQueue | null;
 }
 
 export interface BarracksUpgradeInProgress {

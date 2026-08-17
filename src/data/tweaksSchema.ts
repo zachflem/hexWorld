@@ -16,12 +16,6 @@ const extractionResourceSchema = z.object({
   noise_upgrade: z.number(),
 });
 
-const infrastructureUpgradeTierSchema = z.object({
-  upgrade_cost_base: resourceCostMap,
-  upgrade_cost_scaling: z.string(),
-  upgrade_resources: z.array(z.string()),
-});
-
 /** One multiplier per TerrainType (engine/terrain.ts) — used by extraction_tiles.terrain_yield_multiplier below. */
 const terrainYieldMultiplierSchema = z.object({
   water: z.number(),
@@ -34,12 +28,17 @@ const terrainYieldMultiplierSchema = z.object({
 export const tweaksSchema = z.object({
   meta: z.object({
     version: z.string(),
+    slug: z.string(),
     profile_name: z.string(),
     notes: z.string(),
   }),
 
   game: z.object({
     grid_size: z.number(),
+    /** When true, onboarding map-size choice is ignored — profile fixes size for a authored scenario. */
+    grid_size_locked: z.boolean().optional(),
+    /** When set, onboarding seed is ignored — profile fixes the world seed for a authored scenario. */
+    world_seed: z.number().int().nonnegative().optional(),
     tick_interval_seconds: z.number(),
     resource_accumulation_precision_seconds: z.number(),
   }),
@@ -53,7 +52,6 @@ export const tweaksSchema = z.object({
         wood: z.number(),
         stone: z.number(),
         steel: z.number(),
-        power: z.number(),
       })
       .catchall(z.string()),
   }),
@@ -71,13 +69,11 @@ export const tweaksSchema = z.object({
     wood: extractionResourceSchema,
     stone: extractionResourceSchema,
     steel: extractionResourceSchema,
-    power: extractionResourceSchema,
     terrain_yield_multiplier: z.object({
       food: terrainYieldMultiplierSchema,
       wood: terrainYieldMultiplierSchema,
       stone: terrainYieldMultiplierSchema,
       steel: terrainYieldMultiplierSchema,
-      power: terrainYieldMultiplierSchema,
       _status: z.string(),
     }),
     tech_progression: z.object({
@@ -85,6 +81,31 @@ export const tweaksSchema = z.object({
       mid_to_large: z.array(z.string()),
       _note: z.string(),
     }),
+  }),
+
+  /** Power stations — capacity + AoE network (Milestone 25 / #70). First pass, untested. */
+  power: z.object({
+    max_level: z.number(),
+    capacity_base: z.number(),
+    capacity_per_level: z.number(),
+    aoe_base_tiles: z.number(),
+    aoe_per_level: z.number(),
+    cutoff_factor: z.number(),
+    build_cost_base: resourceCostMap,
+    upgrade_cost_base: resourceCostMap,
+    build_time_minutes: z.number(),
+    upgrade_time_minutes_base: z.number(),
+    draw_base: z.object({
+      extraction: z.number(),
+      tower: z.number(),
+      wall: z.number(),
+      barracks: z.number(),
+      dock: z.number(),
+      scrap_yard: z.number(),
+    }),
+    noise_build: z.number(),
+    noise_upgrade: z.number(),
+    passive_noise_floor_per_level: z.number(),
   }),
 
   transition_tiles: z.object({
@@ -97,6 +118,18 @@ export const tweaksSchema = z.object({
     build_cost_scaling: z.string(),
     build_time_minutes: z.number(),
     yield_multiplier_vs_food_tile: z.number(),
+    /** M26: L1 manual → L2 courier → L3 production. Keys are target levels. */
+    level_upgrades: z.object({
+      "2": z.object({
+        cost: resourceCostMap,
+        build_time_minutes: z.number(),
+      }),
+      "3": z.object({
+        cost: resourceCostMap,
+        build_time_minutes: z.number(),
+      }),
+    }),
+    /** L3 yield multiplier (legacy fishing-boat bonus). */
     fishing_boat: z.object({
       cost: resourceCostMap,
       yield_bonus_multiplier: z.number(),
@@ -117,6 +150,9 @@ export const tweaksSchema = z.object({
     _build_time_note: z.string(),
     base_range_tiles: z.number(),
     range_per_level: z.number(),
+    /** Flat tile offset added to tower range from the tower's own tile terrain (#79). */
+    range_terrain_offset: terrainYieldMultiplierSchema,
+    _range_terrain_offset_note: z.string(),
     base_damage: z.number(),
     damage_scaling: z.string(),
     damage_formula_vs_horde: z.string(),
@@ -171,7 +207,6 @@ export const tweaksSchema = z.object({
     upgrade_time_minutes_base: z.number(),
     _upgrade_time_note: z.string(),
     militia_capacity_per_level: z.number(),
-    scout_capacity_per_level: z.number(),
     junkyard_knight_capacity_per_level: z.number(),
     cross_bow_sniper_capacity_per_level: z.number(),
     _capacity_note: z.string(),
@@ -179,12 +214,6 @@ export const tweaksSchema = z.object({
 
   units: z.object({
     _status: z.string(),
-    scout: z.object({
-      train_cost: resourceCostMap,
-      train_time_seconds: z.number(),
-      upkeep_food_per_min: z.number(),
-      _note: z.string(),
-    }),
     militia: z.object({
       train_cost: resourceCostMap,
       train_time_seconds: z.number(),
@@ -214,7 +243,6 @@ export const tweaksSchema = z.object({
       _note: z.string(),
     }),
     wandering_scout: z.object({
-      scout_cost: z.number(),
       cost: resourceCostMap,
       max_per_barracks: z.number(),
       seconds_per_step: z.number(),
@@ -228,43 +256,22 @@ export const tweaksSchema = z.object({
     _note: z.string(),
   }),
 
-  infrastructure_paths: z.object({
-    tiers: z.array(z.string()),
-    _note: z.string(),
-    upgrade_time_minutes_base: z.number(),
-    _upgrade_time_note: z.string(),
-    slot_cost: z.number(),
-    _slot_cost_note: z.string(),
-    goat_track: z.object({
-      build_cost_base: resourceCostMap,
-      build_cost_scaling: z.string(),
-      build_time_minutes: z.number(),
-      _build_time_note: z.string(),
-      noise_build: z.number(),
-    }),
-    stone_road: infrastructureUpgradeTierSchema,
-    highway: infrastructureUpgradeTierSchema,
-    terrain_rules: z.object({
-      buildable_on: z.array(z.string()),
-      blocked_on: z.array(z.string()),
-      mountain_throughput_penalty_pct: z.number(),
-    }),
-    transport: z.object({
-      _status: z.string(),
-      goat_track_rate_multiplier: z.number(),
-      stone_road_rate_multiplier: z.number(),
-      highway_rate_multiplier: z.number(),
-      _highway_note: z.string(),
-    }),
-  }),
-
   storage: z.object({
     capacity_base_per_resource: z.number(),
     capacity_scaling: z.string(),
     _tile_stockpile_note: z.string(),
+    /** Manual-collect (L1) map pin appears at this local fill ratio. */
+    collect_pin_show_ratio: z.number(),
+    /**
+     * Courier-automated (L2+) map pin appears at this local fill ratio
+     * (default 1 = only when the local buffer is full — usually hub storage).
+     */
+    collect_pin_courier_show_ratio: z.number(),
+    _collect_pin_note: z.string().optional(),
     upgrade_cost_scaling: z.string(),
     upgrade_cost_base: z.record(z.string(), resourceCostMap),
     upgrade_time_minutes_base: z.number(),
+    upgrade_time_growth_per_level_pct: z.number(),
   }),
 
   base_upgrades: z.object({
@@ -310,8 +317,20 @@ export const tweaksSchema = z.object({
   expeditions: z.object({
     _status: z.string(),
     provisions_food_per_unit_per_cost: z.number(),
+    /**
+     * Multiplier on provisions for den/lab assaults only — lab routes are long
+     * and parties are large, so full expedition rates made the win condition
+     * food-impossible (often > L5 storage).
+     */
+    assault_provisions_multiplier: z.number(),
     travel_seconds_per_cost: z.number(),
     tombstone_lifetime_minutes: z.number(),
+    /** Extra Dijkstra weight for stepping onto scouted-but-unowned tiles (owned preferred). */
+    unowned_path_penalty: z.number(),
+    /** Reinforce detachment cost/time multiplier (path known/cleared). */
+    reinforce_cost_multiplier: z.number(),
+    /** How long the party waits at destination before auto-recall (virtual minutes). */
+    arrival_decision_minutes: z.number(),
     _note: z.string(),
   }),
 
@@ -324,6 +343,24 @@ export const tweaksSchema = z.object({
     game_speed: z.object({
       tier_2: z.object({ rate: z.number(), cost: resourceCostMap, duration_minutes: z.number() }),
       tier_3: z.object({ rate: z.number(), cost: resourceCostMap, duration_minutes: z.number() }),
+    }),
+    parallel_upgrades: z.object({
+      cost: resourceCostMap,
+      duration_minutes: z.number(),
+      /** Timed-task slots per structure (and base hub) once researched — default cap is 1. */
+      task_slots: z.number(),
+    }),
+    improved_optics: z.object({
+      cost: resourceCostMap,
+      duration_minutes: z.number(),
+      /** Axial spiral radius revealed per wandering-scout/skiff step. 0 without research. */
+      wandering_scout_reveal_radius: z.number(),
+      /** Axial spiral radius free-claimed around each territory-expedition path tile. 0 without research. */
+      expedition_own_range: z.number(),
+    }),
+    scout_to_own: z.object({
+      cost: resourceCostMap,
+      duration_minutes: z.number(),
     }),
   }),
 
@@ -343,18 +380,10 @@ export const tweaksSchema = z.object({
         wood: z.number(),
         stone: z.number(),
         steel: z.number(),
-        power: z.number(),
       })
       .catchall(z.string()),
     extraction_tier_noise_multiplier: z.number(),
     _extraction_tier_noise_note: z.string(),
-    path_noise_floor: z
-      .object({
-        goat_track: z.number(),
-        stone_road: z.number(),
-        highway: z.number(),
-      })
-      .catchall(z.string()),
     passive_watch_noise_floor: z
       .object({
         tower_per_level: z.number(),
@@ -384,6 +413,60 @@ export const tweaksSchema = z.object({
       wave_per_level: z.number(),
       wave_escalation_per_wave: z.number(),
       wave_cap: z.number(),
+    }),
+  }),
+
+  /** Shared per-hex remainingResource (Milestone 27 / #84). */
+  hex_resource_pools: z.object({
+    _status: z.string().optional(),
+    /** When true, F/W/S extractors, docks, and scrap never drain. */
+    infinite_resources: z.boolean(),
+    tile_level_max: z.number(),
+    pool_by_terrain: z.object({
+      shore: z.number(),
+      grassland: z.number(),
+      forest: z.number(),
+      mountain: z.number(),
+      water: z.number(),
+    }),
+    /** Extra pool fraction per tile_level above 1 (e.g. 0.35 → L2 = 1.35×). */
+    pool_per_tile_level_pct: z.number(),
+  }),
+
+  scrap_stashes: z.object({
+    _status: z.string(),
+    count: z.number(),
+    early_guarantee_max_distance: z.number(),
+    art_variant_count: z.number(),
+    terrain_placement_weight: z.object({
+      shore: z.number(),
+      grassland: z.number(),
+      forest: z.number(),
+      mountain: z.number(),
+    }),
+    wandering_scout_sample_steel: z.number(),
+  }),
+
+  scrap_yards: z.object({
+    _status: z.string(),
+    build_cost_base: resourceCostMap,
+    build_cost_scaling: z.string(),
+    build_time_minutes: z.number(),
+    max_level: z.number(),
+    max_level_shipped: z.number(),
+    noise_passive_per_level: z.number(),
+    scrapper: z.object({
+      _status: z.string().optional(),
+      /** Index by yard level; [0] unused. */
+      capacity_by_level: z.array(z.number()),
+      speed_multiplier_by_level: z.array(z.number()),
+      /**
+       * Seconds per Dijkstra path-cost unit for Scrapper legs — separate from
+       * expeditions.travel_seconds_per_cost so mountain routes don't make steel
+       * crawl (expeditions use 15; Scrappers are light salvage haulers).
+       */
+      travel_seconds_per_cost: z.number(),
+      auto_next_stash_min_level: z.number(),
     }),
   }),
 
@@ -445,11 +528,19 @@ export const tweaksSchema = z.object({
     }),
   }),
 
-  lab: z.object({
-    _status: z.string(),
-    min_distance_from_base: z.number(),
-    guardian_defense: z.number(),
-  }),
+  lab: z
+    .object({
+      _status: z.string(),
+      min_distance_from_base: z.number(),
+      /** Inclusive floor for per-seed guardian roll (LabRecord.guardianDefense). */
+      guardian_defense_min: z.number(),
+      /** Inclusive ceiling for per-seed guardian roll. */
+      guardian_defense_max: z.number(),
+    })
+    .refine((lab) => lab.guardian_defense_max >= lab.guardian_defense_min, {
+      message: "lab.guardian_defense_max must be >= guardian_defense_min",
+      path: ["guardian_defense_max"],
+    }),
 
   lab_clues: z.object({
     _status: z.string(),
@@ -457,10 +548,25 @@ export const tweaksSchema = z.object({
     clue_form: z.string(),
     final_search_area_radius_tiles: z.number(),
     passive_surfacing: z.object({
-      per_scout_action_chance: z.number(),
       per_watchtower_tick_base_chance: z.number(),
       watchtower_intel_tier_multiplier: z.number(),
+      /** When true, watchtower signals stop after all den-clear clues are in. */
       stops_once_all_clues_collected: z.boolean(),
+      /**
+       * Softmax weight on compass alignment while a watchtower signal is active
+       * (`bearingStepScore` × this, then `exp`). Higher = stronger sector nudge.
+       */
+      signal_bearing_weight: z.number(),
+      /**
+       * Softmax weight on stepping closer to the true lab (`labApproachScore` × this).
+       * Prefer 0 — tower signals should be vague compass only, not lab magnetism.
+       */
+      signal_lab_approach_weight: z.number(),
+      /**
+       * Extra score when a candidate neighbor is the lab tile itself.
+       * Prefer 0 with approach weight — otherwise scouts bee-line once signaled.
+       */
+      signal_lab_tile_bonus: z.number(),
     }),
     den_clear_bonus: z.object({
       guaranteed_clue_per_den_clear: z.boolean(),

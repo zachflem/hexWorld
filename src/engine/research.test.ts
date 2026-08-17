@@ -5,10 +5,21 @@ import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
 import type { ResearchRecord } from "../data/research";
 import { initialResearch } from "../data/research";
-import { isResearchAvailable, researchCost, researchDurationMs, troopSpeedMultiplier, unlockedSpeedRates } from "./research";
+import {
+  expeditionOwnRange,
+  hasStartableResearch,
+  isResearchAvailable,
+  researchCost,
+  researchDurationMs,
+  troopSpeedMultiplier,
+  unlockedSpeedRates,
+  scoutToOwnEnabled,
+  wanderingScoutRevealRadius,
+} from "./research";
+import type { ResourceAmounts } from "../data/resources";
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -33,6 +44,73 @@ describe("isResearchAvailable", () => {
     const withTroopTier2: ResearchRecord = { completed: ["troop_speed_2"], pending: null };
     expect(isResearchAvailable(withTroopTier2, "game_speed_2")).toBe(true);
     expect(isResearchAvailable(withTroopTier2, "game_speed_3")).toBe(false);
+  });
+  it("isResearchAvailable for parallel_upgrades from the start", () => {
+    expect(isResearchAvailable(initialResearch(), "parallel_upgrades")).toBe(true);
+  });
+
+  it("isResearchAvailable for improved_optics from the start", () => {
+    expect(isResearchAvailable(initialResearch(), "improved_optics")).toBe(true);
+  });
+});
+
+describe("improved_optics helpers", () => {
+  it("reads cost and duration from tweaks", () => {
+    const tweaks = loadRealTweaks();
+    expect(researchCost(tweaks, "improved_optics")).toEqual(tweaks.research.improved_optics.cost);
+    expect(researchDurationMs(tweaks, "improved_optics")).toBe(
+      tweaks.research.improved_optics.duration_minutes * 60_000,
+    );
+  });
+
+  it("reveal / own-range are 0 until completed, then match tweaks", () => {
+    const tweaks = loadRealTweaks();
+    expect(wanderingScoutRevealRadius(tweaks, initialResearch())).toBe(0);
+    expect(expeditionOwnRange(tweaks, initialResearch())).toBe(0);
+    const done: ResearchRecord = { completed: ["improved_optics"], pending: null };
+    expect(wanderingScoutRevealRadius(tweaks, done)).toBe(tweaks.research.improved_optics.wandering_scout_reveal_radius);
+    expect(expeditionOwnRange(tweaks, done)).toBe(tweaks.research.improved_optics.expedition_own_range);
+  });
+
+  it("scoutToOwnEnabled is false until completed", () => {
+    expect(scoutToOwnEnabled(initialResearch())).toBe(false);
+    expect(scoutToOwnEnabled({ completed: ["improved_optics"], pending: null })).toBe(false);
+    expect(scoutToOwnEnabled({ completed: ["scout_to_own"], pending: null })).toBe(true);
+  });
+
+  it("scout_to_own has cost and duration in tweaks", () => {
+    const tweaks = loadRealTweaks();
+    expect(researchCost(tweaks, "scout_to_own")).toBeDefined();
+    expect(researchDurationMs(tweaks, "scout_to_own")).toBeGreaterThan(0);
+  });
+});
+
+describe("hasStartableResearch", () => {
+  const rich: ResourceAmounts = { food: 10_000, wood: 10_000, stone: 10_000, steel: 10_000 };
+
+  it("is true when an available tech is affordable and the slot is free", () => {
+    const tweaks = loadRealTweaks();
+    expect(hasStartableResearch(tweaks, initialResearch(), rich)).toBe(true);
+  });
+
+  it("is false when the research slot is busy", () => {
+    const tweaks = loadRealTweaks();
+    const busy: ResearchRecord = { completed: [], pending: { id: "troop_speed_2", startedAt: 0 } };
+    expect(hasStartableResearch(tweaks, busy, rich)).toBe(false);
+  });
+
+  it("is false when nothing affordable remains", () => {
+    const tweaks = loadRealTweaks();
+    const broke: ResourceAmounts = { food: 0, wood: 0, stone: 0, steel: 0 };
+    expect(hasStartableResearch(tweaks, initialResearch(), broke)).toBe(false);
+  });
+});
+
+describe("structureTaskSlotCap", () => {
+  it("reads parallel_upgrades cost and duration from tweaks", () => {
+    const tweaks = loadRealTweaks();
+    expect(researchCost(tweaks, "parallel_upgrades")).toEqual(tweaks.research.parallel_upgrades.cost);
+    expect(researchDurationMs(tweaks, "parallel_upgrades")).toBe(15 * 60_000);
   });
 });
 

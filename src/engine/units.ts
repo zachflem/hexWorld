@@ -1,9 +1,15 @@
-import type { TrainingQueue, UnitsRecord } from "../data/units";
+import type { DenAssaultsRecord } from "../data/denAssaults";
+import type { ExpeditionsRecord } from "../data/expeditions";
+import type { GarrisonsRecord } from "../data/garrisons";
+import type { GarrisonRecallsRecord } from "../data/garrisonRecalls";
+import type { LabAssaultsRecord } from "../data/labAssaults";
+import type { UnitsRecord } from "../data/units";
 import type { Tweaks } from "../data/tweaksSchema";
-
-export function scoutTrainCost(tweaks: Tweaks): Record<string, number> {
-  return tweaks.units.scout.train_cost;
-}
+import {
+  availableCrossBowSnipers,
+  availableJunkyardKnights,
+  availableMilitia,
+} from "./garrisons";
 
 export function militiaTrainCost(tweaks: Tweaks): Record<string, number> {
   return tweaks.units.militia.train_cost;
@@ -18,32 +24,26 @@ export function crossBowSniperTrainCost(tweaks: Tweaks): Record<string, number> 
 }
 
 /**
- * More (non-damaged) barracks means more training capacity, not just more
- * standing-army capacity — 2 L1 barracks train at 2x the pace of 1, scaling
- * the per-unit duration down rather than giving each barracks its own
- * separate queue (the simpler of the two options discussed, and
- * `units.scoutQueue`/`militiaQueue` staying singular — one shared,
- * player-wide queue — matches how capacity already pools across barracks,
- * TWEAKS.md). `trainingCapacity` (engine/barracks.ts:barracksTrainingCapacity)
- * is a level-weighted sum, not a raw barracks count, so a higher-level
- * barracks also trains faster on its own — a lone L4 barracks matches the
- * throughput of 4 L1s. Floored at 1 so a momentarily-barracks-less state
- * (e.g. mid-demolish) can't divide by zero or speed training up.
+ * Per-unit training duration at a single barracks — scales inversely with
+ * that barracks's own level (not a pooled count across every barracks).
+ * Floored at 1 so a malformed level-0 record can't divide by zero.
  */
-export function scoutTrainDurationMs(tweaks: Tweaks, trainingCapacity: number): number {
-  return (tweaks.units.scout.train_time_seconds * 1000) / Math.max(1, trainingCapacity);
+export function militiaTrainDurationMs(tweaks: Tweaks, barracksLevel: number): number {
+  return (tweaks.units.militia.train_time_seconds * 1000) / Math.max(1, barracksLevel);
 }
 
-export function militiaTrainDurationMs(tweaks: Tweaks, trainingCapacity: number): number {
-  return (tweaks.units.militia.train_time_seconds * 1000) / Math.max(1, trainingCapacity);
+export function junkyardKnightTrainDurationMs(tweaks: Tweaks, barracksLevel: number): number {
+  return (tweaks.units.junkyard_knight.train_time_seconds * 1000) / Math.max(1, barracksLevel);
 }
 
-export function junkyardKnightTrainDurationMs(tweaks: Tweaks, trainingCapacity: number): number {
-  return (tweaks.units.junkyard_knight.train_time_seconds * 1000) / Math.max(1, trainingCapacity);
+export function crossBowSniperTrainDurationMs(tweaks: Tweaks, barracksLevel: number): number {
+  return (tweaks.units.cross_bow_sniper.train_time_seconds * 1000) / Math.max(1, barracksLevel);
 }
 
-export function crossBowSniperTrainDurationMs(tweaks: Tweaks, trainingCapacity: number): number {
-  return (tweaks.units.cross_bow_sniper.train_time_seconds * 1000) / Math.max(1, trainingCapacity);
+/** Shared trickle-delivery shape used by Barracks.trainingQueue resolution. */
+export interface TrainingQueueProgress {
+  remaining: number;
+  currentUnitStartedAt: number;
 }
 
 /**
@@ -55,10 +55,10 @@ export function crossBowSniperTrainDurationMs(tweaks: Tweaks, trainingCapacity: 
  * resolves multi-tile movement rather than simulating tick by tick.
  */
 export function resolveTrainingQueue(
-  queue: TrainingQueue | null,
+  queue: TrainingQueueProgress | null,
   perUnitDurationMs: number,
   now: number,
-): { queue: TrainingQueue | null; delivered: number } {
+): { queue: TrainingQueueProgress | null; delivered: number } {
   if (!queue) return { queue: null, delivered: 0 };
 
   const wholeUnits = Math.floor((now - queue.currentUnitStartedAt) / perUnitDurationMs);
@@ -98,44 +98,115 @@ export function crossBowSniperDefensePower(tweaks: Tweaks, count: number): numbe
   return count * tweaks.units.cross_bow_sniper.defense_per_unit;
 }
 
-export function totalUpkeepPerSecond(tweaks: Tweaks, units: UnitsRecord): number {
-  const scoutPerMin = units.scoutStockpile * tweaks.units.scout.upkeep_food_per_min;
-  const militiaPerMin = units.militiaCount * tweaks.units.militia.upkeep_food_per_min;
-  const junkyardKnightPerMin = units.junkyardKnightCount * tweaks.units.junkyard_knight.upkeep_food_per_min;
-  const crossBowSniperPerMin = units.crossBowSniperCount * tweaks.units.cross_bow_sniper.upkeep_food_per_min;
-  return (scoutPerMin + militiaPerMin + junkyardKnightPerMin + crossBowSniperPerMin) / 60;
+/** Commitment records that remove troops from the barracks-idle upkeep pool. */
+export type UnitCommitments = {
+  garrisons: GarrisonsRecord;
+  expeditions: ExpeditionsRecord;
+  denAssaults: DenAssaultsRecord;
+  garrisonRecalls: GarrisonRecallsRecord;
+  labAssaults: LabAssaultsRecord;
+};
+
+const NO_COMMITMENTS: UnitCommitments = {
+  garrisons: [],
+  expeditions: [],
+  denAssaults: [],
+  garrisonRecalls: [],
+  labAssaults: [],
+};
+
+/**
+ * Food upkeep for barracks-idle troops only — garrisoned / expedition /
+ * assault / recall commitments already paid their way (provisions) or are
+ * stationed outside the barracks.
+ */
+export function totalUpkeepPerSecond(
+  tweaks: Tweaks,
+  units: UnitsRecord,
+  commitments: UnitCommitments = NO_COMMITMENTS,
+): number {
+  const idleMilitia = availableMilitia(
+    units,
+    commitments.garrisons,
+    commitments.expeditions,
+    commitments.denAssaults,
+    commitments.garrisonRecalls,
+    commitments.labAssaults,
+  );
+  const idleKnights = availableJunkyardKnights(
+    units,
+    commitments.garrisons,
+    commitments.expeditions,
+    commitments.denAssaults,
+    commitments.garrisonRecalls,
+    commitments.labAssaults,
+  );
+  const idleSnipers = availableCrossBowSnipers(
+    units,
+    commitments.garrisons,
+    commitments.expeditions,
+    commitments.denAssaults,
+    commitments.garrisonRecalls,
+    commitments.labAssaults,
+  );
+  const militiaPerMin = idleMilitia * tweaks.units.militia.upkeep_food_per_min;
+  const junkyardKnightPerMin = idleKnights * tweaks.units.junkyard_knight.upkeep_food_per_min;
+  const crossBowSniperPerMin = idleSnipers * tweaks.units.cross_bow_sniper.upkeep_food_per_min;
+  return (militiaPerMin + junkyardKnightPerMin + crossBowSniperPerMin) / 60;
 }
 
 /**
- * Advances food upkeep for stockpiled scouts and every standing unit type by
- * `elapsedSeconds`. If food can't cover the full upkeep, food is clamped at 0
- * and exactly one unit deserts — cheapest/most-replaceable first (militia,
- * then junkyard knight, then cross-bow sniper, then finally a scout, since
- * scouts are the rarer/costlier investment to lose) — a simple first-pass
- * penalty, not proportional to the shortfall size.
+ * Advances food upkeep for barracks-idle units by `elapsedSeconds`. If food
+ * can't cover the full upkeep, food is clamped at 0 and exactly one idle
+ * unit deserts — cheapest first (militia, then junkyard knight, then
+ * cross-bow sniper). Committed troops are never deserted.
  */
 export function applyUpkeepTick(
   tweaks: Tweaks,
   units: UnitsRecord,
   food: number,
   elapsedSeconds: number,
+  commitments: UnitCommitments = NO_COMMITMENTS,
 ): { food: number; units: UnitsRecord } {
   if (elapsedSeconds <= 0) return { food, units };
 
-  const upkeep = totalUpkeepPerSecond(tweaks, units) * elapsedSeconds;
+  const upkeep = totalUpkeepPerSecond(tweaks, units, commitments) * elapsedSeconds;
   if (food >= upkeep) {
     return { food: food - upkeep, units };
   }
 
+  const idleMilitia = availableMilitia(
+    units,
+    commitments.garrisons,
+    commitments.expeditions,
+    commitments.denAssaults,
+    commitments.garrisonRecalls,
+    commitments.labAssaults,
+  );
+  const idleKnights = availableJunkyardKnights(
+    units,
+    commitments.garrisons,
+    commitments.expeditions,
+    commitments.denAssaults,
+    commitments.garrisonRecalls,
+    commitments.labAssaults,
+  );
+  const idleSnipers = availableCrossBowSnipers(
+    units,
+    commitments.garrisons,
+    commitments.expeditions,
+    commitments.denAssaults,
+    commitments.garrisonRecalls,
+    commitments.labAssaults,
+  );
+
   const nextUnits = { ...units };
-  if (nextUnits.militiaCount > 0) {
+  if (idleMilitia > 0) {
     nextUnits.militiaCount -= 1;
-  } else if (nextUnits.junkyardKnightCount > 0) {
+  } else if (idleKnights > 0) {
     nextUnits.junkyardKnightCount -= 1;
-  } else if (nextUnits.crossBowSniperCount > 0) {
+  } else if (idleSnipers > 0) {
     nextUnits.crossBowSniperCount -= 1;
-  } else if (nextUnits.scoutStockpile > 0) {
-    nextUnits.scoutStockpile -= 1;
   }
   return { food: 0, units: nextUnits };
 }

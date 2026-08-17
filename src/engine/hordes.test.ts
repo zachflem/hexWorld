@@ -8,7 +8,6 @@ import type { ExtractionTile } from "../data/extractionTiles";
 import type { Garrison, GarrisonsRecord } from "../data/garrisons";
 import type { HordeRecord } from "../data/hordes";
 import type { OutpostRecord } from "../data/outposts";
-import type { PathTile } from "../data/pathTiles";
 import type { TerritoryRecord } from "../data/territory";
 import type { Tower } from "../data/towers";
 import type { UnitsRecord } from "../data/units";
@@ -21,9 +20,12 @@ import {
   checkHordeSpawns,
   hordeTileDefense,
   markCapturedStructuresDamaged,
+  preserveCapturedTilesAsScouted,
+  hordeStructureCaptureEvents,
   resolveGarrisonAutoAttacks,
   resolveHordeAttack,
   resolveHordeTileFight,
+  reconcileHordeWatchtowerAlerts,
   type HordeHub,
 } from "./hordes";
 import { seededRandom } from "./noise";
@@ -41,7 +43,7 @@ function fullScaleLevel(tweaks: ReturnType<typeof loadRealTweaks>): number {
 }
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -243,21 +245,21 @@ describe("checkHordeSpawns", () => {
 describe("hordeTileDefense / resolveHordeTileFight", () => {
   it("is 0 for an undefended tile", () => {
     const tweaks = loadRealTweaks();
-    expect(hordeTileDefense(tweaks, [], [], [], [], [], [], { q: 0, r: 0 })).toBe(0);
+    expect(hordeTileDefense(tweaks, [], [], [], [], [], { q: 0, r: 0 })).toBe(0);
   });
 
   it("uses towerDamage as a placeholder defense value for a tower tile", () => {
     const tweaks = loadRealTweaks();
     const coord = { q: 0, r: 0 };
     const tower: Tower = { coord, level: 2, totalInvested: {}, upgrade: null, buildCost: {}, damaged: false };
-    expect(hordeTileDefense(tweaks, [], [], [tower], [], [], [], coord)).toBeCloseTo(towerDamage(tweaks, 2));
+    expect(hordeTileDefense(tweaks, [], [tower], [], [], [], coord)).toBeCloseTo(towerDamage(tweaks, 2));
   });
 
   it("uses wall durability as a placeholder defense value for a wall tile", () => {
     const tweaks = loadRealTweaks();
     const coord = { q: 0, r: 0 };
     const wall: Wall = { coord, tier: "wood", durability: 123, totalInvested: {}, action: null, buildCost: {}, damaged: false };
-    expect(hordeTileDefense(tweaks, [], [], [], [wall], [], [], coord)).toBe(123);
+    expect(hordeTileDefense(tweaks, [], [], [wall], [], [], coord)).toBe(123);
   });
 
   it("resolves deterministically: horde wins iff size >= defense", () => {
@@ -270,7 +272,7 @@ describe("hordeTileDefense / resolveHordeTileFight", () => {
     const tweaks = loadRealTweaks();
     const coord = { q: 0, r: 0 };
     const tower: Tower = { coord, level: 4, totalInvested: {}, upgrade: null, buildCost: {}, damaged: true };
-    expect(hordeTileDefense(tweaks, [], [], [tower], [], [], [], coord)).toBe(0);
+    expect(hordeTileDefense(tweaks, [], [tower], [], [], [], coord)).toBe(0);
   });
 
   it("treats a damaged wall as 0 defense regardless of its remaining durability", () => {
@@ -285,7 +287,7 @@ describe("hordeTileDefense / resolveHordeTileFight", () => {
       buildCost: {},
       damaged: true,
     };
-    expect(hordeTileDefense(tweaks, [], [], [], [wall], [], [], coord)).toBe(0);
+    expect(hordeTileDefense(tweaks, [], [], [wall], [], [], coord)).toBe(0);
   });
 
   it("stacks a garrison additively on top of a tower's defense", () => {
@@ -294,14 +296,14 @@ describe("hordeTileDefense / resolveHordeTileFight", () => {
     const tower: Tower = { coord, level: 2, totalInvested: {}, upgrade: null, buildCost: {}, damaged: false };
     const garrisons: GarrisonsRecord = [makeGarrison(coord, { militiaCount: 5 })];
     const expected = towerDamage(tweaks, 2) + 5 * tweaks.units.militia.defense_per_unit;
-    expect(hordeTileDefense(tweaks, [], [], [tower], [], [], garrisons, coord)).toBeCloseTo(expected);
+    expect(hordeTileDefense(tweaks, [], [tower], [], [], garrisons, coord)).toBeCloseTo(expected);
   });
 
   it("lets a garrison alone defend a bare tile with no tower or wall", () => {
     const tweaks = loadRealTweaks();
     const coord = { q: 0, r: 0 };
     const garrisons: GarrisonsRecord = [makeGarrison(coord, { militiaCount: 3 })];
-    expect(hordeTileDefense(tweaks, [], [], [], [], [], garrisons, coord)).toBe(3 * tweaks.units.militia.defense_per_unit);
+    expect(hordeTileDefense(tweaks, [], [], [], [], garrisons, coord)).toBe(3 * tweaks.units.militia.defense_per_unit);
   });
 
   it("gives an extraction tile structural defense derived from its total invested resources", () => {
@@ -317,7 +319,7 @@ describe("hordeTileDefense / resolveHordeTileFight", () => {
       buildCost: { wood: 100 },
       damaged: false,
     };
-    expect(hordeTileDefense(tweaks, [extraction], [], [], [], [], [], coord)).toBeCloseTo(structureHp(tweaks, { wood: 100 }));
+    expect(hordeTileDefense(tweaks, [extraction], [], [], [], [], coord)).toBeCloseTo(structureHp(tweaks, { wood: 100 }));
   });
 
   it("treats a damaged extraction tile as 0 structural defense", () => {
@@ -333,21 +335,7 @@ describe("hordeTileDefense / resolveHordeTileFight", () => {
       buildCost: { wood: 100 },
       damaged: true,
     };
-    expect(hordeTileDefense(tweaks, [extraction], [], [], [], [], [], coord)).toBe(0);
-  });
-
-  it("gives a path tile structural defense derived from its total invested resources", () => {
-    const tweaks = loadRealTweaks();
-    const coord = { q: 0, r: 0 };
-    const pathTile: PathTile = {
-      coord,
-      tier: "goat_track",
-      totalInvested: { wood: 40 },
-      upgrade: null,
-      buildCost: { wood: 40 },
-      damaged: false,
-    };
-    expect(hordeTileDefense(tweaks, [], [pathTile], [], [], [], [], coord)).toBeCloseTo(structureHp(tweaks, { wood: 40 }));
+    expect(hordeTileDefense(tweaks, [extraction], [], [], [], [], coord)).toBe(0);
   });
 
   it("gives a barracks structural defense derived from its total invested resources", () => {
@@ -361,7 +349,7 @@ describe("hordeTileDefense / resolveHordeTileFight", () => {
       buildCost: { wood: 200, stone: 100 },
       damaged: false,
     };
-    expect(hordeTileDefense(tweaks, [], [], [], [], [barracks], [], coord)).toBeCloseTo(
+    expect(hordeTileDefense(tweaks, [], [], [], [barracks], [], coord)).toBeCloseTo(
       structureHp(tweaks, { wood: 200, stone: 100 }),
     );
   });
@@ -377,7 +365,7 @@ describe("hordeTileDefense / resolveHordeTileFight", () => {
       buildCost: { wood: 200, stone: 100 },
       damaged: true,
     };
-    expect(hordeTileDefense(tweaks, [], [], [], [], [barracks], [], coord)).toBe(0);
+    expect(hordeTileDefense(tweaks, [], [], [], [barracks], [], coord)).toBe(0);
   });
 });
 
@@ -405,14 +393,9 @@ describe("resolveHordeAttack", () => {
 
 describe("resolveGarrisonAutoAttacks", () => {
   const units = (militiaCount: number): UnitsRecord => ({
-    scoutStockpile: 0,
     militiaCount,
     junkyardKnightCount: 0,
     crossBowSniperCount: 0,
-    scoutQueue: null,
-    militiaQueue: null,
-    junkyardKnightQueue: null,
-    crossBowSniperQueue: null,
   });
 
   function horde(overrides: Partial<HordeRecord> = {}): HordeRecord {
@@ -534,7 +517,7 @@ describe("advanceHordes", () => {
     const territory: TerritoryRecord = { base: path[4], owned: [] };
     const elapsed = tweaks.game.tick_interval_seconds * 3;
 
-    const { hordes } = advanceHordes(tweaks, [makeHorde()], territory, [], [], [], [], [], [], hubs(0), elapsed);
+    const { hordes } = advanceHordes(tweaks, [makeHorde()], territory, [], [], [], [], [], hubs(0), elapsed, 0);
     expect(hordes[0].pathIndex).toBe(3);
     expect(hordes[0].progress).toBeCloseTo(0);
   });
@@ -544,7 +527,7 @@ describe("advanceHordes", () => {
     const territory: TerritoryRecord = { base: path[4], owned: [] };
     const elapsed = tweaks.game.tick_interval_seconds * 10_000; // a huge, multi-year-equivalent gap
 
-    const { hordes } = advanceHordes(tweaks, [makeHorde()], territory, [], [], [], [], [], [], hubs(0), elapsed);
+    const { hordes } = advanceHordes(tweaks, [makeHorde()], territory, [], [], [], [], [], hubs(0), elapsed, 0);
     expect(hordes[0].pathIndex).toBe(path.length - 1);
     expect(hordes[0].progress).toBe(0);
   });
@@ -554,7 +537,7 @@ describe("advanceHordes", () => {
     const territory: TerritoryRecord = { base: path[4], owned: [path[1], path[2]] };
     const elapsed = tweaks.game.tick_interval_seconds * 1;
 
-    const { territory: nextTerritory } = advanceHordes(tweaks, [makeHorde()], territory, [], [], [], [], [], [], hubs(0), elapsed);
+    const { territory: nextTerritory } = advanceHordes(tweaks, [makeHorde()], territory, [], [], [], [], [], hubs(0), elapsed, 0);
     expect(nextTerritory.owned).toEqual([path[2]]);
   });
 
@@ -564,7 +547,7 @@ describe("advanceHordes", () => {
     const towers: Tower[] = [];
     const walls: Wall[] = [];
 
-    const result = advanceHordes(tweaks, [], territory, [], [], towers, walls, [], [], hubs(0), 100);
+    const result = advanceHordes(tweaks, [], territory, [], towers, walls, [], [], hubs(0), 100, 0);
     expect(result.territory).toBe(territory);
     expect(result.hordes).toEqual([]);
   });
@@ -583,9 +566,9 @@ describe("advanceHordes", () => {
       [],
       [],
       [],
-      [],
       hubs(0), // no reinforcement HP, no garrison defense — an undefended base always falls
       elapsed,
+      0,
     );
     expect(hordes[0].pathIndex).toBe(path.length - 1);
     expect(nextTerritory.owned).toEqual([path[4]]);
@@ -611,9 +594,9 @@ describe("advanceHordes", () => {
       [],
       [],
       [],
-      [],
       hubs(999_999), // reinforcement comfortably beats the horde
       elapsed,
+      0,
     );
     // Destroyed outright — unlike every other tile, a successful base
     // defense doesn't halt the horde for another try, it ends the fight.
@@ -636,9 +619,9 @@ describe("advanceHordes", () => {
       [],
       [],
       [],
-      [],
       hubs(10), // reinforcement HP far too low to hold
       elapsed,
+      0,
     );
     expect(hordes[0].pathIndex).toBe(path.length - 1);
     expect(overrunHubKeys).toContain(baseKey);
@@ -663,14 +646,14 @@ describe("advanceHordes", () => {
     // weak outpost and the strong base can't both resolve in one call here;
     // this exercises that behavior across two ticks instead of pretending
     // it's a single continuous walk.
-    const first = advanceHordes(tweaks, [makeHorde({ size })], territory, [], [], [], [], [], [], twoHubs, elapsed);
+    const first = advanceHordes(tweaks, [makeHorde({ size })], territory, [], [], [], [], [], twoHubs, elapsed, 0);
     expect(first.overrunHubKeys).toEqual([outpostKey]);
     expect(first.hubDamage[outpostKey]).toBeUndefined();
     expect(first.hordes).toHaveLength(1);
     const decayedSize = first.hordes[0].size;
     expect(decayedSize).toBeLessThan(size);
 
-    const second = advanceHordes(tweaks, first.hordes, territory, [], [], [], [], [], [], twoHubs, elapsed);
+    const second = advanceHordes(tweaks, first.hordes, territory, [], [], [], [], [], twoHubs, elapsed, 0);
 
     // The much stronger base destroys the surviving, already-decayed horde
     // outright — proving the outpost and base fights resolved independently
@@ -689,7 +672,7 @@ describe("advanceHordes", () => {
     const wall: Wall = { coord: path[2], tier: "wood", durability: 999_999, totalInvested: {}, action: null, buildCost: {}, damaged: false };
     const elapsed = tweaks.game.tick_interval_seconds * 5; // enough to reach the end if unopposed
 
-    const { hordes } = advanceHordes(tweaks, [makeHorde({ size: 50 })], territory, [], [], [], [wall], [], [], hubs(0), elapsed);
+    const { hordes } = advanceHordes(tweaks, [makeHorde({ size: 50 })], territory, [], [], [wall], [], [], hubs(0), elapsed, 0);
     expect(hordes[0].pathIndex).toBe(1); // captured path[1], then stopped short of path[2]
     expect(hordes[0].progress).toBe(0);
   });
@@ -699,15 +682,15 @@ describe("advanceHordes", () => {
     const territory: TerritoryRecord = { base: path[4], owned: [path[1], path[2]] };
     const elapsed = tweaks.game.tick_interval_seconds * 2;
 
-    const { capturedTiles } = advanceHordes(tweaks, [makeHorde()], territory, [], [], [], [], [], [], hubs(0), elapsed);
+    const { capturedTiles } = advanceHordes(tweaks, [makeHorde()], territory, [], [], [], [], [], hubs(0), elapsed, 0);
     expect(capturedTiles).toEqual([path[1], path[2]]);
   });
 
   it("reports no captured tiles when nothing advances", () => {
     const tweaks = loadRealTweaks();
     const territory: TerritoryRecord = { base: path[4], owned: [] };
-    expect(advanceHordes(tweaks, [], territory, [], [], [], [], [], [], hubs(0), 100).capturedTiles).toEqual([]);
-    expect(advanceHordes(tweaks, [makeHorde()], territory, [], [], [], [], [], [], hubs(0), 0).capturedTiles).toEqual([]);
+    expect(advanceHordes(tweaks, [], territory, [], [], [], [], [], hubs(0), 100, 0).capturedTiles).toEqual([]);
+    expect(advanceHordes(tweaks, [makeHorde()], territory, [], [], [], [], [], hubs(0), 0, 0).capturedTiles).toEqual([]);
   });
 
   it("decays size by the horde's own decayPct, compounding, per tile advanced", () => {
@@ -717,7 +700,7 @@ describe("advanceHordes", () => {
     const decayPct = 5;
     const decayFactor = 1 - decayPct / 100;
 
-    const { hordes } = advanceHordes(tweaks, [makeHorde({ size: 100, decayPct })], territory, [], [], [], [], [], [], hubs(0), elapsed);
+    const { hordes } = advanceHordes(tweaks, [makeHorde({ size: 100, decayPct })], territory, [], [], [], [], [], hubs(0), elapsed, 0);
     expect(hordes[0].pathIndex).toBe(3); // 3 tiles advanced -> decay applied 3 times
     expect(hordes[0].size).toBeCloseTo(100 * decayFactor ** 3);
   });
@@ -736,9 +719,9 @@ describe("advanceHordes", () => {
       [],
       [],
       [],
-      [],
       hubs(0),
       elapsed,
+      0,
     );
     expect(hordes[0].pathIndex).toBe(1); // half speed -> 1.5 tiles worth of progress, only 1 whole tile crossed
     expect(hordes[0].progress).toBeCloseTo(0.5);
@@ -758,7 +741,7 @@ describe("advanceHordes", () => {
     };
     const elapsed = tweaks.game.tick_interval_seconds * 3;
 
-    const { hordes } = advanceHordes(tweaks, [makeHorde({ size: 50 })], territory, [], [], [], [wall], [], [], hubs(0), elapsed);
+    const { hordes } = advanceHordes(tweaks, [makeHorde({ size: 50 })], territory, [], [], [wall], [], [], hubs(0), elapsed, 0);
     expect(hordes[0].pathIndex).toBe(0);
     expect(hordes[0].size).toBe(50);
   });
@@ -769,7 +752,7 @@ describe("advanceHordes", () => {
     const garrisons: GarrisonsRecord = [makeGarrison(path[2], { militiaCount: 999_999 })];
     const elapsed = tweaks.game.tick_interval_seconds * 5; // enough to reach the end if unopposed
 
-    const { hordes } = advanceHordes(tweaks, [makeHorde({ size: 50 })], territory, [], [], [], [], [], garrisons, hubs(0), elapsed);
+    const { hordes } = advanceHordes(tweaks, [makeHorde({ size: 50 })], territory, [], [], [], [], garrisons, hubs(0), elapsed, 0);
     expect(hordes[0].pathIndex).toBe(1); // captured path[1], then stopped short of path[2]
     expect(hordes[0].progress).toBe(0);
   });
@@ -788,9 +771,9 @@ describe("advanceHordes", () => {
       [],
       [],
       [],
-      [],
       hubs(0),
       elapsed,
+      0,
     );
     expect(hordes).toEqual([]);
   });
@@ -814,13 +797,13 @@ describe("advanceHordes", () => {
       [makeHorde({ size: 1, speedFactor: 0 })], // speedFactor 0 isolates tower damage from tile-advance/decay
       territory,
       [],
-      [],
       [tower],
       [],
       [],
       [],
       hubs(0),
       elapsed,
+      0,
     );
     expect(hordes).toEqual([]);
   });
@@ -846,19 +829,18 @@ describe("advanceHordes", () => {
       [makeHorde({ size, speedFactor: 0 })],
       territory,
       [],
-      [],
       [tower],
       [],
       [],
       [],
       hubs(0),
       elapsed,
+      0,
     );
     const { hordes: withGarrison } = advanceHordes(
       tweaks,
       [makeHorde({ size, speedFactor: 0 })],
       territory,
-      [],
       [],
       [tower],
       [],
@@ -866,6 +848,7 @@ describe("advanceHordes", () => {
       garrisons,
       hubs(0),
       elapsed,
+      0,
     );
 
     const expectedBonusDamage =
@@ -889,10 +872,10 @@ describe("advanceHordes", () => {
       [],
       [],
       [],
-      [],
       garrisons,
       hubs(0),
       elapsed,
+      0,
     );
     const expectedDamage = 4 * tweaks.units.cross_bow_sniper.ranged_damage_per_unit;
     expect(1000 - hordes[0].size).toBeCloseTo(expectedDamage, 5);
@@ -913,10 +896,10 @@ describe("advanceHordes", () => {
       [],
       [],
       [],
-      [],
       garrisons,
       hubs(0),
       elapsed,
+      0,
     );
     expect(hordes[0].size).toBe(1000);
   });
@@ -939,13 +922,13 @@ describe("advanceHordes", () => {
       [makeHorde({ size: 1, speedFactor: 0 })],
       territory,
       [],
-      [],
       [tower],
       [],
       [],
       [],
       hubs(0),
       elapsed,
+      0,
     );
     expect(hordes).toHaveLength(1);
     expect(hordes[0].size).toBe(1);
@@ -970,13 +953,13 @@ describe("advanceHordes", () => {
       [makeHorde({ size: 1, speedFactor: 0 })],
       territory,
       [],
-      [],
       [tower],
       [],
       [],
       [],
       hubs(0),
       elapsed,
+      0,
     );
     expect(hordes).toHaveLength(1);
     expect(hordes[0].size).toBe(1);
@@ -995,7 +978,7 @@ describe("advanceHordes", () => {
       buildCost: {},
       damaged: false,
     };
-    expect(towerRange(tweaks, 1)).toBeGreaterThanOrEqual(0);
+    expect(towerRange(tweaks, 1, "grassland")).toBeGreaterThanOrEqual(0);
     // Huge size so the tower's per-tick damage can't meaningfully dent it —
     // isolates the slowdown effect from the size-decay/tower-dps effects
     // covered by the other tests in this block.
@@ -1007,15 +990,15 @@ describe("advanceHordes", () => {
       [makeHorde({ size, decayPct: 0 })],
       territory,
       [],
-      [],
       [tower],
       [],
       [],
       [],
       hubs(0),
       elapsed,
+      0,
     );
-    const unslowed = advanceHordes(tweaks, [makeHorde({ size, decayPct: 0 })], territory, [], [], [], [], [], [], hubs(0), elapsed);
+    const unslowed = advanceHordes(tweaks, [makeHorde({ size, decayPct: 0 })], territory, [], [], [], [], [], hubs(0), elapsed, 0);
 
     expect(unslowed.hordes[0].pathIndex).toBe(2);
     expect(slowed.hordes[0].pathIndex).toBe(1);
@@ -1049,5 +1032,98 @@ describe("markCapturedStructuresDamaged", () => {
     const result = markCapturedStructuresDamaged(structures, [{ q: 0, r: 0 }]);
     expect(result).toBe(structures);
     expect(result[0]).toBe(alreadyDamaged);
+  });
+
+  it("clears in-flight upgrade/build timers so horde repair is not blocked afterward", () => {
+    const tower = {
+      coord: { q: 0, r: 0 },
+      damaged: false,
+      upgrade: { targetLevel: 2, startedAt: 0 },
+      buildStartedAt: 99,
+    };
+    const [result] = markCapturedStructuresDamaged([tower], [{ q: 0, r: 0 }]);
+    expect(result.damaged).toBe(true);
+    expect(result.upgrade).toBeNull();
+    expect(result.buildStartedAt).toBeNull();
+  });
+});
+
+describe("preserveCapturedTilesAsScouted", () => {
+  it("appends newly captured tiles that were never scouted", () => {
+    const scouted = [{ q: 0, r: 0 }];
+    const result = preserveCapturedTilesAsScouted(scouted, [
+      { q: 1, r: 0 },
+      { q: 2, r: 0 },
+    ]);
+    expect(result).toEqual([
+      { q: 0, r: 0 },
+      { q: 1, r: 0 },
+      { q: 2, r: 0 },
+    ]);
+  });
+
+  it("does not duplicate tiles already in scoutedTiles", () => {
+    const scouted = [
+      { q: 0, r: 0 },
+      { q: 1, r: 0 },
+    ];
+    const result = preserveCapturedTilesAsScouted(scouted, [
+      { q: 1, r: 0 },
+      { q: 2, r: 0 },
+    ]);
+    expect(result).toEqual([
+      { q: 0, r: 0 },
+      { q: 1, r: 0 },
+      { q: 2, r: 0 },
+    ]);
+  });
+
+  it("returns the same array reference when nothing was captured", () => {
+    const scouted = [{ q: 0, r: 0 }];
+    expect(preserveCapturedTilesAsScouted(scouted, [])).toBe(scouted);
+  });
+
+  it("returns the same array reference when every captured tile was already scouted", () => {
+    const scouted = [
+      { q: 0, r: 0 },
+      { q: 1, r: 0 },
+    ];
+    expect(preserveCapturedTilesAsScouted(scouted, [{ q: 1, r: 0 }])).toBe(scouted);
+  });
+});
+
+describe("hordeStructureCaptureEvents", () => {
+  it("reports cancelled upgrade work from the pre-capture snapshot", () => {
+    const tower = {
+      coord: { q: 2, r: 0 },
+      damaged: false,
+      upgrade: { targetLevel: 2, startedAt: 0 },
+    };
+    const events = hordeStructureCaptureEvents([{ q: 2, r: 0 }], [], [tower], [], []);
+    expect(events).toHaveLength(1);
+    expect(events[0].kind).toBe("tower");
+    expect(events[0].cancelledWork).toContain("Upgrade cancelled");
+  });
+
+  it("skips already-damaged structures", () => {
+    const tower = { coord: { q: 0, r: 0 }, damaged: true, upgrade: null };
+    expect(hordeStructureCaptureEvents([{ q: 0, r: 0 }], [], [tower], [], [])).toHaveLength(0);
+  });
+});
+
+describe("reconcileHordeWatchtowerAlerts", () => {
+  it("alerts only on first entry, then again after leave and re-enter", () => {
+    const first = reconcileHordeWatchtowerAlerts(["h1"], new Set());
+    expect(first.newlyAlertedIds).toEqual(["h1"]);
+    expect([...first.nextAlerted]).toEqual(["h1"]);
+
+    const still = reconcileHordeWatchtowerAlerts(["h1"], first.nextAlerted);
+    expect(still.newlyAlertedIds).toEqual([]);
+
+    const left = reconcileHordeWatchtowerAlerts([], still.nextAlerted);
+    expect([...left.nextAlerted]).toEqual([]);
+
+    const reenter = reconcileHordeWatchtowerAlerts(["h1"], left.nextAlerted);
+    expect(reenter.newlyAlertedIds).toEqual(["h1"]);
   });
 });

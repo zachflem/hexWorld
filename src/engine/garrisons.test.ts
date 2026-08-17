@@ -15,6 +15,7 @@ import {
   availableCrossBowSnipers,
   availableJunkyardKnights,
   availableMilitia,
+  clampPartyDispatch,
   garrisonAt,
   garrisonAttackPower,
   garrisonDefense,
@@ -23,11 +24,12 @@ import {
   garrisonedJunkyardKnightTotal,
   garrisonedMilitiaTotal,
   isHordeReachableFromGarrison,
+  mergeIntoGarrison,
   resolveCapturedGarrisons,
 } from "./garrisons";
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -39,6 +41,7 @@ function makeExpedition(overrides: Partial<Expedition> = {}): Expedition {
   return {
     id: "expedition-test",
     target: { q: 9, r: 9 },
+    origin: { q: 0, r: 0 },
     path: [],
     militiaCommitted: 0,
     junkyardKnightCommitted: 0,
@@ -46,6 +49,11 @@ function makeExpedition(overrides: Partial<Expedition> = {}): Expedition {
     departedAt: 0,
     arriveAt: 0,
     resolvedIndex: 0,
+    phase: "marching",
+    provisionsPaid: 0,
+    outboundTileCount: 0,
+    decisionDeadlineAt: null,
+    joinExpeditionId: null,
     ...overrides,
   };
 }
@@ -54,6 +62,7 @@ function makeDenAssault(overrides: Partial<DenAssaultRecord> = {}): DenAssaultRe
   return {
     id: "denAssault-test",
     denId: "den-1",
+    origin: { q: 0, r: 0 },
     target: { q: 9, r: 9 },
     path: [],
     militiaCommitted: 0,
@@ -62,6 +71,7 @@ function makeDenAssault(overrides: Partial<DenAssaultRecord> = {}): DenAssaultRe
     departedAt: 0,
     arriveAt: 0,
     resolvedIndex: 0,
+    phase: "marching",
     ...overrides,
   };
 }
@@ -69,6 +79,7 @@ function makeDenAssault(overrides: Partial<DenAssaultRecord> = {}): DenAssaultRe
 function makeLabAssault(overrides: Partial<LabAssaultRecord> = {}): LabAssaultRecord {
   return {
     id: "labAssault-test",
+    origin: { q: 0, r: 0 },
     target: { q: 9, r: 9 },
     path: [],
     militiaCommitted: 0,
@@ -77,6 +88,7 @@ function makeLabAssault(overrides: Partial<LabAssaultRecord> = {}): LabAssaultRe
     departedAt: 0,
     arriveAt: 0,
     resolvedIndex: 0,
+    phase: "marching",
     ...overrides,
   };
 }
@@ -95,14 +107,9 @@ function makeGarrisonRecall(overrides: Partial<GarrisonRecallRecord> = {}): Garr
 }
 
 const units = (overrides: Partial<UnitsRecord> = {}): UnitsRecord => ({
-  scoutStockpile: 0,
   militiaCount: 0,
   junkyardKnightCount: 0,
   crossBowSniperCount: 0,
-  scoutQueue: null,
-  militiaQueue: null,
-  junkyardKnightQueue: null,
-  crossBowSniperQueue: null,
   ...overrides,
 });
 
@@ -111,6 +118,31 @@ describe("garrisonAt", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 1, r: 0 }, { militiaCount: 3 })];
     expect(garrisonAt(garrisons, { q: 1, r: 0 })?.militiaCount).toBe(3);
     expect(garrisonAt(garrisons, { q: 2, r: 0 })).toBeNull();
+  });
+});
+
+describe("mergeIntoGarrison", () => {
+  it("appends a new tile without wiping sibling garrisons", () => {
+    const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { militiaCount: 5 })];
+    const next = mergeIntoGarrison(garrisons, { q: 1, r: 0 }, 3, 1, 2);
+    expect(next).toHaveLength(2);
+    expect(garrisonAt(next, { q: 0, r: 0 })).toEqual(makeGarrison({ q: 0, r: 0 }, { militiaCount: 5 }));
+    expect(garrisonAt(next, { q: 1, r: 0 })).toEqual(
+      makeGarrison({ q: 1, r: 0 }, { militiaCount: 3, junkyardKnightCount: 1, crossBowSniperCount: 2 }),
+    );
+  });
+
+  it("adds counts onto an existing garrison at the same coord", () => {
+    const garrisons: GarrisonsRecord = [
+      makeGarrison({ q: 0, r: 0 }, { militiaCount: 5, junkyardKnightCount: 1 }),
+      makeGarrison({ q: 2, r: 0 }, { militiaCount: 4 }),
+    ];
+    const next = mergeIntoGarrison(garrisons, { q: 0, r: 0 }, 2, 3, 1);
+    expect(next).toHaveLength(2);
+    expect(garrisonAt(next, { q: 0, r: 0 })).toEqual(
+      makeGarrison({ q: 0, r: 0 }, { militiaCount: 7, junkyardKnightCount: 4, crossBowSniperCount: 1 }),
+    );
+    expect(garrisonAt(next, { q: 2, r: 0 })).toEqual(makeGarrison({ q: 2, r: 0 }, { militiaCount: 4 }));
   });
 });
 
@@ -239,6 +271,25 @@ describe("garrisonedCrossBowSniperTotal / availableCrossBowSnipers", () => {
     const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { crossBowSniperCount: 4 })];
     const labAssaults: LabAssaultsRecord = [makeLabAssault({ crossBowSniperCommitted: 1 })];
     expect(availableCrossBowSnipers(units({ crossBowSniperCount: 10 }), garrisons, [], [], [], labAssaults)).toBe(5);
+  });
+});
+
+describe("clampPartyDispatch", () => {
+  it("clamps stale UI counts to the available pool — same behavior as garrison dispatch", () => {
+    const garrisons: GarrisonsRecord = [makeGarrison({ q: 0, r: 0 }, { militiaCount: 5 })];
+    const expeditions: ExpeditionsRecord = [makeExpedition({ militiaCommitted: 3 })];
+    const clamped = clampPartyDispatch(
+      units({ militiaCount: 10 }),
+      garrisons,
+      expeditions,
+      [],
+      [],
+      [],
+      10,
+      0,
+      0,
+    );
+    expect(clamped).toEqual({ militiaCommitted: 2, junkyardKnightCommitted: 0, crossBowSniperCommitted: 0 });
   });
 });
 

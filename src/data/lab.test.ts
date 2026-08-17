@@ -6,10 +6,10 @@ import { axialDistance, axialKey, mapCenter } from "../engine/hexCoords";
 import { terrainAt } from "../engine/terrain";
 import { createDens } from "./dens";
 import { tweaksSchema } from "./tweaksSchema";
-import { createLab } from "./lab";
+import { createLab, ensureLabGuardianDefense, rollLabGuardianDefense } from "./lab";
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -54,5 +54,23 @@ describe("createLab", () => {
     const lab = createLab(seed, gridSize, base, dens, tweaks);
     expect(lab.secured).toBe(false);
     expect(lab.cluesCollected).toBe(0);
+  });
+
+  it("rolls guardianDefense inside the configured inclusive range", () => {
+    const tweaks = loadRealTweaks();
+    const dens = createDens(seed, gridSize, base, tweaks);
+    const lab = createLab(seed, gridSize, base, dens, tweaks);
+    expect(lab.guardianDefense).toBeGreaterThanOrEqual(tweaks.lab.guardian_defense_min);
+    expect(lab.guardianDefense).toBeLessThanOrEqual(tweaks.lab.guardian_defense_max);
+    expect(lab.guardianDefense).toBe(rollLabGuardianDefense(seed, tweaks));
+  });
+
+  it("ensureLabGuardianDefense fills legacy saves from the seed", () => {
+    const tweaks = loadRealTweaks();
+    const dens = createDens(seed, gridSize, base, tweaks);
+    const lab = createLab(seed, gridSize, base, dens, tweaks);
+    const { guardianDefense: _drop, ...withoutDefense } = lab;
+    const filled = ensureLabGuardianDefense(withoutDefense as typeof lab, seed, tweaks);
+    expect(filled.guardianDefense).toBe(lab.guardianDefense);
   });
 });

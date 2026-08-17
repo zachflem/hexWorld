@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { NewGameDialog } from "./NewGameDialog";
+import { SheetButton } from "./primitives/SheetButton";
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -48,15 +49,16 @@ export function GameOverScreen({
         A horde broke through what defenses you had and took the base
         {lostAt ? ` at ${formatDateTime(lostAt)}` : ""}. This save has ended.
       </p>
-      <button type="button" onClick={() => setDialogOpen(true)} style={{ padding: "0.5rem 1rem", borderRadius: 8 }}>
-        Start New Game
-      </button>
+      <div style={{ width: "min(100%, 280px)" }}>
+        <SheetButton onClick={() => setDialogOpen(true)}>Start New Game</SheetButton>
+      </div>
       {dialogOpen && (
         <NewGameDialog
           currentSeed={currentSeed}
           onReplayCurrent={onReplayCurrent}
           onStartNewSeed={onStartNewSeed}
           onNewPlayer={onNewPlayer}
+          onClose={() => setDialogOpen(false)}
         />
       )}
     </div>

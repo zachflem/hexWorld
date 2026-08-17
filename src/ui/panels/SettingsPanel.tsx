@@ -1,46 +1,65 @@
 import type { Player } from "../../data/player";
-import { Panel } from "../primitives/Panel";
+import { NewGameOptions } from "../NewGameOptions";
+import { BottomSheet } from "../primitives/BottomSheet";
+import { SheetButton } from "../primitives/SheetButton";
+import { SheetInfoCard } from "../primitives/SheetListItem";
 
 /**
- * Absorbs everything that used to live in the `☰` dropdown (now removed in
- * favor of the global hex cluster): player identity, seed display, "New
- * Game", and "Recenter on Base" — none of these fit the other five panel
- * slots (garrisons/scouting/military/build-mode/research), so this is the
- * catch-all for infrequent, non-gameplay actions. Starts minimal; a real
- * help/notification-preferences section can grow here later.
+ * Catch-all for infrequent, non-gameplay actions: player identity, seed,
+ * save-file export/import, and new-game choices (inline — no second dialog).
  */
 export function SettingsPanel({
   player,
   seed,
-  onRecenterOnBase,
-  onNewGame,
+  onSaveToFile,
+  onLoadFromFile,
+  onReplayCurrent,
+  onStartNewSeed,
+  onNewPlayer,
   onClose,
 }: {
   player: Player;
   seed: number;
-  onRecenterOnBase: () => void;
-  onNewGame: () => void;
+  onSaveToFile: () => void;
+  onLoadFromFile: () => void;
+  onReplayCurrent: () => void;
+  onStartNewSeed: (seed: number) => void;
+  onNewPlayer: () => void;
   onClose: () => void;
 }) {
   return (
-    <Panel style={{ position: "fixed", right: "1rem", bottom: "4.5rem", width: 280, fontSize: "0.85rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <strong style={{ fontSize: "1rem" }}>Settings</strong>
-        <button type="button" onClick={onClose}>
-          Close
-        </button>
-      </div>
+    <BottomSheet open title="Settings" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+        <SheetInfoCard>
+          <strong style={{ color: player.color, fontSize: "0.95rem" }}>{player.name}</strong>
+          <span style={{ opacity: 0.75 }}>Seed: {seed}</span>
+        </SheetInfoCard>
 
-      <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        <strong style={{ color: player.color }}>{player.name}</strong>
-        <p style={{ margin: 0, opacity: 0.8 }}>Seed: {seed}</p>
-        <button type="button" onClick={onRecenterOnBase}>
-          Recenter on Base
-        </button>
-        <button type="button" onClick={onNewGame}>
-          New Game
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <strong style={{ fontSize: "0.95rem" }}>Save file</strong>
+          <p style={{ margin: 0, fontSize: "0.85rem", opacity: 0.75, lineHeight: 1.4 }}>
+            Download a JSON backup, or load one from another device. Loading replaces the save on this
+            browser.
+          </p>
+          <SheetButton variant="secondary" onClick={onSaveToFile}>
+            Save to file
+          </SheetButton>
+          <SheetButton variant="secondary" onClick={onLoadFromFile}>
+            Load from file
+          </SheetButton>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <strong style={{ fontSize: "0.95rem" }}>New Game</strong>
+          <NewGameOptions
+            currentSeed={seed}
+            onReplayCurrent={onReplayCurrent}
+            onStartNewSeed={onStartNewSeed}
+            onNewPlayer={onNewPlayer}
+            confirmLabel="Start"
+          />
+        </div>
       </div>
-    </Panel>
+    </BottomSheet>
   );
 }

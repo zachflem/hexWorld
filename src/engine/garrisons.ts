@@ -8,6 +8,8 @@ import type { Wall } from "../data/walls";
 import type { Tweaks } from "../data/tweaksSchema";
 import { isStructureActive } from "./formulas";
 import { axialDistance, axialKey, type Axial } from "./hexCoords";
+import { powerPerformanceFactor, type PowerNetworkSnapshot } from "./power";
+import { WALL_TIER_LEVEL } from "./walls";
 
 /** Total militia currently committed to any in-transit expedition (src/data/expeditions.ts) — mirrors garrisonedMilitiaTotal's shape for the other place committed militia are "reserved." */
 function expeditionMilitiaTotal(expeditions: ExpeditionsRecord): number {
@@ -63,6 +65,33 @@ function garrisonRecallCrossBowSniperTotal(garrisonRecalls: GarrisonRecallsRecor
 
 export function garrisonAt(garrisons: GarrisonsRecord, coord: Axial): Garrison | null {
   return garrisons.find((g) => axialKey(g.coord) === axialKey(coord)) ?? null;
+}
+
+/**
+ * Add units to the garrison at `coord`, creating a new record if none exists.
+ * Always preserves sibling garrisons — callers must not replace the array with
+ * a single-element list when stationing on a fresh tile.
+ */
+export function mergeIntoGarrison(
+  garrisons: GarrisonsRecord,
+  coord: Axial,
+  militia: number,
+  junkyardKnight: number,
+  crossBowSniper: number,
+): GarrisonsRecord {
+  const existing = garrisonAt(garrisons, coord);
+  return existing
+    ? garrisons.map((g) =>
+        axialKey(g.coord) === axialKey(coord)
+          ? {
+              ...g,
+              militiaCount: g.militiaCount + militia,
+              junkyardKnightCount: g.junkyardKnightCount + junkyardKnight,
+              crossBowSniperCount: g.crossBowSniperCount + crossBowSniper,
+            }
+          : g,
+      )
+    : [...garrisons, { coord, militiaCount: militia, junkyardKnightCount: junkyardKnight, crossBowSniperCount: crossBowSniper }];
 }
 
 /** Total militia currently stationed across every garrison. */
@@ -148,6 +177,31 @@ export function availableCrossBowSnipers(
   );
 }
 
+/** Clamp UI-entered dispatch counts to what's actually free — mirrors handleGarrisonUnits's Math.min before commit. */
+export function clampPartyDispatch(
+  units: UnitsRecord,
+  garrisons: GarrisonsRecord,
+  expeditions: ExpeditionsRecord,
+  denAssaults: DenAssaultsRecord,
+  garrisonRecalls: GarrisonRecallsRecord,
+  labAssaults: LabAssaultsRecord,
+  militiaCommitted: number,
+  junkyardKnightCommitted: number,
+  crossBowSniperCommitted: number,
+): { militiaCommitted: number; junkyardKnightCommitted: number; crossBowSniperCommitted: number } {
+  return {
+    militiaCommitted: Math.min(Math.max(0, Math.floor(militiaCommitted)), availableMilitia(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults)),
+    junkyardKnightCommitted: Math.min(
+      Math.max(0, Math.floor(junkyardKnightCommitted)),
+      availableJunkyardKnights(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults),
+    ),
+    crossBowSniperCommitted: Math.min(
+      Math.max(0, Math.floor(crossBowSniperCommitted)),
+      availableCrossBowSnipers(units, garrisons, expeditions, denAssaults, garrisonRecalls, labAssaults),
+    ),
+  };
+}
+
 /** The defense a garrison contributes to its tile — stacks additively on top of any tower/wall there, and across all three garrisonable unit types. */
 export function garrisonDefense(tweaks: Tweaks, garrisons: GarrisonsRecord, coord: Axial): number {
   const garrison = garrisonAt(garrisons, coord);
@@ -168,10 +222,19 @@ export function garrisonAttackPower(tweaks: Tweaks, garrison: Garrison): number 
   );
 }
 
-/** tweaks.walls.garrison_range_bonus_tiles if an active wall (engine/formulas.ts:isStructureActive) sits at `coord`, else 0 — shared by isHordeReachableFromGarrison and engine/hordes.ts:sniperDamagePerSecond. */
-export function garrisonWallRangeBonus(tweaks: Tweaks, walls: Wall[], coord: Axial): number {
+/** tweaks.walls.garrison_range_bonus_tiles if an active powered wall sits at `coord`, else 0 — shared by isHordeReachableFromGarrison and engine/hordes.ts:sniperDamagePerSecond. Offline L2+ walls contribute 0. */
+export function garrisonWallRangeBonus(
+  tweaks: Tweaks,
+  walls: Wall[],
+  coord: Axial,
+  powerNetwork?: PowerNetworkSnapshot,
+): number {
   const wall = walls.find((w) => isStructureActive(w) && axialKey(w.coord) === axialKey(coord));
-  return wall ? tweaks.walls.garrison_range_bonus_tiles : 0;
+  if (!wall) return 0;
+  if (powerNetwork && powerPerformanceFactor(powerNetwork, WALL_TIER_LEVEL[wall.tier], wall.coord) <= 0) {
+    return 0;
+  }
+  return tweaks.walls.garrison_range_bonus_tiles;
 }
 
 /** A garrison can only strike a horde standing on its own tile or a directly adjacent one — extended by garrisonWallRangeBonus when the garrison is stationed on an active wall. */

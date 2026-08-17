@@ -1,14 +1,19 @@
-import { axialKey, type Axial } from "./hexCoords";
 import type { ExtractionTile } from "../data/extractionTiles";
-import type { PathTile } from "../data/pathTiles";
 import type { ResourceAmounts } from "../data/resources";
 import type { StorageLevels } from "../data/storageLevels";
+import type { TerritoryRecord } from "../data/territory";
 import type { Tweaks } from "../data/tweaksSchema";
 import { isTransitionTile, terrainAt } from "./terrain";
-import { tierYieldMultiplier } from "./tiers";
+import { extractionTierLevel, tierYieldMultiplier } from "./tiers";
 import { storageCapacity } from "./storage";
-import { findResourceTileConnection, throughputMultiplierForChain, transportRateMultiplier } from "./paths";
 import { isStructureActive } from "./formulas";
+import { powerPerformanceFactor, type PowerNetworkSnapshot } from "./power";
+import { advanceCourierSite, structureHasCourierAutomation } from "./couriers";
+import type { Axial } from "./hexCoords";
+import {
+  drainRemainingResource,
+  type HexResourcePoolsRecord,
+} from "../data/hexResourcePools";
 
 /**
  * Resource units generated per real second by one extraction tile, given its
@@ -28,78 +33,80 @@ export function yieldPerSecond(tweaks: Tweaks, tile: ExtractionTile, seed: numbe
 }
 
 /**
- * Advances the whole economy by `elapsedSeconds`, in two stages per DESIGN.md §8:
- *  1. Each extraction tile produces yield into its own local stockpile,
- *     capped at storage.capacity_base_per_resource (flat, not storage-skill-scaled).
- *  2. Any not-yet-claimed tile path-connected to one of `hubCoords` (base
- *     first, then outposts — order matters) drains into the single shared
- *     `resources` pool, at a rate relative to the tile's own yield, capped at
- *     the shared (storage-skill-scaled) cap. A base and every outpost are
- *     just alternate entry points into the same stockpile — there's no
- *     per-hub storage anymore (engine/outposts.ts). A `claimed` set
- *     guarantees a tile only ever drains once per tick even if it happens to
- *     be connected to more than one hub. A tile connected to none of them
- *     just accumulates locally until manually collected (collectTile below).
- * A `damaged` tile (horde-captured, not yet reclaimed+repaired — DESIGN.md
- * §12) stops fully: no new yield, and no draining of whatever stockpile it
- * already had — everything freezes until it's repaired, matching the "not
- * usable until repaired" status shown in TilePopup.
+ * Advances the economy by `elapsedSeconds` (Milestone 26):
+ *  1. Each extraction tile produces yield into its local stockpile (power-gated).
+ *  2. L2+ tiles (mid/large) run an implied courier to base using expedition
+ *     route timing (`travel_seconds_per_cost`). L1 stays manual-collect only.
+ * Path-tile auto-flow is retired.
  */
 export function accrueResources(
   tweaks: Tweaks,
   tiles: ExtractionTile[],
-  pathTiles: PathTile[],
   elapsedSeconds: number,
   seed: number,
   resources: ResourceAmounts,
   storageLevels: StorageLevels,
-  hubCoords: Axial[],
-): { resources: ResourceAmounts; tiles: ExtractionTile[] } {
-  if (elapsedSeconds <= 0) return { resources, tiles };
+  powerNetwork: PowerNetworkSnapshot,
+  now: number,
+  baseCoord: Axial,
+  territory: TerritoryRecord,
+  scoutedTiles: Axial[],
+  gridSize: number,
+  hexResourcePools: HexResourcePoolsRecord = {},
+): { resources: ResourceAmounts; tiles: ExtractionTile[]; hexResourcePools: HexResourcePoolsRecord } {
+  if (elapsedSeconds <= 0) return { resources, tiles, hexResourcePools };
 
   const tileStockpileCap = tweaks.storage.capacity_base_per_resource;
+  let nextPools = hexResourcePools ?? {};
 
   let workingTiles = tiles.map((tile) => {
     if (!isStructureActive(tile)) return tile;
-    const rate = yieldPerSecond(tweaks, tile, seed);
-    const stockpile = Math.min(tileStockpileCap, tile.stockpile + rate * elapsedSeconds);
-    return { ...tile, stockpile };
+    const powerMul = powerPerformanceFactor(powerNetwork, extractionTierLevel(tile.tier), tile.coord);
+    if (powerMul <= 0) return tile;
+    const rate = yieldPerSecond(tweaks, tile, seed) * powerMul;
+    const want = rate * elapsedSeconds;
+    const room = Math.max(0, tileStockpileCap - tile.stockpile);
+    const request = Math.min(want, room);
+    if (request <= 0) return tile;
+    const drained = drainRemainingResource(seed, tile.coord, nextPools, tweaks, request);
+    nextPools = drained.store;
+    if (drained.taken <= 0) return tile;
+    return { ...tile, stockpile: tile.stockpile + drained.taken };
   });
 
-  const claimed = new Set<string>();
   let nextResources = { ...resources };
-  for (const hubCoord of hubCoords) {
-    workingTiles = workingTiles.map((tile) => {
-      if (!isStructureActive(tile)) return tile;
-      const key = axialKey(tile.coord);
-      if (claimed.has(key)) return tile;
+  workingTiles = workingTiles.map((tile) => {
+    if (!isStructureActive(tile)) return tile;
+    const powerMul = powerPerformanceFactor(powerNetwork, extractionTierLevel(tile.tier), tile.coord);
+    if (powerMul <= 0) return { ...tile, courier: null };
 
-      const connection = findResourceTileConnection(workingTiles, pathTiles, hubCoord, tile.coord);
-      if (!connection) return tile;
-      claimed.add(key);
+    const level = extractionTierLevel(tile.tier);
+    const { site, resources: afterCourier } = advanceCourierSite(
+      tweaks,
+      seed,
+      tile.coord,
+      tile.resource,
+      { stockpile: tile.stockpile, courier: tile.courier },
+      nextResources,
+      storageLevels,
+      now,
+      baseCoord,
+      territory,
+      scoutedTiles,
+      gridSize,
+      structureHasCourierAutomation(level),
+    );
+    nextResources = afterCourier;
+    return { ...tile, stockpile: site.stockpile, courier: site.courier };
+  });
 
-      const rate = yieldPerSecond(tweaks, tile, seed);
-      const throughput = throughputMultiplierForChain(tweaks, seed, connection.chain);
-      const transportable = rate * transportRateMultiplier(tweaks, connection.tier) * throughput * elapsedSeconds;
-      const hubCap = storageCapacity(tweaks, storageLevels[tile.resource]);
-      const roomAtHub = Math.max(0, hubCap - nextResources[tile.resource]);
-      const transferred = Math.min(tile.stockpile, transportable, roomAtHub);
-
-      nextResources = { ...nextResources, [tile.resource]: nextResources[tile.resource] + transferred };
-      return { ...tile, stockpile: tile.stockpile - transferred };
-    });
-  }
-
-  return { resources: nextResources, tiles: workingTiles };
+  return { resources: nextResources, tiles: workingTiles, hexResourcePools: nextPools };
 }
 
 /**
  * Manual collection: instantly moves a tile's entire local stockpile into
- * the single shared resource pool, capped at its storage. Doesn't need to
- * know which hub (if any) the tile is path-connected to — unlike
- * accrueResources's automatic per-tick drain, a manual collect always
- * succeeds regardless of connectivity, and every hub now shares the same
- * destination pool anyway.
+ * the shared resource pool, capped at storage. Always available regardless of
+ * courier state (cargo already picked up stays with the courier until delivery).
  */
 export function collectTile(
   tweaks: Tweaks,

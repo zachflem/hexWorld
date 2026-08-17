@@ -1,7 +1,11 @@
 import type { Axial } from "../engine/hexCoords";
+import type { CourierTrip } from "./couriers";
 import type { ResourceType } from "./resources";
 
-/** Tier is "small" at build time — Milestone 5 added mid/large upgrades in place. */
+/**
+ * Tier is "small" at build time — Milestone 5 added mid/large upgrades in place.
+ * Milestone 26 player-facing levels: small=L1 (manual), mid=L2 (courier), large=L3 (production).
+ */
 export type ExtractionTier = "small" | "mid" | "large";
 
 export interface ExtractionTile {
@@ -10,11 +14,12 @@ export interface ExtractionTile {
   tier: ExtractionTier;
   /**
    * Resources accumulated locally at this tile, not yet moved to base storage
-   * (DESIGN.md §8) — capped at storage.capacity_base_per_resource. Drains to
-   * base automatically if path-connected (engine/paths.ts), otherwise only via
-   * manual collection.
+   * (DESIGN.md §8) — capped at storage.capacity_base_per_resource. At L2+
+   * (mid/large) an implied courier hauls to base; L1 is manual collect only.
    */
   stockpile: number;
+  /** Implied courier trip (Milestone 26); absent/null when idle or L1. */
+  courier?: CourierTrip | null;
   /** Cumulative build + upgrade spend, resource by resource — refunded proportionally on demolish. */
   totalInvested: Partial<Record<ResourceType, number>>;
   /** Set when a tier upgrade has been paid for but hasn't completed yet — tier only changes once the timer elapses. */

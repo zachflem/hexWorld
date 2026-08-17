@@ -1,16 +1,11 @@
 import { forwardRef } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, MouseEvent, PointerEvent, ReactNode } from "react";
 
 /**
  * Vertically-symmetric hexagon (point at top/bottom) — the shared shape for
- * every clickable hex button (global menu cluster, per-tile action ring). In
- * a `size`×`size` box, its vertices sit at (50%,0%), (100%,25%), (100%,75%),
- * (50%,100%), (0%,75%), (0%,25%) — pointy top/bottom, flat vertical left/right
- * sides. For two of these to tile edge-to-edge with no gap (a real honeycomb,
- * not just visually close), the touching-neighbor translation is exactly:
- * horizontal — (±size, 0); the two diagonals — (±0.5·size, ∓0.75·size) and
- * (±0.5·size, ±0.75·size). `GlobalHexCluster.tsx` uses these directly rather
- * than an arbitrary angle/radius, so its bloom is a true tessellation.
+ * clickable hex buttons (global menu stack, etc.). In a `size`×`size` box,
+ * vertices sit at (50%,0%), (100%,25%), (100%,75%), (50%,100%), (0%,75%),
+ * (0%,25%) — pointy top/bottom, flat vertical left/right sides.
  */
 const HEX_CLIP_PATH = "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)";
 
@@ -21,6 +16,11 @@ export const HexButton = forwardRef<
   {
     icon: ReactNode;
     onClick?: () => void;
+    onPointerDown?: (event: PointerEvent<HTMLButtonElement>) => void;
+    onPointerUp?: (event: PointerEvent<HTMLButtonElement>) => void;
+    onPointerCancel?: (event: PointerEvent<HTMLButtonElement>) => void;
+    onLostPointerCapture?: (event: PointerEvent<HTMLButtonElement>) => void;
+    onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
     size?: number;
     /** Highlighted state — e.g. the currently-open panel's trigger, or build-mode being active. Ignored when `highlight` is set. */
     active?: boolean;
@@ -31,7 +31,21 @@ export const HexButton = forwardRef<
     style?: CSSProperties;
   }
 >(function HexButton(
-  { icon, onClick, size = HEX_BUTTON_DEFAULT_SIZE, active = false, highlight, disabled = false, title, style },
+  {
+    icon,
+    onClick,
+    onPointerDown,
+    onPointerUp,
+    onPointerCancel,
+    onLostPointerCapture,
+    onContextMenu,
+    size = HEX_BUTTON_DEFAULT_SIZE,
+    active = false,
+    highlight,
+    disabled = false,
+    title,
+    style,
+  },
   ref,
 ) {
   return (
@@ -39,6 +53,11 @@ export const HexButton = forwardRef<
       ref={ref}
       type="button"
       onClick={onClick}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onLostPointerCapture={onLostPointerCapture}
+      onContextMenu={onContextMenu}
       disabled={disabled}
       title={title}
       aria-label={title}
@@ -57,6 +76,8 @@ export const HexButton = forwardRef<
         pointerEvents: "auto",
         transition: "background 0.15s ease, transform 0.15s ease",
         padding: 0,
+        // clip-path clips borders/box-shadow; drop-shadow follows the hex silhouette.
+        filter: "drop-shadow(0 0 0.6px rgba(255, 255, 255, 0.22))",
         ...style,
       }}
     >

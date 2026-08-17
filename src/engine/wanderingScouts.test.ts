@@ -4,12 +4,13 @@ import stripJsonComments from "strip-json-comments";
 import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
 import type { WanderingScoutRecord } from "../data/wanderingScouts";
-import { axialKey, axialNeighbors, axialSpiral, type Axial } from "./hexCoords";
+import { axialKey, axialNeighbors, axialSpiral, axialToPixel, isWithinMapBounds, type Axial } from "./hexCoords";
 import { terrainAt } from "./terrain";
 import { advanceWanderingScouts } from "./wanderingScouts";
+import { bearingStepScore } from "./lab";
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -26,7 +27,16 @@ function findLandCoord(seed: number): Axial {
 }
 
 function makeScout(coord: Axial, overrides: Partial<WanderingScoutRecord> = {}): WanderingScoutRecord {
-  return { id: "scout-1", coord, homeBarracksCoord: coord, prevCoord: null, spawnedAt: 0, buildStartedAt: null, ...overrides };
+  return {
+    id: "scout-1",
+    coord,
+    homeBarracksCoord: coord,
+    prevCoord: null,
+    spawnedAt: 0,
+    buildStartedAt: null,
+    stepProgressSeconds: 0,
+    ...overrides,
+  };
 }
 
 /** Runs `steps` single-step advances, threading scout/scoutedTiles state through, and returns the recorded coord path (including the start). */
@@ -106,15 +116,36 @@ describe("advanceWanderingScouts", () => {
     const seed = 5;
     const start = findLandCoord(seed);
     const scouts = [makeScout(start)];
+    const stepSec = tweaks.units.wandering_scout.seconds_per_step;
 
     const zero = advanceWanderingScouts(tweaks, scouts, [], seed, gridSize, 0);
     expect(zero.scouts).toBe(scouts);
 
-    const subStep = advanceWanderingScouts(tweaks, scouts, [], seed, gridSize, tweaks.units.wandering_scout.seconds_per_step - 1);
-    expect(subStep.scouts).toBe(scouts);
+    const subStep = advanceWanderingScouts(tweaks, scouts, [], seed, gridSize, stepSec - 1);
+    expect(axialKey(subStep.scouts[0].coord)).toBe(axialKey(start));
+    expect(subStep.scouts[0].stepProgressSeconds).toBe(stepSec - 1);
+    expect(subStep.scoutedTiles).toEqual([]);
 
     const noScouts = advanceWanderingScouts(tweaks, [], [], seed, gridSize, 100);
     expect(noScouts.scouts).toEqual([]);
+  });
+
+  it("accumulates live 1s ticks into a step (regression: floor(1/seconds_per_step) discarded progress)", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+    const stepSec = tweaks.units.wandering_scout.seconds_per_step;
+    let scouts = [makeScout(start)];
+
+    for (let i = 0; i < stepSec - 1; i++) {
+      const mid = advanceWanderingScouts(tweaks, scouts, [], seed, gridSize, 1);
+      scouts = mid.scouts;
+      expect(axialKey(scouts[0].coord)).toBe(axialKey(start));
+    }
+
+    const result = advanceWanderingScouts(tweaks, scouts, [], seed, gridSize, 1);
+    expect(axialKey(result.scouts[0].coord)).not.toBe(axialKey(start));
+    expect(result.scouts[0].stepProgressSeconds).toBe(0);
   });
 
   it("does not move or scout a scout still under construction (buildStartedAt set)", () => {
@@ -127,5 +158,281 @@ describe("advanceWanderingScouts", () => {
 
     expect(result.scouts).toEqual(scouts);
     expect(result.scoutedTiles).toEqual([]);
+    expect(result.labRevealed).toBe(false);
+  });
+
+  it("never awards lab clues — reveals tiles only", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+    const result = advanceWanderingScouts(
+      tweaks,
+      [makeScout(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.units.wandering_scout.seconds_per_step * 40,
+      {
+        signal: null,
+        base: start,
+        labCoord: { q: 0, r: 0 },
+      },
+    );
+    expect(result.scoutedTiles.length).toBeGreaterThan(0);
+    expect(result).not.toHaveProperty("clueAwarded");
+  });
+});
+
+describe("watchtower signal bias", () => {
+  it("bearingStepScore prefers neighbors aligned with the signal", () => {
+    const from = { q: 0, r: 0 };
+    const northish = { q: 0, r: -1 };
+    const southish = { q: 0, r: 1 };
+    expect(bearingStepScore(from, northish, "north")).toBeGreaterThan(bearingStepScore(from, southish, "north"));
+  });
+
+  it("with a northern signal, scouts take more northward steps than without", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+    const steps = 80;
+    const stepSec = tweaks.units.wandering_scout.seconds_per_step;
+    // Lab far north — with default weights only the compass bearing should pull northward.
+    const farNorthLab = { q: start.q, r: start.r - 40 };
+
+    function northDelta(path: Axial[]): number {
+      let sum = 0;
+      for (let i = 1; i < path.length; i++) {
+        const a = axialToPixel(path[i - 1], 1);
+        const b = axialToPixel(path[i], 1);
+        sum += a.y - b.y;
+      }
+      return sum;
+    }
+
+    const control = walk(tweaks, seed, start, steps);
+    let scouts = [makeScout(start)];
+    let scoutedTiles: Axial[] = [];
+    const biasedPath: Axial[] = [start];
+    for (let i = 0; i < steps; i++) {
+      const result = advanceWanderingScouts(tweaks, scouts, scoutedTiles, seed, gridSize, stepSec, {
+        signal: { bearing: "north", setAt: 0 },
+        base: start,
+        labCoord: farNorthLab,
+      });
+      scouts = result.scouts;
+      scoutedTiles = result.scoutedTiles;
+      biasedPath.push(scouts[0].coord);
+    }
+
+    expect(northDelta(biasedPath)).toBeGreaterThan(northDelta(control.path));
+  });
+
+  it("with revealRadius 1, scouts the stepped tile plus its full ring including water", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    // Shoreline land: at least one water neighbor so the disk includes water.
+    let start: Axial | null = null;
+    for (const coord of axialSpiral({ q: 64, r: 64 }, 50)) {
+      if (terrainAt(seed, coord) === "water") continue;
+      const neighbors = axialNeighbors(coord);
+      if (!neighbors.some((n) => terrainAt(seed, n) !== "water")) continue;
+      if (!neighbors.some((n) => terrainAt(seed, n) === "water")) continue;
+      start = coord;
+      break;
+    }
+    expect(start).not.toBeNull();
+
+    const result = advanceWanderingScouts(
+      tweaks,
+      [makeScout(start!)],
+      [],
+      seed,
+      gridSize,
+      tweaks.units.wandering_scout.seconds_per_step,
+      { signal: null, base: start!, labCoord: start!, revealRadius: 1 },
+    );
+
+    const stepped = result.scouts[0].coord;
+    const expectedAll = axialSpiral(stepped, 1).filter(
+      (c) => isWithinMapBounds(c, gridSize),
+    );
+    expect(result.scoutedTiles.map(axialKey).sort()).toEqual(expectedAll.map(axialKey).sort());
+    expect(result.scoutedTiles.some((c) => terrainAt(seed, c) === "water")).toBe(true);
+    expect(result.scoutedTiles.length).toBeLessThanOrEqual(7);
+    expect(result.scoutedTiles.length).toBeGreaterThan(1);
+  });
+
+  it("default signal weights do not magnetize scouts onto an adjacent lab tile", () => {
+    const tweaks = loadRealTweaks();
+    // Default profile: approach/tile bonus are 0 — compass only.
+    expect(tweaks.lab_clues.passive_surfacing.signal_lab_approach_weight).toBe(0);
+    expect(tweaks.lab_clues.passive_surfacing.signal_lab_tile_bonus).toBe(0);
+
+    const seed = 5;
+    const start = findLandCoord(seed);
+    const labNeighbor = axialNeighbors(start).find(
+      (n) => isWithinMapBounds(n, gridSize) && terrainAt(seed, n) !== "water",
+    );
+    expect(labNeighbor).toBeDefined();
+
+    let hits = 0;
+    const trials = 40;
+    for (let i = 0; i < trials; i++) {
+      const result = advanceWanderingScouts(
+        tweaks,
+        [makeScout(start, { spawnedAt: i })],
+        [],
+        seed,
+        gridSize,
+        tweaks.units.wandering_scout.seconds_per_step,
+        {
+          signal: { bearing: "north", setAt: 0 },
+          base: start,
+          labCoord: labNeighbor!,
+        },
+      );
+      if (result.labRevealed) hits += 1;
+    }
+    const landNeighbors = axialNeighbors(start).filter(
+      (n) => isWithinMapBounds(n, gridSize) && terrainAt(seed, n) !== "water",
+    ).length;
+    // No lab-tile magnetism: hit rate should stay near chance (bearing may nudge
+    // slightly if the neighbor happens to align north, but must not dominate).
+    expect(hits).toBeLessThan(trials * 0.7);
+    expect(hits).toBeGreaterThanOrEqual(0);
+    expect(landNeighbors).toBeGreaterThan(1);
+  });
+
+  it("non-zero lab approach weights can still prefer stepping onto the lab", () => {
+    const baseTweaks = loadRealTweaks();
+    const tweaks = {
+      ...baseTweaks,
+      lab_clues: {
+        ...baseTweaks.lab_clues,
+        passive_surfacing: {
+          ...baseTweaks.lab_clues.passive_surfacing,
+          signal_bearing_weight: 0.5,
+          signal_lab_approach_weight: 3,
+          signal_lab_tile_bonus: 4,
+        },
+      },
+    };
+    const seed = 5;
+    const start = findLandCoord(seed);
+    const labNeighbor = axialNeighbors(start).find(
+      (n) => isWithinMapBounds(n, gridSize) && terrainAt(seed, n) !== "water",
+    );
+    expect(labNeighbor).toBeDefined();
+
+    let hits = 0;
+    const trials = 40;
+    for (let i = 0; i < trials; i++) {
+      const result = advanceWanderingScouts(
+        tweaks,
+        [makeScout(start, { spawnedAt: i })],
+        [],
+        seed,
+        gridSize,
+        tweaks.units.wandering_scout.seconds_per_step,
+        {
+          signal: { bearing: "north", setAt: 0 },
+          base: start,
+          labCoord: labNeighbor!,
+        },
+      );
+      if (result.labRevealed) hits += 1;
+    }
+    const landNeighbors = axialNeighbors(start).filter(
+      (n) => isWithinMapBounds(n, gridSize) && terrainAt(seed, n) !== "water",
+    ).length;
+    expect(hits).toBeGreaterThan(trials / landNeighbors);
+  });
+
+  it("with claimOwnership, returns claimedTiles for the stepped tile", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+
+    const result = advanceWanderingScouts(
+      tweaks,
+      [makeScout(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.units.wandering_scout.seconds_per_step,
+      { signal: null, base: start, labCoord: start, claimOwnership: true },
+    );
+
+    expect(result.claimedTiles.length).toBeGreaterThan(0);
+    expect(result.claimedTiles.map(axialKey)).toContain(axialKey(result.scouts[0].coord));
+  });
+
+  it("without claimOwnership, claimedTiles is empty", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+
+    const result = advanceWanderingScouts(
+      tweaks,
+      [makeScout(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.units.wandering_scout.seconds_per_step,
+      { signal: null, base: start, labCoord: start },
+    );
+
+    expect(result.claimedTiles).toEqual([]);
+  });
+
+  it("claimOwnership skips unclaimableKeys and hordeKeys", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+
+    // Pick a neighbor to block as "den/lab".
+    const denCoord = axialNeighbors(start).find(
+      (n) => isWithinMapBounds(n, gridSize) && terrainAt(seed, n) !== "water",
+    )!;
+    const blocked = new Set([axialKey(denCoord)]);
+    const result = advanceWanderingScouts(
+      tweaks,
+      [makeScout(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.units.wandering_scout.seconds_per_step,
+      {
+        signal: null,
+        base: start,
+        labCoord: start,
+        claimOwnership: true,
+        revealRadius: 1,
+        unclaimableKeys: blocked,
+      },
+    );
+
+    expect(result.claimedTiles.every((c) => !blocked.has(axialKey(c)))).toBe(true);
+  });
+
+  it("with claimOwnership + revealRadius 1, claims the full ring", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const start = findLandCoord(seed);
+
+    const result = advanceWanderingScouts(
+      tweaks,
+      [makeScout(start)],
+      [],
+      seed,
+      gridSize,
+      tweaks.units.wandering_scout.seconds_per_step,
+      { signal: null, base: start, labCoord: start, claimOwnership: true, revealRadius: 1 },
+    );
+
+    const stepped = result.scouts[0].coord;
+    const expectedAll = axialSpiral(stepped, 1).filter((c) => isWithinMapBounds(c, gridSize));
+    expect(result.claimedTiles.map(axialKey).sort()).toEqual(expectedAll.map(axialKey).sort());
   });
 });

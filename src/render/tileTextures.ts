@@ -1,5 +1,7 @@
 import type { TerrainType } from "../engine/terrain";
 import type { ResourceType } from "../data/resources";
+import { assetUrlCandidates, type AssetCategory } from "./assetPaths";
+import { structureAssetUrlCandidates } from "./structureSprites";
 
 type TextureKey = string;
 
@@ -12,10 +14,19 @@ export function onTextureLoad(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
-function load(key: TextureKey, path: string): HTMLImageElement | null {
+export function resetTextureCache(): void {
+  cache.clear();
+}
+
+function loadWithFallbacks(key: TextureKey, urls: string[], index = 0): HTMLImageElement | null {
   const cached = cache.get(key);
   if (cached === "error") return null;
   if (cached) return cached;
+
+  if (index >= urls.length) {
+    cache.set(key, "error");
+    return null;
+  }
 
   const img = new Image();
   img.onload = () => {
@@ -23,48 +34,67 @@ function load(key: TextureKey, path: string): HTMLImageElement | null {
     listeners.forEach((fn) => fn());
   };
   img.onerror = () => {
-    cache.set(key, "error");
+    if (index + 1 < urls.length) {
+      loadWithFallbacks(key, urls, index + 1);
+    } else {
+      cache.set(key, "error");
+    }
   };
-  img.src = path;
+  img.src = urls[index]!;
   return null;
 }
 
+function loadCategory(category: AssetCategory, cacheKey: string, filename: string): HTMLImageElement | null {
+  return loadWithFallbacks(`${category}/${cacheKey}`, assetUrlCandidates(category, filename));
+}
+
 export function getTerrainTexture(type: TerrainType): HTMLImageElement | null {
-  return load(`terrain/${type}`, `/tiles/terrain/${type}.png`);
+  return loadCategory("terrain", type, `${type}.png`);
 }
 
 export function getResourceTexture(type: ResourceType): HTMLImageElement | null {
-  return load(`resources/${type}`, `/tiles/resources/${type}.png`);
+  return loadCategory("resources", type, `${type}.png`);
+}
+
+/** Scrap-stash marker — `resources/scrap-#.png` (Milestone 26 / Q70). */
+export function getScrapTexture(variant: number): HTMLImageElement | null {
+  const n = Math.max(1, Math.floor(variant));
+  return loadCategory("resources", `scrap-${n}`, `scrap-${n}.png`);
 }
 
 /**
- * Fixed-structure marker icon (base, tower, barracks, dock, den, outpost,
+ * Fixed-structure marker icon (base, tower, barracks, dock, den, lab, outpost,
  * wall tiers, ...) — a small overlay icon (like resource markers), not
  * full-hex art like terrain. `name` matches the PNG's filename under
- * /tiles/structures/ (e.g. "tower" -> tower.png).
+ * profiles/{slug}/assets/structures/ (e.g. "tower" -> tower.png).
  */
 export function getStructureIconTexture(name: string): HTMLImageElement | null {
-  return load(`structures/${name}-icon`, `/tiles/structures/${name}.png`);
+  return getStructureIconTextureCandidates([name]);
 }
 
 /**
- * Full-hex tile art for a path tier — same footprint/overlay convention as
- * `getTerrainTexture` (a path tile fully replaces the terrain fill rather
- * than sitting as a small overlay on top of it). `name` matches the PNG's
- * filename under /tiles/structures/ (e.g. "path-stone" -> path-stone.png).
+ * Try structure sprite names in order (e.g. ["tower-2", "tower"]), each
+ * through the profile→default URL chain. First existing file wins; missing
+ * levelled art falls back to the unlevelled pack asset (Milestone 24 / #P13).
  */
-export function getPathTileTexture(name: string): HTMLImageElement | null {
-  return load(`structures/${name}-full`, `/tiles/structures/${name}.png`);
+export function getStructureIconTextureCandidates(names: string[]): HTMLImageElement | null {
+  if (names.length === 0) return null;
+  if (names.length === 1) {
+    return loadCategory("structures", `${names[0]}-icon`, `${names[0]}.png`);
+  }
+  const cacheKey = `${names.join("|")}-icon`;
+  return loadWithFallbacks(`structures/${cacheKey}`, structureAssetUrlCandidates(names, assetUrlCandidates));
 }
+
 
 /**
  * Mobile-entity marker icon (expedition, horde, scout skiff, wandering
  * scout, ...) — same small-overlay treatment as getStructureIconTexture,
  * just for things that move around the map rather than sit fixed on a
- * tile. `name` matches the PNG's filename under /tiles/units/.
+ * tile. `name` matches the PNG's filename under profiles/{slug}/assets/units/.
  */
 export function getUnitIconTexture(name: string): HTMLImageElement | null {
-  return load(`units/${name}-icon`, `/tiles/units/${name}.png`);
+  return loadCategory("units", `${name}-icon`, `${name}.png`);
 }
 
 /**
@@ -76,6 +106,10 @@ export function getUnitIconTexture(name: string): HTMLImageElement | null {
  * to fill the hex's bounding box. Deliberately not clipped — draw order
  * (top row first) makes each lower tile paint over the tile behind it, which
  * is what lets `drawHexTileOverlay` below spill upward correctly.
+ *
+ * Shipped terrain files are 256×384 under this convention. Flat pointy-top
+ * hex source art must be converted first via `scripts/convert-flat-terrain-hex.py`
+ * (ROADMAP #P12; see AGENTS.md).
  */
 export function drawHexTileTexture(
   ctx: CanvasRenderingContext2D,
@@ -126,4 +160,26 @@ export function drawImageAtWidth(
 ): void {
   const destH = destW * (img.height / img.width);
   ctx.drawImage(img, centerX - destW / 2, centerY - destH / 2, destW, destH);
+}
+
+/**
+ * Draws a fixed-structure/building icon with its bottom edge pinned to a
+ * ground line on the hex (`centerY + hexSize * groundFraction`), letting the
+ * sprite's full natural height rise upward so taller art spills into the tile
+ * above — same depth illusion as `drawHexTileOverlay` gives terrain. Center-
+ * anchoring via `drawImageAtWidth` left buildings sitting too low in the cell.
+ * Per-structure offsets live in `structurePlacement.ts`.
+ */
+export function drawStructureIconAtWidth(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  centerX: number,
+  centerY: number,
+  hexSize: number,
+  destW: number,
+  groundFraction = 0.35,
+): void {
+  const destH = destW * (img.height / img.width);
+  const groundY = centerY + hexSize * groundFraction;
+  ctx.drawImage(img, centerX - destW / 2, groundY - destH, destW, destH);
 }

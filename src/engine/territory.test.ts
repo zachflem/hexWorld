@@ -8,10 +8,10 @@ import { tweaksSchema } from "../data/tweaksSchema";
 import { axialKey, axialNeighbors, axialSpiral, type Axial } from "./hexCoords";
 import { terrainAt, type TerrainType } from "./terrain";
 import { towerRange } from "./towers";
-import { autoClaimTowerRange, isTileScoutable, tileDefense } from "./territory";
+import { autoClaimTowerRange, canRepairHordeDamagedTile, isTileScoutable, isWithinActiveTowerClaim, tileDefense } from "./territory";
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -79,10 +79,12 @@ describe("isTileScoutable", () => {
 
 describe("autoClaimTowerRange", () => {
   const gridSize = 128;
+  const seed = 3;
+  const grassland = findTerrain(seed, "grassland", { q: 20, r: 20 });
 
   function makeTower(overrides: Partial<Tower> = {}): Tower {
     return {
-      coord: { q: 20, r: 20 },
+      coord: grassland,
       level: 1,
       totalInvested: {},
       upgrade: null,
@@ -97,9 +99,9 @@ describe("autoClaimTowerRange", () => {
     const tower = makeTower();
     const territory: TerritoryRecord = { base: { q: 0, r: 0 }, owned: [] };
 
-    const result = autoClaimTowerRange(tweaks, [tower], territory, gridSize, new Set());
+    const result = autoClaimTowerRange(tweaks, [tower], territory, gridSize, new Set(), seed);
 
-    const range = towerRange(tweaks, tower.level);
+    const range = towerRange(tweaks, tower.level, terrainAt(seed, tower.coord));
     const expectedTiles = axialSpiral(tower.coord, range);
     expect(result.owned).toHaveLength(expectedTiles.length);
     const ownedKeys = new Set(result.owned.map(axialKey));
@@ -112,7 +114,7 @@ describe("autoClaimTowerRange", () => {
     const alreadyOwned = { q: 0, r: 0 };
     const territory: TerritoryRecord = { base: alreadyOwned, owned: [alreadyOwned] };
 
-    const result = autoClaimTowerRange(tweaks, [tower], territory, gridSize, new Set());
+    const result = autoClaimTowerRange(tweaks, [tower], territory, gridSize, new Set(), seed);
 
     const ownedKeys = result.owned.map(axialKey);
     expect(new Set(ownedKeys).size).toBe(ownedKeys.length); // no duplicates
@@ -123,10 +125,22 @@ describe("autoClaimTowerRange", () => {
     const tweaks = loadRealTweaks();
     const territory: TerritoryRecord = { base: { q: 0, r: 0 }, owned: [] };
 
-    const l1 = autoClaimTowerRange(tweaks, [makeTower({ level: 1 })], territory, gridSize, new Set());
-    const l3 = autoClaimTowerRange(tweaks, [makeTower({ level: 3 })], territory, gridSize, new Set());
+    const l1 = autoClaimTowerRange(tweaks, [makeTower({ level: 1 })], territory, gridSize, new Set(), seed);
+    const l3 = autoClaimTowerRange(tweaks, [makeTower({ level: 3 })], territory, gridSize, new Set(), seed);
 
     expect(l3.owned.length).toBeGreaterThan(l1.owned.length);
+  });
+
+  it("claims farther from a mountain tower than a forest tower at the same level (#79)", () => {
+    const tweaks = loadRealTweaks();
+    const territory: TerritoryRecord = { base: { q: 0, r: 0 }, owned: [] };
+    const mountain = findTerrain(seed, "mountain", { q: 20, r: 20 });
+    const forest = findTerrain(seed, "forest", { q: 20, r: 20 });
+
+    const onMountain = autoClaimTowerRange(tweaks, [makeTower({ coord: mountain })], territory, gridSize, new Set(), seed);
+    const onForest = autoClaimTowerRange(tweaks, [makeTower({ coord: forest })], territory, gridSize, new Set(), seed);
+
+    expect(onMountain.owned.length).toBeGreaterThan(onForest.owned.length);
   });
 
   it("excludes tiles a horde currently occupies", () => {
@@ -135,7 +149,7 @@ describe("autoClaimTowerRange", () => {
     const territory: TerritoryRecord = { base: { q: 0, r: 0 }, owned: [] };
     const hordeCoord = tower.coord; // horde sitting right on the tower's own tile
 
-    const result = autoClaimTowerRange(tweaks, [tower], territory, gridSize, new Set([axialKey(hordeCoord)]));
+    const result = autoClaimTowerRange(tweaks, [tower], territory, gridSize, new Set([axialKey(hordeCoord)]), seed);
 
     expect(result.owned.map(axialKey)).not.toContain(axialKey(hordeCoord));
   });
@@ -145,13 +159,65 @@ describe("autoClaimTowerRange", () => {
     const tower = makeTower({ damaged: true });
     const territory: TerritoryRecord = { base: { q: 0, r: 0 }, owned: [] };
 
-    const result = autoClaimTowerRange(tweaks, [tower], territory, gridSize, new Set());
+    const result = autoClaimTowerRange(tweaks, [tower], territory, gridSize, new Set(), seed);
     expect(result).toBe(territory);
   });
 
   it("returns the same territory reference when there's nothing new to claim (no-op)", () => {
     const tweaks = loadRealTweaks();
     const territory: TerritoryRecord = { base: { q: 0, r: 0 }, owned: [] };
-    expect(autoClaimTowerRange(tweaks, [], territory, gridSize, new Set())).toBe(territory);
+    expect(autoClaimTowerRange(tweaks, [], territory, gridSize, new Set(), seed)).toBe(territory);
+  });
+});
+
+describe("isWithinActiveTowerClaim", () => {
+  const tweaks = loadRealTweaks();
+  const gridSize = 128;
+  const seed = 3;
+  const grassland = findTerrain(seed, "grassland", { q: 20, r: 20 });
+
+  function makeTower(overrides: Partial<Tower> = {}): Tower {
+    return {
+      coord: grassland,
+      level: 1,
+      totalInvested: {},
+      upgrade: null,
+      buildCost: {},
+      damaged: false,
+      ...overrides,
+    };
+  }
+
+  it("is true for a coord inside a healthy tower's range", () => {
+    const tower = makeTower({ level: 3 });
+    const inRange = axialSpiral(tower.coord, towerRange(tweaks, tower.level, terrainAt(seed, tower.coord)))[1]!;
+    expect(isWithinActiveTowerClaim(tweaks, [tower], inRange, gridSize, seed)).toBe(true);
+  });
+
+  it("is false when only a damaged tower could cover the coord", () => {
+    const tower = makeTower({ damaged: true });
+    expect(isWithinActiveTowerClaim(tweaks, [tower], tower.coord, gridSize, seed)).toBe(false);
+  });
+});
+
+describe("canRepairHordeDamagedTile", () => {
+  const tweaks = loadRealTweaks();
+  const gridSize = 128;
+  const seed = 3;
+  const grassland = findTerrain(seed, "grassland", { q: 20, r: 20 });
+  const tower: Tower = {
+    coord: grassland,
+    level: 3,
+    totalInvested: {},
+    upgrade: null,
+    buildCost: {},
+    damaged: false,
+  };
+
+  it("is true for owned tiles and for unowned tiles inside an active tower viewshed", () => {
+    const inRange = axialSpiral(tower.coord, towerRange(tweaks, tower.level, terrainAt(seed, tower.coord)))[1]!;
+    const territory: TerritoryRecord = { base: { q: 0, r: 0 }, owned: [] };
+    expect(canRepairHordeDamagedTile(tweaks, [tower], territory, inRange, gridSize, seed)).toBe(true);
+    expect(canRepairHordeDamagedTile(tweaks, [tower], { ...territory, owned: [inRange] }, inRange, gridSize, seed)).toBe(true);
   });
 });

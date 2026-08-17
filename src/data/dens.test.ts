@@ -5,10 +5,11 @@ import { describe, expect, it } from "vitest";
 import { axialDistance, mapCenter } from "../engine/hexCoords";
 import { terrainAt } from "../engine/terrain";
 import { tweaksSchema } from "./tweaksSchema";
-import { createDens, resolveDen } from "./dens";
+import { createDens, resolveDen, rollDensCount } from "./dens";
+import { tweaksForMapSize } from "./mapSize";
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -24,10 +25,25 @@ describe("createDens", () => {
     expect(second).toEqual(first);
   });
 
-  it("places the configured count of dens", () => {
+  it("places base count ±1 dens (deterministic per seed)", () => {
     const tweaks = loadRealTweaks();
     const dens = createDens(seed, gridSize, base, tweaks);
-    expect(dens.length).toBe(tweaks.dens.count);
+    const expected = rollDensCount(seed, tweaks.dens.count);
+    expect(dens.length).toBe(expected);
+    expect(dens.length).toBeGreaterThanOrEqual(tweaks.dens.count - 1);
+    expect(dens.length).toBeLessThanOrEqual(tweaks.dens.count + 1);
+    expect(createDens(seed, gridSize, base, tweaks).length).toBe(dens.length);
+  });
+
+  it("varies den count across seeds within ±1 of the map-size base", () => {
+    const tweaks = tweaksForMapSize(loadRealTweaks(), 32);
+    const counts = new Set<number>();
+    for (let s = 0; s < 40; s++) {
+      counts.add(rollDensCount(s, tweaks.dens.count));
+    }
+    expect(counts.has(5) || counts.has(6) || counts.has(7)).toBe(true);
+    expect([...counts].every((c) => c >= 5 && c <= 7)).toBe(true);
+    expect(counts.size).toBeGreaterThan(1);
   });
 
   it("never places a den on water", () => {
@@ -72,6 +88,17 @@ describe("createDens", () => {
     const dens = createDens(seed, gridSize, base, tweaks);
     for (const den of dens) {
       expect(den.siege).toBeNull();
+    }
+  });
+
+  it("keeps dens separated from each other (scaled min gap)", () => {
+    const tweaks = loadRealTweaks();
+    const dens = createDens(seed, gridSize, base, tweaks);
+    // REFERENCE_DEN_MIN_SEPARATION=6 at 128
+    for (let i = 0; i < dens.length; i++) {
+      for (let j = i + 1; j < dens.length; j++) {
+        expect(axialDistance(dens[i].coord, dens[j].coord)).toBeGreaterThanOrEqual(6);
+      }
     }
   });
 });

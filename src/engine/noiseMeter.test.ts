@@ -13,14 +13,13 @@ import {
   wallNoiseDampening,
 } from "./noiseMeter";
 import type { ExtractionTile } from "../data/extractionTiles";
-import type { PathTile } from "../data/pathTiles";
 import type { Tower } from "../data/towers";
 import type { Wall } from "../data/walls";
 
 const BASE_LEVEL = 1;
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -38,17 +37,6 @@ function extractionTile(overrides: Partial<ExtractionTile> = {}): ExtractionTile
   };
 }
 
-function pathTile(overrides: Partial<PathTile> = {}): PathTile {
-  return {
-    coord: { q: 0, r: 0 },
-    tier: "goat_track",
-    totalInvested: {},
-    upgrade: null,
-    buildCost: {},
-    damaged: false,
-    ...overrides,
-  };
-}
 
 function tower(overrides: Partial<Tower> = {}): Tower {
   return { coord: { q: 0, r: 0 }, level: 1, totalInvested: {}, upgrade: null, buildCost: {}, damaged: false, ...overrides };
@@ -78,44 +66,51 @@ describe("noiseCap", () => {
 describe("noiseFloor", () => {
   it("is the ambient minimum with no structures, never 0", () => {
     const tweaks = loadRealTweaks();
-    expect(noiseFloor(tweaks, [], [], [], [], BASE_LEVEL)).toBe(tweaks.noise.noise_floor_minimum);
+    expect(noiseFloor(tweaks, [], [], [], BASE_LEVEL)).toBe(tweaks.noise.noise_floor_minimum);
   });
 
   it("sums per-tile contributions, scaled by tier for extraction tiles", () => {
     const tweaks = loadRealTweaks();
     const food = extractionTile({ coord: { q: 0, r: 0 }, resource: "food", tier: "small" });
     const largeWood = extractionTile({ coord: { q: 1, r: 0 }, resource: "wood", tier: "large" });
-    const goatTrack = pathTile({ coord: { q: 2, r: 0 }, tier: "goat_track" });
 
-    const floor = noiseFloor(tweaks, [food, largeWood], [goatTrack], [], [], BASE_LEVEL);
+    const floor = noiseFloor(tweaks, [food, largeWood], [], [], BASE_LEVEL);
 
     const expected =
       tweaks.noise.passive_gathering_noise_floor.food +
-      tweaks.noise.passive_gathering_noise_floor.wood * tweaks.noise.extraction_tier_noise_multiplier ** 2 +
-      tweaks.noise.path_noise_floor.goat_track;
+      tweaks.noise.passive_gathering_noise_floor.wood * tweaks.noise.extraction_tier_noise_multiplier ** 2;
     expect(floor).toBeCloseTo(expected);
+  });
+
+  it("ignores extraction tiles still under construction", () => {
+    const tweaks = loadRealTweaks();
+    const underConstructionFood = extractionTile({ coord: { q: 0, r: 0 }, resource: "food", tier: "small", buildStartedAt: 0 });
+
+    expect(noiseFloor(tweaks, [underConstructionFood], [], [], BASE_LEVEL)).toBe(
+      tweaks.noise.noise_floor_minimum,
+    );
   });
 
   it("clamps at the noise cap", () => {
     const tweaks = loadRealTweaks();
     const tiles: ExtractionTile[] = Array.from({ length: 50 }, (_, i) =>
-      extractionTile({ coord: { q: i, r: 0 }, resource: "power", tier: "large" }),
+      extractionTile({ coord: { q: i, r: 0 }, resource: "steel", tier: "large" }),
     );
-    expect(noiseFloor(tweaks, tiles, [], [], [], BASE_LEVEL)).toBe(noiseCap(tweaks, BASE_LEVEL));
+    expect(noiseFloor(tweaks, tiles, [], [], BASE_LEVEL)).toBe(noiseCap(tweaks, BASE_LEVEL));
   });
 
   it("rises as base level rises, since the cap does", () => {
     const tweaks = loadRealTweaks();
     const tiles: ExtractionTile[] = Array.from({ length: 50 }, (_, i) =>
-      extractionTile({ coord: { q: i, r: 0 }, resource: "power", tier: "large" }),
+      extractionTile({ coord: { q: i, r: 0 }, resource: "steel", tier: "large" }),
     );
-    expect(noiseFloor(tweaks, tiles, [], [], [], 5)).toBe(noiseCap(tweaks, 5));
-    expect(noiseFloor(tweaks, tiles, [], [], [], 5)).toBeGreaterThan(noiseFloor(tweaks, tiles, [], [], [], BASE_LEVEL));
+    expect(noiseFloor(tweaks, tiles, [], [], 5)).toBe(noiseCap(tweaks, 5));
+    expect(noiseFloor(tweaks, tiles, [], [], 5)).toBeGreaterThan(noiseFloor(tweaks, tiles, [], [], BASE_LEVEL));
   });
 });
 
 describe("towerFloorContribution / wallFloorContribution", () => {
-  it("scales linearly with tower level, and is a sliver next to an active extraction/path tile", () => {
+  it("scales linearly with tower level, and is a sliver next to an active extraction tile", () => {
     const tweaks = loadRealTweaks();
     expect(towerFloorContribution(tweaks, tower({ level: 1 }))).toBeCloseTo(
       tweaks.noise.passive_watch_noise_floor.tower_per_level,
@@ -132,7 +127,7 @@ describe("towerFloorContribution / wallFloorContribution", () => {
     expect(towerFloorContribution(tweaks, tower({ level: 4, damaged: true }))).toBe(0);
   });
 
-  it("scales with wall tier, and is a sliver next to an active extraction/path tile", () => {
+  it("scales with wall tier, and is a sliver next to an active extraction tile", () => {
     const tweaks = loadRealTweaks();
     expect(wallFloorContribution(tweaks, wall({ tier: "wood" }))).toBeCloseTo(
       tweaks.noise.passive_watch_noise_floor.wall_per_tier_level * 1,
@@ -163,13 +158,13 @@ describe("wallNoiseDampening", () => {
 });
 
 describe("noiseFloor with towers/walls", () => {
-  it("adds tower and wall contributions on top of extraction/path, net of wall noise dampening", () => {
+  it("adds tower and wall contributions on top of extraction, net of wall noise dampening", () => {
     const tweaks = loadRealTweaks();
     const food = extractionTile({ resource: "food", tier: "small" });
     const t = tower({ level: 2 });
     const w = wall({ tier: "rock" });
 
-    const floor = noiseFloor(tweaks, [food], [], [t], [w], BASE_LEVEL);
+    const floor = noiseFloor(tweaks, [food], [t], [w], BASE_LEVEL);
     const expected = Math.max(
       tweaks.noise.noise_floor_minimum,
       tweaks.noise.passive_gathering_noise_floor.food +
@@ -184,17 +179,16 @@ describe("noiseFloor with towers/walls", () => {
     const tweaks = loadRealTweaks();
     const damagedTower = tower({ level: 4, damaged: true });
     const damagedWall = wall({ tier: "steel", damaged: true });
-    expect(noiseFloor(tweaks, [], [], [damagedTower], [damagedWall], BASE_LEVEL)).toBe(tweaks.noise.noise_floor_minimum);
+    expect(noiseFloor(tweaks, [], [damagedTower], [damagedWall], BASE_LEVEL)).toBe(tweaks.noise.noise_floor_minimum);
   });
 
   it("more walls read as a quieter base than fewer, holding everything else constant", () => {
     const tweaks = loadRealTweaks();
-    const largePower = extractionTile({ resource: "power", tier: "large", coord: { q: 0, r: 0 } });
-    const floorWithoutWalls = noiseFloor(tweaks, [largePower], [], [], [], BASE_LEVEL);
+    const largeSteel = extractionTile({ resource: "steel", tier: "large", coord: { q: 0, r: 0 } });
+    const floorWithoutWalls = noiseFloor(tweaks, [largeSteel], [], [], BASE_LEVEL);
     const floorWithWalls = noiseFloor(
       tweaks,
-      [largePower],
-      [],
+      [largeSteel],
       [],
       [wall({ tier: "steel", coord: { q: 1, r: 0 } }), wall({ tier: "steel", coord: { q: 2, r: 0 } })],
       BASE_LEVEL,
@@ -207,13 +201,12 @@ describe("accrueNoise", () => {
   it("rolls a spike back down toward the floor over time", () => {
     const tweaks = loadRealTweaks();
     const food = extractionTile({ resource: "food", tier: "small" });
-    const floor = noiseFloor(tweaks, [food], [], [], [], BASE_LEVEL);
+    const floor = noiseFloor(tweaks, [food], [], [], BASE_LEVEL);
 
     const spiked = floor + 50;
     const halfLifeLater = accrueNoise(
       tweaks,
       [food],
-      [],
       [],
       [],
       spiked,
@@ -228,12 +221,11 @@ describe("accrueNoise", () => {
   it("settles exactly at the floor given enough time", () => {
     const tweaks = loadRealTweaks();
     const food = extractionTile({ resource: "food", tier: "small" });
-    const floor = noiseFloor(tweaks, [food], [], [], [], BASE_LEVEL);
+    const floor = noiseFloor(tweaks, [food], [], [], BASE_LEVEL);
 
     const result = accrueNoise(
       tweaks,
       [food],
-      [],
       [],
       [],
       90,
@@ -245,13 +237,12 @@ describe("accrueNoise", () => {
 
   it("rises toward a higher floor if noise starts below it", () => {
     const tweaks = loadRealTweaks();
-    const largePower = extractionTile({ resource: "power", tier: "large" });
-    const floor = noiseFloor(tweaks, [largePower], [], [], [], BASE_LEVEL);
+    const largeSteel = extractionTile({ resource: "steel", tier: "large" });
+    const floor = noiseFloor(tweaks, [largeSteel], [], [], BASE_LEVEL);
 
     const result = accrueNoise(
       tweaks,
-      [largePower],
-      [],
+      [largeSteel],
       [],
       [],
       0,
@@ -266,14 +257,10 @@ describe("accrueNoise", () => {
     const food = extractionTile({ coord: { q: 0, r: 0 }, resource: "food", tier: "small" });
     const wood = extractionTile({ coord: { q: 1, r: 0 }, resource: "wood", tier: "small" });
     const stone = extractionTile({ coord: { q: 2, r: 0 }, resource: "stone", tier: "small" });
-    const tracks: PathTile[] = [
-      pathTile({ coord: { q: 3, r: 0 }, tier: "goat_track" }),
-      pathTile({ coord: { q: 4, r: 0 }, tier: "goat_track" }),
-    ];
 
     // A long time idle should settle at the floor, not keep climbing toward the cap.
-    const result = accrueNoise(tweaks, [food, wood, stone], tracks, [], [], 70, 3600, BASE_LEVEL);
-    const floor = noiseFloor(tweaks, [food, wood, stone], tracks, [], [], BASE_LEVEL);
+    const result = accrueNoise(tweaks, [food, wood, stone], [], [], 70, 3600, BASE_LEVEL);
+    const floor = noiseFloor(tweaks, [food, wood, stone], [], [], BASE_LEVEL);
 
     expect(result).toBeCloseTo(floor, 5);
     expect(result).toBeLessThan(noiseCap(tweaks, BASE_LEVEL));
@@ -281,7 +268,7 @@ describe("accrueNoise", () => {
 
   it("does nothing for zero or negative elapsed time", () => {
     const tweaks = loadRealTweaks();
-    expect(accrueNoise(tweaks, [], [], [], [], 42, 0, BASE_LEVEL)).toBe(42);
+    expect(accrueNoise(tweaks, [], [], [], 42, 0, BASE_LEVEL)).toBe(42);
   });
 });
 
@@ -310,13 +297,13 @@ describe("addActionNoise", () => {
 
   it("defaults the multiplier to 1, matching the no-multiplier call", () => {
     const tweaks = loadRealTweaks();
-    expect(addActionNoise(tweaks, 0, "train_scout", BASE_LEVEL, 1)).toBe(addActionNoise(tweaks, 0, "train_scout", BASE_LEVEL));
+    expect(addActionNoise(tweaks, 0, "train_militia", BASE_LEVEL, 1)).toBe(addActionNoise(tweaks, 0, "train_militia", BASE_LEVEL));
   });
 
   it("scales the spike by the multiplier — rush training scaling by quantity, unlike every other flat one-time action", () => {
     const tweaks = loadRealTweaks();
-    expect(addActionNoise(tweaks, 0, "rush_train_scout", BASE_LEVEL, 5)).toBeCloseTo(
-      tweaks.noise.one_time_action_noise.rush_train_scout * 5,
+    expect(addActionNoise(tweaks, 0, "rush_train_militia", BASE_LEVEL, 5)).toBeCloseTo(
+      tweaks.noise.one_time_action_noise.rush_train_militia * 5,
     );
   });
 

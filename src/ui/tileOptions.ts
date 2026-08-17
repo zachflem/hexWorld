@@ -1,5 +1,4 @@
 import type { ExtractionTier } from "../data/extractionTiles";
-import type { PathTier } from "../data/pathTiles";
 import type { WallTier } from "../data/walls";
 import type { ResourceType } from "../data/resources";
 
@@ -23,22 +22,11 @@ export interface StorageUpgradeOption {
   capacity: number;
   cost: Partial<Record<ResourceType, number>>;
   affordable: boolean;
+  durationMinutes: number;
   /** Non-null while this resource's storage upgrade is in progress — remainingMs counts down to the level bump. */
   inProgress: { targetLevel: number; remainingMs: number } | null;
 }
 
-export interface PathBuildOption {
-  cost: Partial<Record<ResourceType, number>>;
-  affordable: boolean;
-  durationMinutes: number;
-}
-
-export interface PathUpgradeOption {
-  targetTier: PathTier;
-  cost: Partial<Record<ResourceType, number>>;
-  affordable: boolean;
-  durationMinutes: number;
-}
 
 export interface SimpleCostOption {
   cost: Partial<Record<ResourceType, number>>;
@@ -58,15 +46,22 @@ export interface SkiffBuildOption {
   durationMinutes: number;
 }
 
-/** Costs regular scouts from the stockpile, on top of a resource cost — unlike every other SimpleCostOption. */
+/** Same shape as SkiffBuildOption — flat resource cost at a barracks. */
 export interface WanderingScoutOption {
-  scoutCost: number;
   cost: Partial<Record<ResourceType, number>>;
   affordable: boolean;
   durationMinutes: number;
 }
 
 export interface TowerUpgradeOption {
+  targetLevel: number;
+  cost: Partial<Record<ResourceType, number>>;
+  affordable: boolean;
+  durationMinutes: number;
+}
+
+/** Same shape as TowerUpgradeOption — power station level upgrade. */
+export interface PowerStationUpgradeOption {
   targetLevel: number;
   cost: Partial<Record<ResourceType, number>>;
   affordable: boolean;
@@ -132,6 +127,10 @@ export interface ExpeditionOption {
   provisionsCost: Partial<Record<ResourceType, number>>;
   affordable: boolean;
   etaMs: number;
+  /** Territory expedition preview — party attack power at current stepper counts. */
+  attackPower?: number;
+  /** Strongest path horde that outguns the party, if any. */
+  wipeRisk?: { hordeSize: number; tile: { q: number; r: number } } | null;
 }
 
 /** Same shape as ExpeditionOption (a den assault is dispatched/resolved exactly like an expedition) plus the den's own defense value, shown so the assault isn't blind. */

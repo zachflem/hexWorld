@@ -10,7 +10,7 @@ import type { Wall } from "../data/walls";
 import { denAssaultSurvivors, denDefense, holdDefenseAt, lastStandWaveSize, resolveDenAssault, resolveHoldPeriod } from "./dens";
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -99,25 +99,25 @@ describe("holdDefenseAt", () => {
 
   it("is 0 with nothing defending", () => {
     const tweaks = loadRealTweaks();
-    expect(holdDefenseAt(tweaks, coord, [], [], [])).toBe(0);
+    expect(holdDefenseAt(tweaks, coord, [], [], [], 0)).toBe(0);
   });
 
   it("includes a garrison stationed directly on the den's own coord", () => {
     const tweaks = loadRealTweaks();
     const garrisons: GarrisonsRecord = [{ coord, militiaCount: 5, junkyardKnightCount: 0, crossBowSniperCount: 0 }];
-    expect(holdDefenseAt(tweaks, coord, [], [], garrisons)).toBeCloseTo(5 * tweaks.units.militia.defense_per_unit);
+    expect(holdDefenseAt(tweaks, coord, [], [], garrisons, 0)).toBeCloseTo(5 * tweaks.units.militia.defense_per_unit);
   });
 
   it("includes any non-damaged tower whose range reaches the den", () => {
     const tweaks = loadRealTweaks();
     const towers: Tower[] = [makeTower({ level: 2 })];
-    expect(holdDefenseAt(tweaks, coord, towers, [], [])).toBeGreaterThan(0);
+    expect(holdDefenseAt(tweaks, coord, towers, [], [], 0)).toBeGreaterThan(0);
   });
 
   it("excludes a damaged tower", () => {
     const tweaks = loadRealTweaks();
     const towers: Tower[] = [makeTower({ level: 2, damaged: true })];
-    expect(holdDefenseAt(tweaks, coord, towers, [], [])).toBe(0);
+    expect(holdDefenseAt(tweaks, coord, towers, [], [], 0)).toBe(0);
   });
 
   it("includes a non-damaged wall built on one of the den's neighbors, not on the den's own coord", () => {
@@ -125,14 +125,14 @@ describe("holdDefenseAt", () => {
     const neighbor = { q: 1, r: 0 };
     const wallOnNeighbor: Wall[] = [makeWall({ coord: neighbor, durability: 42 })];
     const wallOnCore: Wall[] = [makeWall({ coord, durability: 42 })];
-    expect(holdDefenseAt(tweaks, coord, [], wallOnNeighbor, [])).toBe(42);
-    expect(holdDefenseAt(tweaks, coord, [], wallOnCore, [])).toBe(0);
+    expect(holdDefenseAt(tweaks, coord, [], wallOnNeighbor, [], 0)).toBe(42);
+    expect(holdDefenseAt(tweaks, coord, [], wallOnCore, [], 0)).toBe(0);
   });
 
   it("excludes a damaged wall", () => {
     const tweaks = loadRealTweaks();
     const walls: Wall[] = [makeWall({ coord: { q: 1, r: 0 }, durability: 42, damaged: true })];
-    expect(holdDefenseAt(tweaks, coord, [], walls, [])).toBe(0);
+    expect(holdDefenseAt(tweaks, coord, [], walls, [], 0)).toBe(0);
   });
 
   it("sums garrison + tower + wall contributions", () => {
@@ -142,9 +142,9 @@ describe("holdDefenseAt", () => {
     const walls: Wall[] = [makeWall({ coord: { q: 1, r: 0 }, durability: 10 })];
     const expected =
       3 * tweaks.units.militia.defense_per_unit +
-      holdDefenseAt(tweaks, coord, towers, [], []) +
+      holdDefenseAt(tweaks, coord, towers, [], [], 0) +
       10;
-    expect(holdDefenseAt(tweaks, coord, towers, walls, garrisons)).toBeCloseTo(expected);
+    expect(holdDefenseAt(tweaks, coord, towers, walls, garrisons, 0)).toBeCloseTo(expected);
   });
 });
 

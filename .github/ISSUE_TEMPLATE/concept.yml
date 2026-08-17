@@ -1,0 +1,28 @@
+name: Concept / idea
+description: Raw brainstorm — not scheduled
+title: "[CONCEPT] "
+labels: ["concept"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Free-form idea; options unset
+    validations:
+      required: true
+  - type: textarea
+    id: refs
+    attributes:
+      label: Refs
+      value: |
+        - `context/DESIGN.md`
+  - type: textarea
+    id: status_notes
+    attributes:
+      label: Status notes

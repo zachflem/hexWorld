@@ -25,7 +25,8 @@
 {
   "meta": {
     "version": "0.1.0",
-    "profile_name": "default",
+    "slug": "default",
+    "profile_name": "Standard",
     "notes": "Baseline tuning for a single ~30-90 minute skirmish session. Untested — first pass only."
   },
 
@@ -33,7 +34,9 @@
   // GAME / WORLD
   // --------------------------------------------------------------------------
   "game": {
-    "grid_size": 128,                 // 128x128 hex grid
+    "grid_size": 32,                  // default / reference authoring width; player picks 32/64/96/128 in onboarding unless grid_size_locked. Dens/lab distances scale from REFERENCE_MAP_SIZE 128 in mapSize.ts.
+    // "grid_size_locked": true,       // scenario profiles: force grid_size, hide onboarding map-size picker
+    // "world_seed": 12345,            // scenario profiles: force this seed, lock onboarding seed field
     "tick_interval_seconds": 10,      // server/client tick — resources & horde movement evaluated every 10s
     "resource_accumulation_precision_seconds": 1 // internally accrues per-second, displayed/committed per tick
   },
@@ -42,10 +45,10 @@
   // RESOURCES
   // --------------------------------------------------------------------------
   "resources": {
-    "types": ["food", "wood", "stone", "steel", "power"],
+    "types": ["food", "wood", "stone", "steel"],
 
     // Rarity tier, low -> high. Informs yield curve and noise curve.
-    "rarity_order": ["food", "wood", "stone", "steel", "power"],
+    "rarity_order": ["food", "wood", "stone", "steel"],
 
     "starting_amounts": {
       "_status": "First pass, untested — locked for now, revisit once playable.",
@@ -53,13 +56,12 @@
       "food": 100,
       "wood": 500,
       "stone": 400,
-      "steel": 0,
-      "power": 0
+      "steel": 0
     }
   },
 
   // --------------------------------------------------------------------------
-  // EXTRACTION TILES (food / wood / stone / steel / power gathering)
+  // EXTRACTION TILES (food / wood / stone / steel gathering)
   // Each resource has 3 tiers: small -> mid -> large.
   // --------------------------------------------------------------------------
   "extraction_tiles": {
@@ -69,15 +71,15 @@
       "tier_multiplier": 1.5
     },
 
-    "tier_upgrade_time_minutes_base": 4,
-    "_tier_upgrade_time_note": "tierUpgradeDurationMs(targetTier) = tier_upgrade_time_minutes_base * target_level (small=1, mid=2, large=3) — so mid=8min, large=12min. Upgrade no longer applies instantly; cost is still deducted upfront, the tier change lands when the timer completes (engine/tick.ts / App.tsx runTick). First pass, untested.",
+    "tier_upgrade_time_minutes_base": 3,
+    "_tier_upgrade_time_note": "tierUpgradeDurationMs(targetTier) = tier_upgrade_time_minutes_base * target_level (small=1, mid=2, large=3) — so mid=6min, large=9min. Upgrade no longer applies instantly; cost is still deducted upfront, the tier change lands when the timer completes (engine/tick.ts / App.tsx runTick). CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12, playtesting feedback: early game pacing too slow) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
 
-    "build_time_minutes": 2,
-    "_build_time_note": "extractionTileBuildDurationMs (engine/tiers.ts) — flat, same for every resource type. Construction no longer completes instantly on payment: the tile sits on its slot as non-functional (engine/formulas.ts:isStructureActive) until this timer elapses. Shorter than tier_upgrade_time_minutes_base since laying a fresh small-tier tile is simpler than upgrading an operating one. First pass, untested.",
+    "build_time_minutes": 1,
+    "_build_time_note": "extractionTileBuildDurationMs (engine/tiers.ts) — flat, same for every resource type. Construction no longer completes instantly on payment: the tile sits on its slot as non-functional (engine/formulas.ts:isStructureActive) until this timer elapses. Shorter than tier_upgrade_time_minutes_base since laying a fresh small-tier tile is simpler than upgrading an operating one. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 2, shaving 1 minute off like every other build/upgrade timer in this file.",
 
     "food": {
-      "small_yield_per_tick": 15,
-      // mid = 15 * 1.5 = 22.5 | large = 15 * 2.25 = 33.75
+      "small_yield_per_tick": 22,
+      // mid = 22 * 1.5 = 33 | large = 22 * 2.25 = 49.5
       "build_cost_base": { "wood": 150 },
       "build_cost_scaling": "FORMULA_A (per additional tile built)",
       "tier_upgrade_cost_base": { "wood": 150 }, // consumed at small->mid; mid->large adds stone (see tech_progression)
@@ -88,7 +90,7 @@
     },
 
     "wood": {
-      "small_yield_per_tick": 12,
+      "small_yield_per_tick": 18,
       "build_cost_base": { "wood": 150 }, // wood tiles pay their own build cost in wood
       "build_cost_scaling": "FORMULA_A",
       "tier_upgrade_cost_base": { "wood": 150 },
@@ -99,7 +101,7 @@
     },
 
     "stone": {
-      "small_yield_per_tick": 6,
+      "small_yield_per_tick": 9,
       "build_cost_base": { "stone": 195 }, // 150 * 1.3
       "build_cost_scaling": "FORMULA_A",
       "tier_upgrade_cost_base": { "stone": 195 },
@@ -110,9 +112,9 @@
     },
 
     "steel": {
-      "small_yield_per_tick": 3,
+      "small_yield_per_tick": 5,
       "build_cost_base": { "wood": 400, "stone": 300 },
-      "_build_cost_note": "Fixed from an earlier pass where this cost 254 steel — self-referential and literally unbuildable, since starting steel is (correctly) 0 and there's no other way to earn steel before a steel tile exists. Now costs wood+stone instead, matching the wood->stone->steel->power tech chain. Tier upgrades stay self-referential (steel:254) since by then the tile is already producing steel to reinvest. First pass, untested.",
+      "_build_cost_note": "Fixed from an earlier pass where this cost 254 steel — self-referential and literally unbuildable, since starting steel is (correctly) 0 and there's no other way to earn steel before a steel tile exists. Now costs wood+stone instead, matching the wood->stone->steel tech chain. Tier upgrades stay self-referential (steel:254) since by then the tile is already producing steel to reinvest. First pass, untested.",
       "build_cost_scaling": "FORMULA_A",
       "tier_upgrade_cost_base": { "steel": 254 },
       "tier_upgrade_cost_scaling": "FORMULA_B",
@@ -121,17 +123,6 @@
       "noise_upgrade": 10
     },
 
-    "power": {
-      "small_yield_per_tick": 3,
-      "build_cost_base": { "wood": 500, "stone": 400, "steel": 200 },
-      "_build_cost_note": "Fixed from an earlier pass where this cost 330 power — self-referential and unbuildable (starting power is 0). Now costs wood+stone+steel, requiring an established steel operation first. Tier upgrades stay self-referential (power:330). First pass, untested.",
-      "build_cost_scaling": "FORMULA_A",
-      "tier_upgrade_cost_base": { "power": 330 },
-      "tier_upgrade_cost_scaling": "FORMULA_B",
-      "noise_passive_per_min": 15,
-      "noise_build": 20,
-      "noise_upgrade": 10
-    },
 
     // Universal technology progression applied ON TOP of each resource's own
     // upgrade cost when moving small -> mid -> large. Mirrors tower/wall/path logic.
@@ -154,14 +145,42 @@
       "food": { "grassland": 1.5, "forest": 1.0, "mountain": 0.5, "shore": 1.0, "water": 1.0 },
       "wood": { "forest": 1.5, "grassland": 1.0, "mountain": 0.5, "shore": 1.0, "water": 1.0 },
       "stone": { "mountain": 1.5, "forest": 1.0, "grassland": 0.5, "shore": 1.0, "water": 1.0 },
-      "steel": { "grassland": 1.0, "forest": 1.0, "mountain": 1.0, "shore": 1.0, "water": 1.0 },
-      "power": { "grassland": 1.0, "forest": 1.0, "mountain": 1.0, "shore": 1.0, "water": 1.0 }
+      "steel": { "grassland": 1.0, "forest": 1.0, "mountain": 1.0, "shore": 1.0, "water": 1.0 }
     }
   },
 
   // --------------------------------------------------------------------------
   // TERRAIN TRANSITION TILES
   // --------------------------------------------------------------------------
+
+  // --------------------------------------------------------------------------
+  // POWER STATIONS (Milestone 25 / #70) — capacity + AoE, not a stockpile resource
+  // First pass, untested.
+  // --------------------------------------------------------------------------
+  "power": {
+    "max_level": 4,
+    "capacity_base": 20,
+    "capacity_per_level": 15,
+    "aoe_base_tiles": 2,
+    "aoe_per_level": 1,
+    "cutoff_factor": 0.5,
+    "build_cost_base": { "wood": 400, "stone": 300, "steel": 150 },
+    "upgrade_cost_base": { "wood": 200, "stone": 200, "steel": 100 },
+    "build_time_minutes": 3,
+    "upgrade_time_minutes_base": 4,
+    "draw_base": {
+      "extraction": 2,
+      "tower": 3,
+      "wall": 1,
+      "barracks": 4,
+      "dock": 2,
+      "scrap_yard": 2
+    },
+    "noise_build": 8,
+    "noise_upgrade": 6,
+    "passive_noise_floor_per_level": 4
+  },
+
   "transition_tiles": {
     "yield_multiplier": 0.5, // building either terrain's structure on a transition tile halves output
     "scout_flavor_text": "This place doesn't quite feel right. Not one thing, not the other. Something in between."
@@ -176,25 +195,39 @@
   // --------------------------------------------------------------------------
   "docks": {
     "build_cost_base": { "wood": 200 },
-    "build_cost_scaling": "LINEAR (per additional dock built) — cost_n = base * (1 + 0.1*(n-1)), NOT Formula A's compounding. CORRECTION (2026-07-21, playtesting feedback: \"60k wood for one dock\" — Formula A's full compounding pushed a 13th dock to ~62,000 wood; switched to the same linear scaling walls/goat tracks already use). See TWEAKS.md.",
-    "build_time_minutes": 3,
-    "_build_time_note": "dockBuildDurationMs (engine/docks.ts) — CORRECTION (2026-07-21, playtesting feedback): docks previously had no construction timer at all, unlike every other structure. A dock yields nothing until this timer elapses.",
+    "build_cost_scaling": "LINEAR (per additional dock built) — cost_n = base * (1 + 0.1*(n-1)), NOT Formula A's compounding. CORRECTION (2026-07-21, playtesting feedback: \"60k wood for one dock\" — Formula A's full compounding pushed a 13th dock to ~62,000 wood; switched to the same linear scaling walls already use). See TWEAKS.md.",
+    "build_time_minutes": 2,
+    "_build_time_note": "dockBuildDurationMs (engine/docks.ts) — CORRECTION (2026-07-21, playtesting feedback): docks previously had no construction timer at all, unlike every other structure. A dock yields nothing until this timer elapses. CORRECTION 2 (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 3, shaving 1 minute off like every other build/upgrade timer in this file.",
     "yield_multiplier_vs_food_tile": 0.7,
     "_yield_note": "dockYieldPerSecond (engine/docks.ts) = extraction_tiles.food.small_yield_per_tick/game.tick_interval_seconds * this multiplier * (fishing_boat.yield_bonus_multiplier if built). Deliberately NOT also multiplied by transition_tiles.yield_multiplier — a dock sits on transition water by definition, so 0.7 already IS its full intended rate, not a rate to be halved again.",
+
+    "level_upgrades": {
+      "2": {
+        "cost": { "wood": 100, "food": 80 },
+        "build_time_minutes": 2,
+        "_note": "M26 L2 — unlock implied courier (automate collection)."
+      },
+      "3": {
+        "cost": { "wood": 150, "steel": 20 },
+        "build_time_minutes": 3,
+        "_note": "M26 L3 — increase production (replaces standalone fishing-boat build; same cost/timer as legacy fishing_boat)."
+      }
+    },
 
     "fishing_boat": {
       "cost": { "wood": 150, "steel": 20 },
       "yield_bonus_multiplier": 1.5,
-      "build_time_minutes": 4
+      "build_time_minutes": 3,
+      "_note": "yield_bonus_multiplier applies at dock level ≥ 3. cost/build_time kept for parity with level_upgrades.3 / legacy saves."
     },
 
     "scout_skiff": {
       "cost": { "wood": 240, "food": 80 },
       "max_per_dock": 1,
       "seconds_per_step": 10,
-      "build_time_minutes": 10
+      "build_time_minutes": 9
     },
-    "_scout_skiff_note": "CORRECTION (2026-07-20 balance pass, playtesting feedback: scout skiffs were reasonably overpowered for their cost — unlimited free map reveal from a single cheap, instant build). Cost doubled from wood:120/food:40, and it now takes build_time_minutes to construct (previously instant, unlike the fishing boat) before it launches and starts wandering its connected body of water at one tile per seconds_per_step, revealing every tile it visits (same mechanism as manual land scouting) — engine/scoutSkiffs.ts."
+    "_scout_skiff_note": "CORRECTION (2026-07-20 balance pass, playtesting feedback: scout skiffs were reasonably overpowered for their cost — unlimited free map reveal from a single cheap, instant build). Cost doubled from wood:120/food:40, and it now takes build_time_minutes to construct (previously instant, unlike the fishing boat) before it launches and starts wandering its connected body of water at one tile per seconds_per_step, revealing every tile it visits (same mechanism as the land Wandering Scout) — engine/scoutSkiffs.ts."
   },
 
   // --------------------------------------------------------------------------
@@ -203,11 +236,19 @@
   "towers": {
     "build_cost_base": { "wood": 300, "stone": 150 },
     "build_cost_scaling": "FORMULA_A (per additional tower built)",
-    "build_time_minutes": 3,
-    "_build_time_note": "towerBuildDurationMs (engine/towers.ts) — flat, always L1. Construction no longer completes instantly on payment: the tower sits on its tile as non-functional (engine/formulas.ts:isStructureActive — no defense, no viewshed claim, no noise contribution) until this timer elapses. First pass, untested.",
+    "build_time_minutes": 2,
+    "_build_time_note": "towerBuildDurationMs (engine/towers.ts) — flat, always L1. Construction no longer completes instantly on payment: the tower sits on its tile as non-functional (engine/formulas.ts:isStructureActive — no defense, no viewshed claim, no noise contribution) until this timer elapses. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 3, shaving 1 minute off like every other build/upgrade timer in this file.",
 
     "base_range_tiles": 2,           // L1 range
     "range_per_level": 1,            // +1 tile per level
+    "range_terrain_offset": {
+      "grassland": 0,
+      "shore": 0,
+      "forest": -1,
+      "mountain": 2,
+      "water": 0
+    },
+    "_range_terrain_offset_note": "Added 2026-07-25 (#79) — flat tiles added to towerRange based on the terrain of the tower's own tile (live terrainAt, same as build location since towers don't move). Mountain vantage +2, forest canopy −1, grassland/shore neutral. Water is not buildable for towers; kept at 0 for schema completeness. Applied in engine/towers.ts:towerRange and clamped to ≥1 so a forest L1 can't go to 0. Same radius feeds combat DPS, slow, range overlay, and viewshed auto-claim.",
 
     "base_damage": 5,                // L1 damage value
     "damage_scaling": "cumulative: dmg(L) = dmg(L-1) * (1.0 + 0.1*L)",
@@ -218,10 +259,10 @@
     "upgrade_tech_progression": {
       "L1_to_L2": ["wood", "stone"],
       "L2_to_L3": ["wood", "stone", "steel"],
-      "L3_to_L4": ["wood", "stone", "steel", "power"]
+      "L3_to_L4": ["wood", "stone", "steel"]
     },
-    "upgrade_time_minutes_base": 4,
-    "_upgrade_time_note": "towerUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=8min, L3=12min, L4=16min. First pass, untested.",
+    "upgrade_time_minutes_base": 3,
+    "_upgrade_time_note": "towerUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=6min, L3=9min, L4=12min. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
 
     "garrison_damage_bonus_per_militia": 2,
     "_garrison_damage_bonus_note": "Militia garrisoned on a tower's own tile add their attack power straight onto that tower's damage (engine/hordes.ts:towerDamagePerSecond, engine/towers.ts:zombiesKilledPerTick) — additive, before the horde-size percentage scaling, not a separate attack. Mirrors units.militia.attack_per_unit (2) but kept as its own tunable in case tower-assist and solo-militia-attack ever need to diverge. First pass, untested."
@@ -235,8 +276,8 @@
 
     "build_cost_base": { "wood": 200 }, // wood wall entry cost
     "build_cost_scaling": "LINEAR (per additional wall built) — cost_n = base * (1 + 0.1*(n-1)), NOT Formula A's compounding; see TWEAKS.md",
-    "build_time_minutes": 2,
-    "_build_time_note": "wallBuildDurationMs (engine/walls.ts) — flat, always wood tier. Construction no longer completes instantly on payment: the wall sits on its tile as non-functional (engine/formulas.ts:isStructureActive) until this timer elapses. First pass, untested.",
+    "build_time_minutes": 1,
+    "_build_time_note": "wallBuildDurationMs (engine/walls.ts) — flat, always wood tier. Construction no longer completes instantly on payment: the wall sits on its tile as non-functional (engine/formulas.ts:isStructureActive) until this timer elapses. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 2, shaving 1 minute off like every other build/upgrade timer in this file.",
 
     "durability_hits_to_break": {
       "wood": 3,
@@ -263,7 +304,7 @@
     "_garrison_range_bonus_note": "New system (2026-07-20), playtesting feedback: a garrison stationed on a non-damaged wall's own tile fights from higher/further vantage. Adds this flat bonus to BOTH range concepts a garrison has: engine/garrisons.ts:isHordeReachableFromGarrison's normal distance<=1 becomes distance<=1+this (affects the melee-style resolveGarrisonAutoAttacks, which sums every unit type's attack power) AND units.cross_bow_sniper.range_tiles' continuous ranged DPS (engine/hordes.ts:sniperDamagePerSecond). Same flat +2 regardless of unit composition — a wall is a vantage point, not a weapon upgrade. First pass, untested.",
 
     "slot_cost": 0.1,
-    "_slot_cost_note": "New system (2026-07-20), playtesting feedback: walls were eating the shared build_slot_cap 1-for-1 same as every other structure, discouraging the kind of dense defensive lines the wall system is meant to enable. engine/formulas.ts:totalStructureCount now weights walls by this (10 walls = 1 slot) instead of counting them at full cost — infrastructure_paths.slot_cost gets the same treatment, see below. First pass, untested.",
+    "_slot_cost_note": "New system (2026-07-20), playtesting feedback: walls were eating the shared build_slot_cap 1-for-1 same as every other structure, discouraging the kind of dense defensive lines the wall system is meant to enable. engine/formulas.ts:totalStructureCount now weights walls by this (10 walls = 1 slot) instead of counting them at full cost. First pass, untested.",
 
     "tier_upgrade_cost_base": { "wood": 200 },
     "tier_upgrade_cost_scaling": "FORMULA_B",
@@ -271,8 +312,8 @@
       "wood_to_rock": ["wood", "stone"],
       "rock_to_steel": ["wood", "stone", "steel"]
     },
-    "tier_upgrade_time_minutes_base": 4,
-    "_tier_upgrade_time_note": "wallUpgradeDurationMs(targetTier) = tier_upgrade_time_minutes_base * target_level (wood=1, rock=2, steel=3) — rock=8min, steel=12min. First pass, untested.",
+    "tier_upgrade_time_minutes_base": 3,
+    "_tier_upgrade_time_note": "wallUpgradeDurationMs(targetTier) = tier_upgrade_time_minutes_base * target_level (wood=1, rock=2, steel=3) — rock=6min, steel=9min. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
 
     "repair": {
       "allowed_during_combat": false, // peacetime only
@@ -290,47 +331,40 @@
     "_status": "first pass, untested — new system, no prior design reference to reconcile against.",
     "build_cost_base": { "wood": 250, "stone": 150 },
     "build_cost_scaling": "FORMULA_A (per additional barracks built)",
-    "build_time_minutes": 3,
-    "_build_time_note": "barracksBuildDurationMs (engine/barracks.ts) — flat, always L1. Construction no longer completes instantly on payment: the barracks sits on its tile as non-functional (engine/formulas.ts:isStructureActive — no training capacity, no expedition origin) until this timer elapses. First pass, untested.",
+    "build_time_minutes": 2,
+    "_build_time_note": "barracksBuildDurationMs (engine/barracks.ts) — flat, always L1. Construction no longer completes instantly on payment: the barracks sits on its tile as non-functional (engine/formulas.ts:isStructureActive — no training capacity, no expedition origin) until this timer elapses. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 3, shaving 1 minute off like every other build/upgrade timer in this file.",
     "upgrade_cost_base": { "wood": 150, "stone": 75 },
     "upgrade_cost_scaling": "FORMULA_B",
     "upgrade_tech_progression": {
       "L1_to_L2": ["wood", "stone"],
       "L2_to_L3": ["wood", "stone", "steel"],
-      "L3_to_L4": ["wood", "stone", "steel", "power"]
+      "L3_to_L4": ["wood", "stone", "steel"]
     },
-    "upgrade_time_minutes_base": 4,
-    "_upgrade_time_note": "barracksUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=8min, L3=12min, L4=16min. First pass, untested.",
+    "upgrade_time_minutes_base": 3,
+    "_upgrade_time_note": "barracksUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=6min, L3=9min, L4=12min. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
     "militia_capacity_per_level": 10,
-    "scout_capacity_per_level": 3,
     "junkyard_knight_capacity_per_level": 6,
     "cross_bow_sniper_capacity_per_level": 6,
-    "_capacity_note": "Each barracks contributes capacity = per_level_value * its own level to a shared, player-wide pool; multiple barracks sum. A single L1 barracks supports 10 militia and 3 stockpiled scouts. Training SPEED scales the same way (2026-07-16) — barracksTrainingCapacity (engine/barracks.ts) sums each non-damaged barracks's own level, and scoutTrainDurationMs/militiaTrainDurationMs (engine/units.ts) divide the base per-unit time by that sum. A lone L4 barracks trains as fast as 4 L1s, not just 1 — higher-level barracks aren't just bigger, they're faster too. First pass, untested. junkyard_knight/cross_bow_sniper capacity is also per-barracks-level, but only barracks meeting units.<type>.min_barracks_level contribute anything at all — a barracks below that level has no wing built for the unit yet. CORRECTION (2026-07-19): militia/junkyard_knight/cross_bow_sniper capacities doubled from their original 5/3/3 — the new expeditions system (see the expeditions tweaks block) needs a party strong enough to beat the single hardest tile's defense along a whole multi-tile route in one go (no attrition divides the cost across tiles it fights through), so a much bigger standing army is needed to make a deep push viable at all. Scout capacity is untouched — scouts don't fight."
+    "_capacity_note": "Each barracks contributes capacity = per_level_value * its own level to a shared, player-wide pool; multiple barracks sum. A single L1 barracks supports 10 militia. Training SPEED scales the same way — trainingUnitDurationMs (engine/barracks.ts) divides the base per-unit time by that barracks's level. A lone L4 barracks trains as fast as 4 L1s. junkyard_knight/cross_bow_sniper capacity is also per-barracks-level, but only barracks meeting units.<type>.min_barracks_level contribute — a barracks below that level has no wing for the unit yet. CORRECTION (2026-07-19): militia/junkyard_knight/cross_bow_sniper capacities doubled from their original 5/3/3 — expeditions need a party strong enough to beat the hardest tile along a multi-tile route. Stockpile scouts removed (#76) — land exploration is Wandering Scout only."
   },
 
   // --------------------------------------------------------------------------
-  // UNITS (trained at a barracks — scouts are one-time use, militia/junkyard_knight/cross_bow_sniper stand and defend)
+  // UNITS (trained at a barracks — militia/junkyard_knight/cross_bow_sniper stand and defend; land exploration is Wandering Scout)
   // --------------------------------------------------------------------------
   "units": {
     "_status": "first pass, untested — new system.",
-    "scout": {
-      "train_cost": { "food": 30, "wood": 20 },
-      "train_time_seconds": 20,
-      "upkeep_food_per_min": 7,
-      "_note": "Flat cost, no Formula A scaling — replaces the old per-scout resource cost (previously scaled with the target tile's level) with a flat per-unit training cost. Costs food upkeep even while stockpiled, unspent. Training now trickles in one at a time via a queue (engine/units.ts:resolveTrainingQueue) — the whole batch's cost is paid upfront when the queue starts, and queued-but-undelivered units cost no upkeep. First pass, untested."
-    },
     "militia": {
       "train_cost": { "food": 15, "wood": 10 },
       "train_time_seconds": 30,
-      "upkeep_food_per_min": 3.5,
+      "upkeep_food_per_min": 0.875,
       "attack_per_unit": 2,
       "defense_per_unit": 2,
-      "_note": "Standing army — not consumed on use. attack_per_unit feeds den assault power (§13); defense_per_unit adds to base last-stand defense alongside base reinforcement HP (§9). Training trickles in one at a time via a queue, same as scouts — see scout._note. First pass, untested."
+      "_note": "Standing army — not consumed on use. attack_per_unit feeds den assault power (§13); defense_per_unit adds to base last-stand defense alongside base reinforcement HP (§9). Training trickles in one at a time via a queue (engine/units.ts:resolveTrainingQueue) — the whole batch's cost is paid upfront when the queue starts, and queued-but-undelivered units cost no upkeep. First pass, untested."
     },
     "junkyard_knight": {
       "train_cost": { "food": 25, "wood": 15, "stone": 15 },
       "train_time_seconds": 45,
-      "upkeep_food_per_min": 5.5,
+      "upkeep_food_per_min": 1.375,
       "attack_per_unit": 4,
       "defense_per_unit": 5,
       "min_barracks_level": 2,
@@ -339,7 +373,7 @@
     "cross_bow_sniper": {
       "train_cost": { "food": 30, "wood": 20, "steel": 10 },
       "train_time_seconds": 60,
-      "upkeep_food_per_min": 7,
+      "upkeep_food_per_min": 1.75,
       "attack_per_unit": 3,
       "defense_per_unit": 2,
       "range_tiles": 3,
@@ -348,71 +382,22 @@
       "_note": "Barracks L3 unlock (2026-07-17 milestone) — the first ranged unit. Garrisoned snipers add continuous per-tick ranged_damage_per_unit*count damage to any horde within range_tiles of their garrison's tile (engine/hordes.ts, same shape as tower damage), on top of the usual attack_per_unit/defense_per_unit used for adjacent-tile fights/auto-attacks like every other garrisoned unit. First pass, untested."
     },
     "wandering_scout": {
-      "scout_cost": 10,
-      "cost": { "wood": 150, "stone": 75 },
+      "cost": { "food": 300, "wood": 200 },
       "max_per_barracks": 1,
       "seconds_per_step": 5,
-      "build_time_minutes": 10,
-      "_note": "Land counterpart of the water-bound scout skiff (docks.scout_skiff) — built at a Barracks by retiring scout_cost regular scouts from the stockpile, ON TOP OF a flat resource cost (previously scouts-only, no resource price at all). Wanders randomly across connected land at one tile per seconds_per_step, revealing every tile it visits (engine/wanderingScouts.ts), same mechanism as manual land scouting. Capped at max_per_barracks per barracks. CORRECTION (2026-07-20 balance pass, playtesting feedback: reasonably overpowered for its cost, same issue as scout_skiff) — added the resource `cost` (mid-tier, on par with a barracks/tower upgrade) and build_time_minutes (previously instant). CORRECTION 2 (2026-07-21 playtest pass: felt static/rooted next to the skiff, which 'feels good... just out and about') — seconds_per_step halved from 10 to 5, so the land scout now moves twice as fast as the water-bound skiff (docks.scout_skiff.seconds_per_step, unchanged at 10); every other stat (cost, cap, build timer) stays identical, so speed is the deliberate asymmetry between the two."
+      "build_time_minutes": 5,
+      "_note": "Land counterpart of the water-bound scout skiff (docks.scout_skiff) — built at a Barracks for a flat resource cost equal to 10× the old one-shot scout train_cost (300 food + 200 wood). No scout stockpile / retire gate (#76). Wanders randomly across connected land at one tile per seconds_per_step, revealing every tile it visits (engine/wanderingScouts.ts). Capped at max_per_barracks per barracks. build_time_minutes lowered 9→5 (2026-07-25 pacing)."
     },
-    "_desertion_note": "If food can't cover total upkeep for a tick's elapsed time, food is clamped at 0 and exactly one unit deserts (lowest-upkeep-priority standing unit preferred, else a scout) — a simple first-pass penalty, not proportional to the shortfall size.",
-    "_upkeep_balance_note": "CORRECTION (2026-07-21 balance pass, playtesting feedback: food reserves sat permanently full — a single small grassland food tile alone yields ~2.25 food/sec, while a 20-30 unit standing army at the old rates only cost ~0.3-0.6 food/sec total, so upkeep could never meaningfully compete with production). upkeep_food_per_min raised roughly 10x across all four unit types (scout 1->10, militia 0.5->5, junkyard_knight 0.8->8, cross_bow_sniper 1->10). CORRECTION 2 (2026-07-21, same-day follow-up: 10x read as too aggressive in play) — walked back to roughly 7x the original rates (scout 10->7, militia 5->3.5, junkyard_knight 8->5.5, cross_bow_sniper 10->7), still a real ongoing drain but less punishing than the initial pass. First pass at these numbers, still subject to further tuning."
+    "_desertion_note": "If food can't cover total upkeep for a tick's elapsed time, food is clamped at 0 and exactly one unit deserts (lowest-upkeep-priority standing unit first: militia, then junkyard knight, then cross-bow sniper) — a simple first-pass penalty, not proportional to the shortfall size.",
+    "_upkeep_balance_note": "CORRECTION (2026-07-21): food sat permanently full — upkeep raised ~7x (militia 3.5, knight 5.5, sniper 7). CORRECTION (2026-07-26 playtesting): lab-sized armies still starved players — halved idle upkeep (militia 1.75, knight 2.75, sniper 3.5) and charge only barracks-idle troops (available*), not garrisoned/expedition/assault commitments. Stockpile scout upkeep removed with the unit (#76). CORRECTION (2026-07-29 #91): idle troops still deserted before dispatch — halved again (militia 0.875, knight 1.375, sniper 1.75). Profile authors tune via units.*.upkeep_food_per_min."
   },
 
   // --------------------------------------------------------------------------
-  // DEMOLISH (any structure — extraction tile, path, tower, wall, or barracks)
+  // DEMOLISH (any structure — extraction tile, tower, wall, barracks, dock, or power station)
   // --------------------------------------------------------------------------
   "demolish": {
     "refund_pct": 60,
     "_note": "Returns a fixed 60% of everything ever spent on the structure (build + every upgrade), deterministic, no luck — DESIGN.md §10. ROADMAP.md already named this figure; it just hadn't been added here yet."
-  },
-
-  // --------------------------------------------------------------------------
-  // INFRASTRUCTURE PATHS (auto-transport: resource tile -> base)
-  // --------------------------------------------------------------------------
-  "infrastructure_paths": {
-    "tiers": ["manual", "goat_track", "stone_road", "highway"],
-    "_note": "manual = no path tile needed, player-initiated collection, free, no automation",
-
-    "upgrade_time_minutes_base": 4,
-    "_upgrade_time_note": "pathUpgradeDurationMs(targetTier) = upgrade_time_minutes_base * target_level (goat_track=1, stone_road=2, highway=3) — stone_road=8min, highway=12min. Building the initial goat_track is unaffected (a build, not an upgrade). First pass, untested.",
-
-    "slot_cost": 0.1,
-    "_slot_cost_note": "New system (2026-07-20), playtesting feedback: same reasoning as walls.slot_cost — engine/formulas.ts:totalStructureCount now weights every path tile by this (10 path tiles = 1 slot) instead of full cost, regardless of tier (a path tile is upgraded in place, not rebuilt, so tier doesn't change how many tiles exist). First pass, untested.",
-
-    "goat_track": {
-      "build_cost_base": { "food": 100 }, // sustains the walkers, not materials
-      "build_cost_scaling": "FLAT — every goat track costs build_cost_base regardless of how many you've built. CORRECTION (2026-07-21, playtesting feedback): even the linear per-additional-tile growth this used to have fought infrastructure_paths.slot_cost's whole point (long connected chains built in bulk); see TWEAKS.md",
-      "build_time_minutes": 2,
-      "_build_time_note": "pathBuildDurationMs (engine/paths.ts) — construction of the initial goat_track is now timed too (distinct from upgrade_time_minutes_base above, which only covers goat_track->stone_road->highway). Non-functional (engine/formulas.ts:isStructureActive) until this timer elapses. First pass, untested.",
-      "noise_build": 10
-    },
-
-    "stone_road": {
-      "upgrade_cost_base": { "food": 100 }, // same base as goat_track; tech resources added per FORMULA_B
-      "upgrade_cost_scaling": "FORMULA_B",
-      "upgrade_resources": ["food", "stone"]
-    },
-
-    "highway": {
-      "upgrade_cost_base": { "food": 100 },
-      "upgrade_cost_scaling": "FORMULA_B",
-      "upgrade_resources": ["food", "stone", "steel"]
-    },
-
-    "terrain_rules": {
-      "buildable_on": ["grassland", "forest", "mountain", "shore"],
-      "blocked_on": ["water"],
-      "mountain_throughput_penalty_pct": 25 // -25% transport volume through mountain path tiles
-    },
-
-    "transport": {
-      "_status": "first pass, untested — DESIGN.md §8 only describes trickle/faster/near-instant qualitatively; these are concrete rate multipliers applied to a tile's own current yield rate, i.e. how fast its local stockpile drains to base per tick.",
-      "goat_track_rate_multiplier": 0.5,
-      "stone_road_rate_multiplier": 2,
-      "highway_rate_multiplier": 1000,
-      "_highway_note": "effectively unlimited/instant per DESIGN.md ('near-instant transport, still bottlenecked by the tile's own stockpile cap') — a large finite multiplier keeps the accrual math well-defined without a special-cased infinity."
-    }
   },
 
   // --------------------------------------------------------------------------
@@ -422,16 +407,19 @@
     "capacity_base_per_resource": 1000,   // L1 capacity. Bumped from 250, which a large-tier tile (2.25x yield) filled in ~74s unattended, and which was smaller than the starting wood amount.
     "capacity_scaling": "capacity(L) = capacity(L-1) * 2   (exponential, doubles per level)",
     "_tile_stockpile_note": "Also reused as the flat, storage-skill-independent cap on an extraction tile's own local stockpile (DESIGN.md §8's 'resource tile's own stockpile cap') — unconnected/uncollected tiles stop producing once they hold this much.",
+    "collect_pin_show_ratio": 0.6,
+    "collect_pin_courier_show_ratio": 1,
+    "_collect_pin_note": "Map collect pins stay hidden until local stockpile fill ≥ collect_pin_show_ratio (L1 manual). Courier-automated sites (L2+) wait until collect_pin_courier_show_ratio (full buffer) so mid-fill automation doesn't clutter the map; a full local + full hub also toasts. Upgrade level-badges are separate and unaffected. Manual collect via the tile sheet always works. Issue #82.",
 
     "upgrade_cost_scaling": "FORMULA_B",
-    "upgrade_time_minutes_base": 4,
-    "_upgrade_time_note": "storageUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L2=8min, L3=12min, same shape as base/barracks/tower upgrade timers. Upgrade no longer applies instantly; cost is still deducted upfront, the level change lands when the timer completes (App.tsx runTick).",
+    "upgrade_time_minutes_base": 2,
+    "upgrade_time_growth_per_level_pct": 50,
+    "_upgrade_time_note": "storageUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * (1 + upgrade_time_growth_per_level_pct/100) ^ (targetLevel - 2) — L1→L2 = 2min, L2→L3 = 3min, L3→L4 = 4.5min. Capacity bumps when the timer completes (App.tsx runTick). Cost deducted upfront.",
     "upgrade_cost_base": {
       "food":  { "wood": 500 },
       "wood":  { "wood": 750, "stone": 500 },
       "stone": { "wood": 1500, "stone": 1000 },
-      "steel": { "wood": 2000, "stone": 1500, "steel": 500 },
-      "power": { "wood": 2500, "stone": 2000, "steel": 1000, "food": 500 }
+      "steel": { "wood": 2000, "stone": 1500, "steel": 500 }
     }
   },
 
@@ -442,9 +430,9 @@
     "cost_base": { "food": 500, "wood": 300, "stone": 200 },
     "cost_scaling": "FORMULA_B",
 
-    "first_upgrade_time_minutes": 10,
+    "first_upgrade_time_minutes": 9,
     "time_growth_per_level_pct": 20,
-    "time_scaling": "time(targetLevel) = first_upgrade_time_minutes * (1 + time_growth_per_level_pct/100) ^ (targetLevel - 2), targetLevel >= 2 — so L1->L2 = 10min exactly, L2->L3 = 12min, L3->L4 = 14.4min, L4->L5 = 17.3min, compounding +20%/level from there. CORRECTION (2026-07-20 balance pass, playtesting feedback): replaces the old recursive FORMULA_B-style scaling (time(L) = time(L-1) * (1 + 0.1*L)), which made even the very first base upgrade take 86 minutes — longer than a whole session on its own. Base upgrades are still deliberately the most time-intensive progression track in the game (every other timer tops out at 16min per step), just not runaway-absurd about it.",
+    "time_scaling": "time(targetLevel) = first_upgrade_time_minutes * (1 + time_growth_per_level_pct/100) ^ (targetLevel - 2), targetLevel >= 2 — so L1->L2 = 9min exactly, L2->L3 = 10.8min, L3->L4 = ~13min, L4->L5 = ~15.6min, compounding +20%/level from there. CORRECTION (2026-07-20 balance pass, playtesting feedback): replaces the old recursive FORMULA_B-style scaling (time(L) = time(L-1) * (1 + 0.1*L)), which made even the very first base upgrade take 86 minutes — longer than a whole session on its own. Base upgrades are still deliberately the most time-intensive progression track in the game (every other timer tops out at 12-16min per step), just not runaway-absurd about it. CORRECTION 2 (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 10, shaving 1 minute off like every other build/upgrade timer in this file.",
     "timer_runs_while_offline": true,
 
     "attack_radius_cap_base": 10,
@@ -467,8 +455,8 @@
     "cost_base": { "wood": 200, "stone": 100 },
     "cost_scaling": "FORMULA_B",
 
-    "upgrade_time_minutes_base": 4,
-    "_upgrade_time_note": "baseReinforcementUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L1=4min, L2=8min, same shape as barracksUpgradeDurationMs/towerUpgradeDurationMs. No longer instant on purchase: cost is deducted upfront, the HP/level change lands when the timer completes (App.tsx runTick).",
+    "upgrade_time_minutes_base": 3,
+    "_upgrade_time_note": "baseReinforcementUpgradeDurationMs(targetLevel) = upgrade_time_minutes_base * targetLevel — L1=3min, L2=6min, same shape as barracksUpgradeDurationMs/towerUpgradeDurationMs. No longer instant on purchase: cost is deducted upfront, the HP/level change lands when the timer completes (App.tsx runTick). CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 4, shaving 1 minute off like every other build/upgrade timer in this file.",
     "seconds_per_missing_hp": 3,
     "_repair_time_note": "baseReinforcementRepairDurationMs = missingHp * seconds_per_missing_hp, mirroring wallRepairDurationMs's severity scaling — repairing from 0/100 HP takes 5min. No longer instant on payment."
   },
@@ -495,11 +483,16 @@
   // EXPEDITIONS (send a party to fight its way to a distant scouted tile)
   // --------------------------------------------------------------------------
   "expeditions": {
-    "_status": "first pass, untested — new system (2026-07-19), replaces the old one-ring-at-a-time instant tile attack above. Corridor resolution went real-time/incremental (2026-07-21 playtest pass) — see _note.",
-    "provisions_food_per_unit_per_cost": 2,
-    "travel_seconds_per_cost": 60,
+    "_status": "corridor conquest (2026-07-24, #73) — free-claim scouted/owned, horde fight-or-wipe, arrival orders.",
+    "provisions_food_per_unit_per_cost": 1.5,
+    "assault_provisions_multiplier": 0.1,
+    "_assault_provisions_note": "Den/lab assaults only (engine/expeditions.ts:assaultProvisionsCost). Full expedition rates × lab-distance × win-condition army sizes blew past storage (e.g. ~200 units over cost~100 ≈ 30k food). 0.1× keeps a typical lab march around a few thousand food — late-game L3–L4 storage, not a second economy.",
+    "travel_seconds_per_cost": 15,
     "tombstone_lifetime_minutes": 5,
-    "_note": "Both provisions_food_per_unit_per_cost and travel_seconds_per_cost scale with the Dijkstra-accumulated terrain cost of the chosen route (engine/pathfinding.ts:findExpeditionPath — a route constrained to owned-or-scouted tiles only, never through fog), not raw tile count, so a mountain-heavy route costs/takes proportionally more than an equal-length grassland one (horde.pathfinding.terrain_cost). A 10-militia party over a typical 5-tile grassland route (cost~5) costs 10*2*5=100 food and takes 5*60=300s (5min) — comparable order of magnitude to training that many militia fresh (units.militia.train_cost.food=15 * 10=150) and to other mid-game timed actions (barracks.upgrade_time_minutes_base=4min for L1->L2). Fighting through unowned tiles along the way is free if the party is strong enough — see territory_expansion above; this block only prices the journey itself. Paid/started at dispatch, resolved incrementally every tick as the party's visual position crosses each tile (engine/expeditions.ts:stepCorridorWalk), not all at once at arrival — territory claims tile-by-tile in real time, and a party that dies partway keeps whatever it already claimed. A death anywhere along the route (out-fought on a tile, or a horde blocking the road) leaves a tombstone at the death tile for tombstone_lifetime_minutes (virtual clock, same as every other timer here — scales with fast-forward), click-to-inspect for what was faced. Recalling a garrison (App.tsx:handleRecallMilitia) uses the same route cost but at half this travel time and no provisions cost (engine/expeditions.ts:recallDurationMs) — troops marching home through ground they already hold, not fighting their way anywhere, so no corridor combat and no tombstones."
+    "unowned_path_penalty": 50,
+    "reinforce_cost_multiplier": 0.5,
+    "arrival_decision_minutes": 3,
+    "_note": "Both provisions_food_per_unit_per_cost and travel_seconds_per_cost scale with the Dijkstra-accumulated terrain cost of the chosen route (engine/pathfinding.ts:findExpeditionPath — a route constrained to owned-or-scouted tiles only, never through fog), not raw tile count, so a mountain-heavy route costs/takes proportionally more than an equal-length grassland one (horde.pathfinding.terrain_cost). A 10-militia party over a typical 5-tile grassland route (cost~5) costs 10*1.5*5=75 food and takes 5*15=75s — comparable order of magnitude to training that many militia fresh (units.militia.train_cost.food=15 * 10=150) and to other mid-game timed actions (barracks.upgrade_time_minutes_base=4min for L1->L2). Fighting through unowned tiles along the way is free if the party is strong enough — see territory_expansion above; this block only prices the journey itself. Paid/started at dispatch, resolved incrementally every tick as the party's visual position crosses each tile (engine/expeditions.ts:stepCorridorWalk), not all at once at arrival — territory claims tile-by-tile in real time, and a party that dies partway keeps whatever it already claimed. A death anywhere along the route (out-fought on a tile, or a horde blocking the road) leaves a tombstone at the death tile for tombstone_lifetime_minutes (virtual clock, same as every other timer here — scales with fast-forward), click-to-inspect for what was faced. Recalling a garrison (App.tsx:handleRecallMilitia) uses the same route cost but at half this travel time and no provisions cost (engine/expeditions.ts:recallDurationMs) — troops marching home through ground they already hold, not fighting their way anywhere, so no corridor combat and no tombstones."
   },
 
   // --------------------------------------------------------------------------
@@ -515,25 +508,40 @@
       "tier_2": {
         "multiplier": 1.5,
         "cost": { "wood": 300, "stone": 200 },
-        "duration_minutes": 6
+        "duration_minutes": 5
       },
       "tier_3": {
         "multiplier": 2.0,
         "cost": { "wood": 500, "stone": 350, "steel": 150 },
-        "duration_minutes": 12
+        "duration_minutes": 11
       }
     },
     "game_speed": {
       "tier_2": {
         "rate": 3,
         "cost": { "wood": 400, "stone": 250 },
-        "duration_minutes": 8
+        "duration_minutes": 7
       },
       "tier_3": {
         "rate": 5,
         "cost": { "wood": 650, "stone": 450, "steel": 200 },
-        "duration_minutes": 15
+        "duration_minutes": 14
       }
+    },
+    "parallel_upgrades": {
+      "cost": { "wood": 450, "stone": 320, "steel": 120 },
+      "duration_minutes": 15,
+      "task_slots": 2
+    },
+    "improved_optics": {
+      "cost": { "wood": 400, "stone": 280, "steel": 100 },
+      "duration_minutes": 12,
+      "wandering_scout_reveal_radius": 1,
+      "expedition_own_range": 1
+    },
+    "scout_to_own": {
+      "cost": { "stone": 500, "steel": 200, "food": 300 },
+      "duration_minutes": 18
     }
   },
 
@@ -551,23 +559,21 @@
     "floor_convergence_half_life_seconds": 30,
     "_floor_convergence_note": "Noise continuously converges toward its current 'ambient floor' (below) rather than accumulating without bound or draining to zero. Every half-life, half the remaining gap between current noise and the floor closes — so a build/upgrade spike rolls back down to the floor in under a minute, and if the floor ever drops (e.g. a structure is lost later), noise settles down to meet it. CORRECTION (2026-07-12): lowered from 90 to 30 — the original value made post-build/upgrade rolloff feel sluggish in playtesting. First pass, still untested at this new value.",
 
-    "_one_time_action_noise_note": "upgrade_extraction_tile (10) is reused as the generic 'any structure tier-up' noise for tower, wall, barracks, and base-level upgrades too — there was no dedicated value for those in the original design, and upgrade noise intuitively doesn't vary much by structure type the way build noise does. build_wall (20) fills a similar gap: walls had repair noise but no build noise defined. build_barracks (20) matches it — same weight class as a wall or extraction tile. train_scout/train_militia are much quieter (a person leaving/joining camp, not construction). attack_tile (25) matches build_tower, the current loudest action — a militia assault is about as far from stealthy as it gets. garrison_militia (2026-07-16, militia garrisons) sits just above train_militia — marching troops into position is a bit more noticeable than one recruit joining camp, but nowhere near build/assault weight. Recalling a garrison is silent (matches demolish, which also has no noise cost) — pulling back doesn't announce itself. rush_train_scout/rush_train_militia (2026-07-16) are the odd ones out: every other value here is a flat one-time spike regardless of quantity, but addActionNoise's new `multiplier` param (engine/noiseMeter.ts) scales these BY the rushed quantity — rushing 1 unit is already 5x louder than calmly training one (15 vs 3, 'shouting orders to skip the line'), and rushing 10 at once is a full-blown commotion (150, most of the noise cap in one action). This is the drawback that balances rush training's real upside — instant delivery, no queue timer at all (App.tsx:handleRushTrainScouts/handleRushTrainMilitia) — against calm training's quiet-but-slow queue. First pass, untested.",
+    "_one_time_action_noise_note": "upgrade_extraction_tile (10) is reused as the generic 'any structure tier-up' noise for tower, wall, barracks, and base-level upgrades too — there was no dedicated value for those in the original design, and upgrade noise intuitively doesn't vary much by structure type the way build noise does. build_wall (20) fills a similar gap: walls had repair noise but no build noise defined. build_barracks (20) matches it — same weight class as a wall or extraction tile. train_militia is much quieter (a person leaving/joining camp, not construction). attack_tile (25) matches build_tower, the current loudest action — a militia assault is about as far from stealthy as it gets. garrison_militia (2026-07-16, militia garrisons) sits just above train_militia — marching troops into position is a bit more noticeable than one recruit joining camp, but nowhere near build/assault weight. Recalling a garrison is silent (matches demolish, which also has no noise cost) — pulling back doesn't announce itself. rush_train_militia (2026-07-16) is the odd one out: every other value here is a flat one-time spike regardless of quantity, but addActionNoise's `multiplier` param (engine/noiseMeter.ts) scales this BY the rushed quantity — rushing 1 militia is already 5x louder than calmly training one (15 vs 3), and rushing 10 at once is a full-blown commotion. This balances rush training's instant delivery against calm training's quiet-but-slow queue. Stockpile scout rush noise removed with the unit (#76). First pass, untested.",
     "one_time_action_noise": {
-      "build_path_tile": 10,
-      "repair_wall": 15,
+            "repair_wall": 15,
       "build_extraction_tile": 20,
+      "build_scrap_yard": 20,
       "build_tower": 25,
+      "build_power_station": 8,
       "build_wall": 20,
       "build_barracks": 20,
       "upgrade_extraction_tile": 10,
-      "upgrade_infrastructure_tile": 10,
-      "manual_resource_collection": 5,
-      "train_scout": 3,
+            "manual_resource_collection": 5,
       "train_militia": 3,
       "attack_tile": 25,
       "garrison_militia": 5,
       "attack_horde": 25,
-      "rush_train_scout": 15,
       "rush_train_militia": 15,
       "build_dock": 20,
       "build_fishing_boat": 10,
@@ -580,21 +586,15 @@
       "food": 2,
       "wood": 5,
       "stone": 9,
-      "steel": 12,
-      "power": 15
+      "steel": 12
     },
 
     "extraction_tier_noise_multiplier": 3,
     "_extraction_tier_noise_note": "floor_contribution(tile) = passive_gathering_noise_floor[resource] * 3^tier_index (small=0, mid=1, large=2). Steeper than the 1.5x yield curve on purpose — small tier is 'foraging for berries,' large tier is 'a loud, constant factory farm.' First pass, untested.",
 
-    "path_noise_floor": {
-      "_status": "first pass, untested — each active path tile contributes this many points to the ambient noise floor. A person walking a goat track isn't silent but nowhere near a highway.",
-      "goat_track": 3,
-      "stone_road": 8,
-      "highway": 20
-    },
+    
     "passive_watch_noise_floor": {
-      "_status": "Added 2026-07-16 balance pass, per playtesting discussion — towers and walls are built to watch and hold ground quietly, unlike an extraction tile or path that's constantly active. Their passive floor contribution stays under even the quietest working extraction tile (food, 2) at max level/tier — 'noisy to build, near-silent to keep.' Building/upgrading/repairing one is still loud (see one_time_action_noise.build_tower=25, build_wall=20, repair_wall=15 above) — this floor value only governs the steady-state hum once it's standing. A damaged (horde-captured) tower/wall contributes nothing, same rule as everywhere else a captured structure goes non-functional. First pass, untested.",
+      "_status": "Added 2026-07-16 balance pass, per playtesting discussion — towers and walls are built to watch and hold ground quietly, unlike an extraction tile that's constantly active. Their passive floor contribution stays under even the quietest working extraction tile (food, 2) at max level/tier — 'noisy to build, near-silent to keep.' Building/upgrading/repairing one is still loud (see one_time_action_noise.build_tower=25, build_wall=20, repair_wall=15 above) — this floor value only governs the steady-state hum once it's standing. A damaged (horde-captured) tower/wall contributes nothing, same rule as everywhere else a captured structure goes non-functional. First pass, untested.",
       "tower_per_level": 0.4,
       "wall_per_tier_level": 0.4
     }
@@ -606,7 +606,7 @@
   // --------------------------------------------------------------------------
   "dens": {
     "_status": "first pass, untested — placement + level only, pulled forward from Milestone 14 so Milestone 11 (horde spawning) has something real to spawn from and path against. Growth over time and the siege/assault/hold-period/outpost-conversion flow stay Milestone 14.",
-    "count": 12,
+    "count": 18, // 128×128 midpoint; onboarding sizes use mapSize densCountForMapSize (32→6, 64→10, 96→14, 128→18). createDens then rolls ±1 per seed.
     "min_distance_from_base": 14,
     "_min_distance_note": "Raised from 8 (2026-07-16 balance pass) — a fresh player's owned blob only reaches OWNED_RADIUS=2, so a den 8 out could send a horde across the remaining gap and into scored territory within a couple minutes of the very first spawn, well before a new player has a defense up. 14 buys real runway, and also softens proximity_factor for the nearest dens (clamp(1 - distance/max_relevant_distance) drops from 0.8 to 0.65 at min distance).",
     "max_level": 5,
@@ -624,13 +624,13 @@
       "_den_defense_note": "denDefense(level) = den_defense_base + den_defense_per_level*(level-1) — a level-1 den (20) needs about 10 militia (attack_per_unit=2) to crack; a max-level-5 den (80) needs a real, multi-unit-type assault. Deliberately steeper than territory_expansion.tile_defense_per_distance so clearing a den reads as a bigger commitment than claiming an ordinary tile.",
       "hold_owned_radius": 1,
       "_hold_owned_radius_note": "Tiles claimed into territory.owned the moment the assault succeeds (den coord + this radius) — enough room to garrison the core and ring it with a tower or two before the first last-stand wave hits.",
-      "hold_duration_minutes": 10,
-      "wave_interval_minutes": 2,
+      "hold_duration_minutes": 5,
+      "wave_interval_minutes": 1,
       "wave_base": 12,
       "wave_per_level": 10,
       "wave_escalation_per_wave": 8,
       "wave_cap": 250,
-      "_wave_note": "lastStandWaveSize(denLevel, waveIndex) = min(wave_cap, wave_base + wave_per_level*(denLevel-1) + wave_escalation_per_wave*waveIndex), checked every wave_interval_minutes against holdDefenseAt (garrison + in-range tower damage + neighboring wall durability). 5 waves over the 10-minute hold at a given den level, escalating each time — a static defense set-and-forget isn't enough, the hold demands continued investment. Deliberately weaker than a full noise-scaled horde (DESIGN.md §12's 'weaker last-stand defenders') — this is the den's own dying effort, not another horde."
+      "_wave_note": "lastStandWaveSize(denLevel, waveIndex) = min(wave_cap, wave_base + wave_per_level*(denLevel-1) + wave_escalation_per_wave*waveIndex), checked every wave_interval_minutes against holdDefenseAt (garrison + in-range tower damage + neighboring wall durability). 5 waves over the 5-minute hold at a given den level, escalating each time — a static defense set-and-forget isn't enough, the hold demands continued investment. Deliberately weaker than a full noise-scaled horde (DESIGN.md §12's 'weaker last-stand defenders') — this is the den's own dying effort, not another horde."
     }
   },
 
@@ -654,9 +654,9 @@
       "hp_gain_per_level": 15,
       "cost_base": { "wood": 150, "stone": 75 },
       "_note": "Weaker/cheaper than base_reinforcement (100 base_hp, 25/level, 200 wood + 100 stone) on purpose — an outpost is a real but more exposed foothold, not a clone of the fortified main base. createOutpostFromDen (data/outposts.ts) grants a starting reinforcementLevel of (den.level - 1) — clearing a level-2 den hands over roughly base_hp+1*hp_gain_per_level=80 HP; a level-10 den (once dens can reach that high) would hand over base_hp+9*hp_gain_per_level=200 HP — a direct reward for the difficulty of the siege overcome, deliberately uncapped by the base-level ceiling that gates further upgrades (engine/outposts.ts:maxOutpostReinforcementLevel).",
-      "upgrade_time_minutes_base": 3,
+      "upgrade_time_minutes_base": 2,
       "seconds_per_missing_hp": 2,
-      "_time_note": "Faster than base_reinforcement's timers (4min base, 3s/missing HP) on purpose, same weaker/cheaper-but-quicker relationship as the cost — mirrors engine/base.ts:baseReinforcementUpgradeDurationMs/baseReinforcementRepairDurationMs."
+      "_time_note": "Faster than base_reinforcement's timers (3min base, 3s/missing HP) on purpose, same weaker/cheaper-but-quicker relationship as the cost — mirrors engine/base.ts:baseReinforcementUpgradeDurationMs/baseReinforcementRepairDurationMs. CORRECTION (2026-07-23, ROADMAP.md Milestone 21 UX #12) — lowered from 3, shaving 1 minute off like every other build/upgrade timer in this file."
     }
   },
 
@@ -689,7 +689,7 @@
     "_speed_and_decay_note": "Added 2026-07-16 balance pass (superseding the earlier flat size_decay_pct_per_tile: 5) — a horde's speed and per-tile decay both scale linearly with the player's noise_pct AT THE MOMENT IT SPAWNS (captured once alongside `size`/`path` on the HordeRecord, engine/hordes.ts:checkHordeSpawns — never re-evaluated mid-approach, so a horde's behavior doesn't flicker if noise later drifts). speedFactor(noisePct) = speed_factor_at_zero_noise + (speed_factor_at_max_noise - speed_factor_at_zero_noise) * noisePct/100, applied as a multiplier on the existing 'advance one tile per tick_interval_seconds' rate. decayPct(noisePct) = size_decay_pct_per_tile_at_zero_noise + (size_decay_pct_per_tile_at_max_noise - size_decay_pct_per_tile_at_zero_noise) * noisePct/100, then compounded per tile exactly as size_decay_pct_per_tile used to be: size(n tiles) = spawn_size * (1 - decayPct/100)^n. Intent (per playtesting discussion): a loud base gets hit at full pace and barely attritted (speedFactor=1.0, decayPct=2% — unchanged from the old flat-5% baseline's danger level, if anything worse) — noise is not a free pass. A quiet base's hordes both crawl (speedFactor=0.4, ~2.5x slower) and mostly disperse before arriving (decayPct=18% -> a horde crossing the 12 tiles from the nearest possible den, min_distance_from_base(14) minus OWNED_RADIUS(2), retains only ~11% of its spawn size, vs ~54% under the old flat rate) — two compounding effects from the same noise number the player already manages, not one. First pass, untested.",
 
     "structure_hp_per_invested_resource": 0.05,
-    "_structure_hp_note": "Added 2026-07-16 balance pass — extraction tiles, path tiles, and barracks had NO combat stat of their own (hordeTileDefense only ever checked towers/walls), so a horde walked straight through them for free even though DESIGN.md never said non-military structures should offer zero resistance. structureHp(structure) = sum(structure.totalInvested values) * structure_hp_per_invested_resource (engine/formulas.ts:structureHp) — reuses the same totalInvested every structure already tracks (for demolish refunds), so no new per-type formula table is needed, and a heavily-upgraded structure is naturally tougher. At 0.05, a fresh small extraction tile (~150 wood invested) lands around 7-8 HP — comparable to a wood wall's 9, a modest speedbump rather than a fortress; towers and walls keep their own existing, higher-value combat stats unchanged (this does NOT stack on top of those). A damaged structure contributes 0, same rule as everywhere else. First pass, untested.",
+    "_structure_hp_note": "Added 2026-07-16 balance pass — extraction tiles and barracks had NO combat stat of their own (hordeTileDefense only ever checked towers/walls), so a horde walked straight through them for free even though DESIGN.md never said non-military structures should offer zero resistance. structureHp(structure) = sum(structure.totalInvested values) * structure_hp_per_invested_resource (engine/formulas.ts:structureHp) — reuses the same totalInvested every structure already tracks (for demolish refunds), so no new per-type formula table is needed, and a heavily-upgraded structure is naturally tougher. At 0.05, a fresh small extraction tile (~150 wood invested) lands around 7-8 HP — comparable to a wood wall's 9, a modest speedbump rather than a fortress; towers and walls keep their own existing, higher-value combat stats unchanged (this does NOT stack on top of those). A damaged structure contributes 0, same rule as everywhere else. First pass, untested.",
     "tower_range_slow_multiplier": 0.5,
     "_tower_range_slow_note": "Added 2026-07-16 balance pass, per playtesting discussion — a horde's advance rate is multiplied by this while it's within ANY non-damaged tower's range (same range towerRange/DPS already use), on top of its own noise-scaled speedFactor: 'they're distracted, under attack.' At 0.5, a tower halves how fast a horde crosses ground for as long as it stays in range, stacking with the tower's per-tick damage (zombiesKilledPerTick) rather than replacing it. First pass, untested.",
 
@@ -721,7 +721,71 @@
       "building_state": "buildings survive but become damaged",
       "repair_cost_pct_of_original_build": 50,
       "repair_time_minutes": 4,
-      "_repair_time_note": "structureRepairDurationMs (engine/formulas.ts) — flat duration shared by all 5 structure kinds (extraction tile, path, tower, wall, barracks), since `damaged` is a boolean flag with no severity to scale against, unlike walls' own separate durability-repair timer. No longer instant on payment."
+      "_repair_time_note": "structureRepairDurationMs (engine/formulas.ts) — flat duration shared by structure kinds (extraction tile, tower, wall, barracks, …), since `damaged` is a boolean flag with no severity to scale against, unlike walls' own separate durability-repair timer. No longer instant on payment."
+    }
+  },
+
+
+  // --------------------------------------------------------------------------
+  // HEX RESOURCE POOLS (Milestone 27 / #84 — shared remainingResource per hex)
+  // --------------------------------------------------------------------------
+  "hex_resource_pools": {
+    "_status": "shipped Milestone 27 — shared remaining for F/W/S extractors, docks, and scrap. infinite_resources skips all drain.",
+    "infinite_resources": false,
+    "tile_level_max": 5,
+    "pool_by_terrain": {
+      "grassland": 1575,
+      "shore": 2700,
+      "forest": 3600,
+      "mountain": 4950,
+      "water": 2700
+    },
+    "pool_per_tile_level_pct": 0.35,
+    "_pool_note": "remaining = round(pool_by_terrain[terrain] * (1 + pool_per_tile_level_pct * (tileLevel-1)))."
+  },
+
+  // --------------------------------------------------------------------------
+  // SCRAP STASHES (Milestone 26 / #36 — world-gen steel sites for Scrappers)
+  // --------------------------------------------------------------------------
+  "scrap_stashes": {
+    "_status": "first pass, untested — finite steel pools on map hexes; Scrappers haul to Scrap Yard. Count scales with map size in mapSize.ts (32→8 … 128→28) then ±1 from seed.",
+    "count": 28,
+    "early_guarantee_max_distance": 10,
+    "_early_guarantee_note": "At least one stash within this axial distance of base (scaled with map size) so the steel loop is reachable early (ScrapperEconomy Q48).",
+    "art_variant_count": 3,
+    "_art_variant_note": "resources/scrap-1.png … scrap-N.png (Q70). Seeded per stash at world-gen.",
+    "terrain_placement_weight": {
+      "grassland": 1,
+      "shore": 2,
+      "forest": 3,
+      "mountain": 3
+    },
+    "_placement_note": "Weighted land picks; water excluded. Favors mountain/forest/shore, rare on grassland (Q18).",
+    "wandering_scout_sample_steel": 36,
+    "_sample_note": "Steel granted each time a wandering scout visits an active stash hex (Q7)."
+  },
+
+
+  // --------------------------------------------------------------------------
+  // SCRAP YARDS (Milestone 26 / #36 — steel hub; replaces steel extraction builds)
+  // --------------------------------------------------------------------------
+  "scrap_yards": {
+    "_status": "first pass, untested — L1–L3 reuse steel extraction small/mid/large cost/time baselines (ScrapperEconomy Q56). Yard courier last-mile at L2+ (same as other resources). Scrapper hauls stash→yard.",
+    "build_cost_base": { "wood": 400, "stone": 300 },
+    "build_cost_scaling": "FORMULA_A",
+    "build_time_minutes": 1,
+    "max_level": 5,
+    "max_level_shipped": 3,
+    "noise_passive_per_level": 4,
+    "_noise_note": "Ambient floor contribution = noise_passive_per_level * yard.level when active. Lower than a working steel extractor — yard is a hub, not a forge."
+,
+    "scrapper": {
+      "_status": "playtest retune 2026-07-26 — own travel_seconds_per_cost (not expedition 15s). Mountains cost ×4 in pathfinding; sharing expedition pacing made a 5-mountain haul ~0.2 steel/sec.",
+      "capacity_by_level": [0, 24, 36, 48, 64, 80],
+      "speed_multiplier_by_level": [0, 5.0, 6.5, 8.0, 10.0, 10.0],
+      "travel_seconds_per_cost": 2.5,
+      "_travel_note": "Expeditions use 15s/cost. Scrappers are light salvage — 2.5s/cost keeps mountain routes (~cost 20) around ~10s one-way at L1 rather than ~60s.",
+      "auto_next_stash_min_level": 3
     }
   },
 
@@ -732,24 +796,33 @@
     "_status": "first pass, untested — new system (2026-07-21). Win condition is securing this tile ALONE (DESIGN.md §13) — clearing dens is not a win requirement, just a source of guaranteed clues/outposts/army-building along the way.",
     "min_distance_from_base": 20,
     "_min_distance_note": "Farther out than dens.min_distance_from_base (14) — the lab should read as the map's ultimate destination, found only after real exploration, not something a fresh player stumbles onto in the first few scouting actions.",
-    "guardian_defense": 300,
-    "_guardian_defense_note": "Static — doesn't scale with anything (DESIGN.md §13: 'tougher than anything else encountered'). Set well above a max-level (5) den's defense (dens.siege.den_defense_base + den_defense_per_level*4 = 80) so securing the lab demands a real, late-game army — roughly 150 militia at attack_per_unit=2, or an equivalent knight/sniper mix."
+    "guardian_defense_min": 160,
+    "guardian_defense_max": 240,
+    "_guardian_defense_note": "Rolled once per world seed into LabRecord.guardianDefense (data/lab.ts:createLab) — inclusive [min, max]. Doesn't scale mid-game (DESIGN.md §13: 'tougher than anything else encountered'). Range sits well above a max-level (5) den's defense (~80) so securing the lab still demands a late-game army — roughly 80–120 militia at attack_per_unit=2, or an equivalent knight/sniper mix. CORRECTION (2026-07-26): was a fixed 300; lowered + ranged so games vary and food upkeep can keep pace."
   },
 
   // --------------------------------------------------------------------------
   // HIDDEN LAB — RUMOR/CLUE SYSTEM
   // --------------------------------------------------------------------------
   "lab_clues": {
-    "_status": "first pass, untested",
+    "_status": "retargeted 2026-07-26 — clues are den-clear only; towers signal; scouts reveal",
     "total_clues": 5,
     "clue_form": "directional hint relative to base; precision narrows from coarse compass quadrant to a narrow arc as more clues are collected",
     "final_search_area_radius_tiles": 6, // approximate cluster size the last clue narrows down to
 
     "passive_surfacing": {
-      "per_scout_action_chance": 0.02,
-      "per_watchtower_tick_base_chance": 0.005,
-      "watchtower_intel_tier_multiplier": 1.0, // chance scales as base_chance * intel_tier
-      "stops_once_all_clues_collected": true
+      // L2–L3 per tick; L1 never rolls. Towers point scouts at a sector — they never award clues.
+      "per_watchtower_tick_base_chance": 0.001,
+      // Applied at tower level 4 only (chance = base * this).
+      "watchtower_intel_tier_multiplier": 2.0,
+      // After 5 den-clear clues the search cluster is on the map; stop new signals.
+      "stops_once_all_clues_collected": true,
+      // Softmax neighbor weights while a signal is active.
+      // Tower signals are a vague compass nudge only — no true-lab magnetism
+      // (lab approach / tile bonus zeroed 2026-07-28; was still bee-lining after the 07-27 half).
+      "signal_bearing_weight": 0.85,
+      "signal_lab_approach_weight": 0,
+      "signal_lab_tile_bonus": 0
     },
 
     "den_clear_bonus": {

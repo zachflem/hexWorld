@@ -8,18 +8,27 @@ import type { TerritoryRecord } from "../data/territory";
 import type { Tower } from "../data/towers";
 import { tweaksSchema } from "../data/tweaksSchema";
 import {
+  ASSAULT_CORRIDOR,
+  TERRITORY_CORRIDOR,
   expeditionPathIndexAt,
+  assaultProvisionsCost,
   expeditionProvisionsCost,
   expeditionTravelDurationMs,
   findBestExpeditionRoute,
   partyAttackPower,
+  provisionsRefund,
+  reinforceProvisionsCost,
+  reinforceTravelDurationMs,
+  stationExpeditionAsGarrison,
   stepCorridorWalk,
 } from "./expeditions";
+import { garrisonAt } from "./garrisons";
 import { axialDistance, axialKey, axialNeighbors, axialSpiral, mapCenter, type Axial } from "./hexCoords";
 import { terrainAt } from "./terrain";
+import type { Expedition } from "../data/expeditions";
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -213,6 +222,16 @@ describe("expeditionProvisionsCost", () => {
   });
 });
 
+describe("assaultProvisionsCost", () => {
+  it("applies assault_provisions_multiplier on top of expedition rates", () => {
+    const tweaks = loadRealTweaks();
+    const full = expeditionProvisionsCost(tweaks, 200, 104);
+    const assault = assaultProvisionsCost(tweaks, 200, 104);
+    expect(assault).toBeCloseTo(full * tweaks.expeditions.assault_provisions_multiplier);
+    expect(assault).toBeLessThan(full);
+  });
+});
+
 describe("expeditionTravelDurationMs", () => {
   it("scales with route cost alone at the default 1x speed", () => {
     const tweaks = loadRealTweaks();
@@ -327,7 +346,7 @@ describe("stepCorridorWalk", () => {
     const tweaks = loadRealTweaks();
     const path: Axial[] = [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 2, r: 0 }];
     const hordeSizeByKey = new Map([[axialKey(path[1]), 5]]);
-    const result = stepCorridorWalk(tweaks, path, 0, path.length - 1, [], base, 1_000_000, hordeSizeByKey);
+    const result = stepCorridorWalk(tweaks, path, 0, path.length - 1, [], base, 1_000_000, hordeSizeByKey, ASSAULT_CORRIDOR);
     expect(result.resolvedIndex).toBe(0);
     expect(result.claimedTiles).toEqual([]);
     expect(result.death).toEqual({ tile: path[1], cause: { kind: "horde_blocked", hordeSize: 5 } });
@@ -338,9 +357,278 @@ describe("stepCorridorWalk", () => {
     const path: Axial[] = [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 2, r: 0 }];
     const hordeSizeByKey = new Map([[axialKey(path[2]), 5]]);
     // attackPower of 0 would fail path[1]'s fight if it weren't owned.
-    const result = stepCorridorWalk(tweaks, path, 0, path.length - 1, [path[1]], base, 0, hordeSizeByKey);
+    const result = stepCorridorWalk(tweaks, path, 0, path.length - 1, [path[1]], base, 0, hordeSizeByKey, ASSAULT_CORRIDOR);
     expect(result.resolvedIndex).toBe(1); // free-passed path[1], then died at the horde on path[2]
     expect(result.claimedTiles).toEqual([]);
     expect(result.death).toEqual({ tile: path[2], cause: { kind: "horde_blocked", hordeSize: 5 } });
+  });
+});
+
+describe("stepCorridorWalk territory mode", () => {
+  const base = { q: 0, r: 0 };
+  const noHordes = new Map<string, number>();
+
+  it("free-claims unowned scouted tiles without a tileDefense fight", () => {
+    const tweaks = loadRealTweaks();
+    const path: Axial[] = [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 100, r: 0 }];
+    const result = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      0,
+      noHordes,
+      TERRITORY_CORRIDOR,
+    );
+    expect(result.death).toBeNull();
+    expect(result.resolvedIndex).toBe(path.length - 1);
+    expect(result.claimedTiles).toEqual([path[1], path[2]]);
+  });
+
+  it("clears a weaker horde and continues with no losses", () => {
+    const tweaks = loadRealTweaks();
+    const path: Axial[] = [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 2, r: 0 }];
+    const hordeSizeByKey = new Map([[axialKey(path[1]), 5]]);
+    const result = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      10,
+      hordeSizeByKey,
+      TERRITORY_CORRIDOR,
+    );
+    expect(result.death).toBeNull();
+    expect(result.clearedHordeKeys).toEqual([axialKey(path[1])]);
+    expect(result.claimedTiles).toEqual([path[1], path[2]]);
+    expect(result.resolvedIndex).toBe(path.length - 1);
+  });
+
+  it("wipes when a path horde outguns the party", () => {
+    const tweaks = loadRealTweaks();
+    const path: Axial[] = [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 2, r: 0 }];
+    const hordeSizeByKey = new Map([[axialKey(path[1]), 50]]);
+    const result = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      10,
+      hordeSizeByKey,
+      TERRITORY_CORRIDOR,
+    );
+    expect(result.death).toEqual({ tile: path[1], cause: { kind: "horde_blocked", hordeSize: 50 } });
+    expect(result.claimedTiles).toEqual([]);
+  });
+
+  it("with ownRange 1, claims adjacent water when stepping onto shoreline land", () => {
+    const tweaks = loadRealTweaks();
+    const seed = 5;
+    const gridSize = 128;
+    let shoreLand: Axial | null = null;
+    let waterNeighbor: Axial | null = null;
+    for (const coord of axialSpiral(mapCenter(gridSize), 60)) {
+      if (terrainAt(seed, coord) === "water") continue;
+      const water = axialNeighbors(coord).find((n) => terrainAt(seed, n) === "water");
+      if (!water) continue;
+      shoreLand = coord;
+      waterNeighbor = water;
+      break;
+    }
+    expect(shoreLand).not.toBeNull();
+    expect(waterNeighbor).not.toBeNull();
+
+    const path: Axial[] = [base, shoreLand!];
+    const withoutOptics = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      0,
+      noHordes,
+      TERRITORY_CORRIDOR,
+    );
+    expect(withoutOptics.claimedTiles.map(axialKey)).toEqual([axialKey(shoreLand!)]);
+    expect(withoutOptics.claimedTiles.some((c) => axialKey(c) === axialKey(waterNeighbor!))).toBe(false);
+
+    const withOptics = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      0,
+      noHordes,
+      { ...TERRITORY_CORRIDOR, ownRange: 1, gridSize },
+    );
+    expect(withOptics.claimedTiles.some((c) => axialKey(c) === axialKey(shoreLand!))).toBe(true);
+    expect(withOptics.claimedTiles.some((c) => axialKey(c) === axialKey(waterNeighbor!))).toBe(true);
+  });
+
+  it("with ownRange 1, skips horde-occupied neighbors", () => {
+    const tweaks = loadRealTweaks();
+    const path: Axial[] = [base, { q: 1, r: 0 }];
+    const neighbor = { q: 1, r: -1 };
+    const hordeSizeByKey = new Map([[axialKey(neighbor), 5]]);
+    const result = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      0,
+      hordeSizeByKey,
+      { ...TERRITORY_CORRIDOR, ownRange: 1, gridSize: 128 },
+    );
+    expect(result.claimedTiles.some((c) => axialKey(c) === axialKey(neighbor))).toBe(false);
+  });
+
+  it("with ownRange 1, skips dens and lab in unclaimableKeys", () => {
+    const tweaks = loadRealTweaks();
+    const path: Axial[] = [base, { q: 1, r: 0 }];
+    const labTile = { q: 2, r: 0 };
+    const denTile = { q: 1, r: -1 };
+    const result = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      0,
+      noHordes,
+      {
+        ...TERRITORY_CORRIDOR,
+        ownRange: 1,
+        gridSize: 128,
+        unclaimableKeys: new Set([axialKey(labTile), axialKey(denTile)]),
+      },
+    );
+    expect(result.claimedTiles.some((c) => axialKey(c) === axialKey(labTile))).toBe(false);
+    expect(result.claimedTiles.some((c) => axialKey(c) === axialKey(denTile))).toBe(false);
+    expect(result.claimedTiles.some((c) => axialKey(c) === axialKey(path[1]!))).toBe(true);
+  });
+
+  it("free-claim path skips unclaimableKeys without dying", () => {
+    const tweaks = loadRealTweaks();
+    const labTile = { q: 1, r: 0 };
+    const path: Axial[] = [base, labTile, { q: 2, r: 0 }];
+    const result = stepCorridorWalk(
+      tweaks,
+      path,
+      0,
+      path.length - 1,
+      [base],
+      base,
+      0,
+      noHordes,
+      {
+        ...TERRITORY_CORRIDOR,
+        unclaimableKeys: new Set([axialKey(labTile)]),
+      },
+    );
+    expect(result.death).toBeNull();
+    expect(result.resolvedIndex).toBe(path.length - 1);
+    expect(result.claimedTiles.map(axialKey)).toEqual([axialKey({ q: 2, r: 0 })]);
+  });
+});
+
+describe("provisionsRefund", () => {
+  it("refunds half when recalled halfway through a 20-tile outbound", () => {
+    expect(provisionsRefund(100, 10, 20)).toBe(50);
+  });
+
+  it("refunds nothing when outbound is complete (arrival recall)", () => {
+    expect(provisionsRefund(100, 20, 20)).toBe(0);
+  });
+
+  it("refunds everything when nothing has been resolved yet", () => {
+    expect(provisionsRefund(100, 0, 20)).toBe(100);
+  });
+});
+
+describe("reinforce quotes", () => {
+  it("halves provisions and travel vs a normal expedition quote", () => {
+    const tweaks = loadRealTweaks();
+    const fullFood = expeditionProvisionsCost(tweaks, 10, 5);
+    const fullMs = expeditionTravelDurationMs(tweaks, 5, 1);
+    expect(reinforceProvisionsCost(tweaks, 10, 5)).toBeCloseTo(fullFood * tweaks.expeditions.reinforce_cost_multiplier);
+    expect(reinforceTravelDurationMs(tweaks, 5, 1)).toBeCloseTo(fullMs * tweaks.expeditions.reinforce_cost_multiplier);
+  });
+});
+
+describe("stationExpeditionAsGarrison", () => {
+  it("merges the party into a garrison at the destination and removes the expedition", () => {
+    const dest = { q: 3, r: -1 };
+    const expedition: Expedition = {
+      id: "exp-1",
+      target: dest,
+      origin: { q: 0, r: 0 },
+      path: [{ q: 0, r: 0 }, { q: 1, r: 0 }, dest],
+      militiaCommitted: 4,
+      junkyardKnightCommitted: 1,
+      crossBowSniperCommitted: 2,
+      departedAt: 0,
+      arriveAt: 1000,
+      resolvedIndex: 2,
+      phase: "awaitingOrders",
+      provisionsPaid: 40,
+      outboundTileCount: 2,
+      decisionDeadlineAt: 5000,
+      joinExpeditionId: null,
+    };
+    const other: Expedition = { ...expedition, id: "exp-2", militiaCommitted: 1, junkyardKnightCommitted: 0, crossBowSniperCommitted: 0 };
+    const result = stationExpeditionAsGarrison(expedition, [], [expedition, other]);
+    expect(result.expeditions.map((e) => e.id)).toEqual(["exp-2"]);
+    expect(axialKey(result.coord)).toBe(axialKey(dest));
+    expect(garrisonAt(result.garrisons, dest)).toEqual({
+      coord: dest,
+      militiaCount: 4,
+      junkyardKnightCount: 1,
+      crossBowSniperCount: 2,
+    });
+  });
+
+  it("stacks onto an existing garrison at the same hex", () => {
+    const dest = { q: 2, r: 2 };
+    const expedition: Expedition = {
+      id: "exp-1",
+      target: dest,
+      origin: { q: 0, r: 0 },
+      path: [dest],
+      militiaCommitted: 3,
+      junkyardKnightCommitted: 0,
+      crossBowSniperCommitted: 0,
+      departedAt: 0,
+      arriveAt: 1000,
+      resolvedIndex: 0,
+      phase: "awaitingOrders",
+      provisionsPaid: 10,
+      outboundTileCount: 0,
+      decisionDeadlineAt: null,
+      joinExpeditionId: null,
+    };
+    const result = stationExpeditionAsGarrison(
+      expedition,
+      [{ coord: dest, militiaCount: 2, junkyardKnightCount: 1, crossBowSniperCount: 0 }],
+      [expedition],
+    );
+    expect(result.garrisons).toHaveLength(1);
+    expect(garrisonAt(result.garrisons, dest)).toEqual({
+      coord: dest,
+      militiaCount: 5,
+      junkyardKnightCount: 1,
+      crossBowSniperCount: 0,
+    });
   });
 });

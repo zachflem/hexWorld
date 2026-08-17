@@ -42,6 +42,8 @@ function dijkstraCoreMultiGoal(
   goalKeys: Set<string>,
   gridSize: number,
   isAllowed: (coord: Axial) => boolean,
+  /** Extra pathfinding weight when *entering* a tile (does not change reported terrain-only cost). */
+  edgeExtraCost: (coord: Axial) => number = () => 0,
 ): (PathResult & { reachedKey: string }) | null {
   const startKey = axialKey(from);
 
@@ -85,7 +87,7 @@ function dijkstraCoreMultiGoal(
       const cost = terrainCost(tweaks, terrainAt(seed, neighbor));
       if (cost === null) continue;
 
-      const candidateDist = bestDist + cost;
+      const candidateDist = bestDist + cost + edgeExtraCost(neighbor);
       if (candidateDist < (dist.get(neighborKey) ?? Infinity)) {
         dist.set(neighborKey, candidateDist);
         prev.set(neighborKey, current);
@@ -95,8 +97,6 @@ function dijkstraCoreMultiGoal(
   }
 
   if (reachedKey === null || reachedNode === null) return null;
-  const goalDist = dist.get(reachedKey);
-  if (goalDist === undefined) return null;
 
   const path: Axial[] = [reachedNode];
   let cursor = reachedNode;
@@ -106,7 +106,15 @@ function dijkstraCoreMultiGoal(
     path.push(previous);
     cursor = previous;
   }
-  return { path: path.reverse(), cost: goalDist, reachedKey };
+  const reversed = path.reverse();
+  // Provisions/travel use pure terrain cost; edgeExtraCost only steered the route.
+  let terrainOnlyCost = 0;
+  for (let i = 1; i < reversed.length; i++) {
+    const stepCost = terrainCost(tweaks, terrainAt(seed, reversed[i]));
+    if (stepCost === null) return null;
+    terrainOnlyCost += stepCost;
+  }
+  return { path: reversed, cost: terrainOnlyCost, reachedKey };
 }
 
 function dijkstraCore(
@@ -116,8 +124,9 @@ function dijkstraCore(
   to: Axial,
   gridSize: number,
   isAllowed: (coord: Axial) => boolean,
+  edgeExtraCost: (coord: Axial) => number = () => 0,
 ): PathResult | null {
-  const result = dijkstraCoreMultiGoal(tweaks, seed, from, new Set([axialKey(to)]), gridSize, isAllowed);
+  const result = dijkstraCoreMultiGoal(tweaks, seed, from, new Set([axialKey(to)]), gridSize, isAllowed, edgeExtraCost);
   return result ? { path: result.path, cost: result.cost } : null;
 }
 
@@ -162,6 +171,10 @@ export function findNearestHordeTarget(
  * terrain cost of the winning route (engine/expeditions.ts scales resource/
  * time cost off this), which findHordePath's callers don't need and so don't
  * get.
+ *
+ * When `ownedTiles` is provided, non-owned allowed tiles get
+ * `unownedPathPenalty` added during search so longer owned corridors beat
+ * short scouted-unowned cuts; the returned `cost` is still pure terrain.
  */
 export function findExpeditionPath(
   tweaks: Tweaks,
@@ -170,6 +183,20 @@ export function findExpeditionPath(
   to: Axial,
   gridSize: number,
   allowedTiles: Set<string>,
+  ownedTiles?: Set<string>,
+  unownedPathPenalty = 0,
 ): PathResult | null {
-  return dijkstraCore(tweaks, seed, from, to, gridSize, (coord) => allowedTiles.has(axialKey(coord)));
+  const edgeExtraCost =
+    ownedTiles && unownedPathPenalty > 0
+      ? (coord: Axial) => (ownedTiles.has(axialKey(coord)) ? 0 : unownedPathPenalty)
+      : () => 0;
+  return dijkstraCore(
+    tweaks,
+    seed,
+    from,
+    to,
+    gridSize,
+    (coord) => allowedTiles.has(axialKey(coord)),
+    edgeExtraCost,
+  );
 }

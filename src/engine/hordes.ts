@@ -4,7 +4,7 @@ import type { ExtractionTile } from "../data/extractionTiles";
 import type { Garrison, GarrisonsRecord } from "../data/garrisons";
 import type { HordeRecord, HordesRecord } from "../data/hordes";
 import type { OutpostsRecord } from "../data/outposts";
-import type { PathTile } from "../data/pathTiles";
+import type { ScrapYardRecord } from "../data/scrapYards";
 import type { TerritoryRecord } from "../data/territory";
 import type { Tower } from "../data/towers";
 import type { Tweaks } from "../data/tweaksSchema";
@@ -16,7 +16,10 @@ import { axialDistance, axialKey, type Axial } from "./hexCoords";
 import { seededRandom } from "./noise";
 import { noiseCap } from "./noiseMeter";
 import { findNearestHordeTarget } from "./pathfinding";
+import { powerPerformanceFactor, type PowerNetworkSnapshot } from "./power";
+import { terrainAt } from "./terrain";
 import { towerDamage, towerRange, zombiesKilledPerTick } from "./towers";
+import { WALL_TIER_LEVEL } from "./walls";
 
 /** A one-shot-defended point advanceHordes checks a horde's route against — the main base, or any live Outpost (data/outposts.ts). `kind`/`id` are for the caller's benefit only (advanceHordes itself only ever keys off `coord`). */
 export interface HordeHub {
@@ -155,8 +158,8 @@ export function checkHordeSpawns(
 /**
  * The structure-only component of a tile's defense (garrison excluded — see
  * hordeTileDefense below, which adds that in once). Towers and walls keep
- * their own dedicated combat stats (damage/durability); extraction tiles,
- * path tiles, and barracks have no combat stat of their own, so they fall
+ * their own dedicated combat stats (damage/durability); extraction tiles
+ * and barracks have no combat stat of their own, so they fall
  * back to the generic investment-based structureHp (engine/formulas.ts) —
  * DESIGN.md never said non-military structures should offer zero
  * resistance, and previously they did (hordeTileDefense only ever checked
@@ -168,26 +171,37 @@ export function checkHordeSpawns(
 function structureCombatDefense(
   tweaks: Tweaks,
   extractionTiles: ExtractionTile[],
-  pathTiles: PathTile[],
   towers: Tower[],
   walls: Wall[],
   barracksList: Barracks[],
   key: string,
+  powerNetwork?: PowerNetworkSnapshot,
+  scrapYards: ScrapYardRecord[] = [],
 ): number {
   const tower = towers.find((t) => axialKey(t.coord) === key);
-  if (tower) return isStructureActive(tower) ? towerDamage(tweaks, tower.level) : 0;
+  if (tower) {
+    if (!isStructureActive(tower)) return 0;
+    const mul = powerNetwork ? powerPerformanceFactor(powerNetwork, tower.level, tower.coord) : 1;
+    return towerDamage(tweaks, tower.level) * mul;
+  }
 
   const wall = walls.find((w) => axialKey(w.coord) === key);
-  if (wall) return isStructureActive(wall) ? wall.durability : 0;
+  if (wall) {
+    if (!isStructureActive(wall)) return 0;
+    const mul = powerNetwork
+      ? powerPerformanceFactor(powerNetwork, WALL_TIER_LEVEL[wall.tier], wall.coord)
+      : 1;
+    return wall.durability * mul;
+  }
 
   const extractionTile = extractionTiles.find((t) => axialKey(t.coord) === key);
   if (extractionTile) return isStructureActive(extractionTile) ? structureHp(tweaks, extractionTile.totalInvested) : 0;
 
-  const pathTile = pathTiles.find((t) => axialKey(t.coord) === key);
-  if (pathTile) return isStructureActive(pathTile) ? structureHp(tweaks, pathTile.totalInvested) : 0;
-
   const barracks = barracksList.find((b) => axialKey(b.coord) === key);
   if (barracks) return isStructureActive(barracks) ? structureHp(tweaks, barracks.totalInvested) : 0;
+
+  const scrapYard = scrapYards.find((y) => axialKey(y.coord) === key);
+  if (scrapYard) return isStructureActive(scrapYard) ? structureHp(tweaks, scrapYard.totalInvested) : 0;
 
   return 0;
 }
@@ -208,16 +222,16 @@ function structureCombatDefense(
 export function hordeTileDefense(
   tweaks: Tweaks,
   extractionTiles: ExtractionTile[],
-  pathTiles: PathTile[],
   towers: Tower[],
   walls: Wall[],
   barracksList: Barracks[],
   garrisons: GarrisonsRecord,
   coord: Axial,
+  scrapYards: ScrapYardRecord[] = [],
 ): number {
   const key = axialKey(coord);
   return (
-    structureCombatDefense(tweaks, extractionTiles, pathTiles, towers, walls, barracksList, key) +
+    structureCombatDefense(tweaks, extractionTiles, towers, walls, barracksList, key, undefined, scrapYards) +
     garrisonDefense(tweaks, garrisons, coord)
   );
 }
@@ -301,8 +315,26 @@ export function resolveGarrisonAutoAttacks(
 }
 
 /** Every active tower (engine/formulas.ts:isStructureActive) whose range (engine/towers.ts:towerRange) reaches `coord` — exported so the map renderer can highlight towers currently in combat (src/render/HexCanvas.tsx). */
-export function towersInRange(tweaks: Tweaks, towers: Tower[], coord: Axial): Tower[] {
-  return towers.filter((t) => isStructureActive(t) && axialDistance(t.coord, coord) <= towerRange(tweaks, t.level));
+export function towersInRange(tweaks: Tweaks, towers: Tower[], coord: Axial, seed: number): Tower[] {
+  return towers.filter(
+    (t) => isStructureActive(t) && axialDistance(t.coord, coord) <= towerRange(tweaks, t.level, terrainAt(seed, t.coord)),
+  );
+}
+
+/**
+ * Watchtower early-warning (#38): ids newly entering tower range should toast
+ * once; ids that left range are dropped so a later re-entry alerts again.
+ */
+export function reconcileHordeWatchtowerAlerts(
+  currentlyInRangeIds: Iterable<string>,
+  previouslyAlerted: ReadonlySet<string>,
+): { nextAlerted: Set<string>; newlyAlertedIds: string[] } {
+  const stillInRange = new Set(currentlyInRangeIds);
+  const newlyAlertedIds: string[] = [];
+  for (const id of stillInRange) {
+    if (!previouslyAlerted.has(id)) newlyAlertedIds.push(id);
+  }
+  return { nextAlerted: stillInRange, newlyAlertedIds };
 }
 
 /**
@@ -321,11 +353,18 @@ export function towerDamagePerSecond(
   inRangeTowers: Tower[],
   hordeSize: number,
   garrisons: GarrisonsRecord,
+  powerNetwork?: PowerNetworkSnapshot,
 ): number {
   return inRangeTowers.reduce((sum, tower) => {
+    const powerMul = powerNetwork ? powerPerformanceFactor(powerNetwork, tower.level, tower.coord) : 1;
+    if (powerMul <= 0) return sum;
     const garrison = garrisonAt(garrisons, tower.coord);
     const garrisonBonusDamage = garrison ? garrison.militiaCount * tweaks.towers.garrison_damage_bonus_per_militia : 0;
-    return sum + zombiesKilledPerTick(tweaks, tower.level, hordeSize, garrisonBonusDamage) / tweaks.game.tick_interval_seconds;
+    return (
+      sum +
+      (powerMul * zombiesKilledPerTick(tweaks, tower.level, hordeSize, garrisonBonusDamage)) /
+        tweaks.game.tick_interval_seconds
+    );
   }, 0);
 }
 
@@ -368,7 +407,9 @@ export function sniperDamagePerSecond(tweaks: Tweaks, garrisons: GarrisonsRecord
  * (the first code path to shrink it — see data/territory.ts's doc comment);
  * any structure on that tile is left in place, not deleted — `capturedTiles`
  * reports which coords were captured this call so the caller can flag those
- * structures `damaged` (see markCapturedStructuresDamaged below). Each
+ * structures `damaged` (see markCapturedStructuresDamaged below) and keep
+ * them known via preserveCapturedTilesAsScouted (ownership loss must not
+ * re-fog ground the player already held). Each
  * successful tile advance also decays the horde's own `size` by its
  * (likewise spawn-fixed) `horde.decayPct`% (compounding) — ground covered is
  * itself a defense, so a horde that's traveled far arrives weaker; a
@@ -412,13 +453,15 @@ export function advanceHordes(
   hordes: HordesRecord,
   territory: TerritoryRecord,
   extractionTiles: ExtractionTile[],
-  pathTiles: PathTile[],
   towers: Tower[],
   walls: Wall[],
   barracksList: Barracks[],
   garrisons: GarrisonsRecord,
   hubs: HordeHub[],
   elapsedSeconds: number,
+  seed: number,
+  powerNetwork?: PowerNetworkSnapshot,
+  scrapYards: ScrapYardRecord[] = [],
 ): {
   hordes: HordesRecord;
   territory: TerritoryRecord;
@@ -445,7 +488,7 @@ export function advanceHordes(
     // between towers doesn't matter within a single tick) AND slows it down
     // ("distracted, under attack") — stacking with its own noise-scaled
     // speedFactor from spawn, not replacing it.
-    const inRangeTowers = towersInRange(tweaks, towers, horde.path[pathIndex]);
+    const inRangeTowers = towersInRange(tweaks, towers, horde.path[pathIndex], seed);
     const slowFactor = inRangeTowers.length > 0 ? tweaks.horde.tower_range_slow_multiplier : 1;
     const rate = (elapsedSeconds / tweaks.game.tick_interval_seconds) * horde.speedFactor * slowFactor;
     const decayFactor = 1 - horde.decayPct / 100;
@@ -453,7 +496,7 @@ export function advanceHordes(
     let progress = horde.progress + rate;
 
     const dps =
-      towerDamagePerSecond(tweaks, inRangeTowers, horde.size, garrisons) +
+      towerDamagePerSecond(tweaks, inRangeTowers, horde.size, garrisons, powerNetwork) +
       sniperDamagePerSecond(tweaks, garrisons, walls, horde.path[pathIndex]);
     // Distance traveled is itself a defense — a horde loses decayPct% of its
     // CURRENT size (compounding) for every tile it successfully advances, so
@@ -486,7 +529,16 @@ export function advanceHordes(
         break;
       }
 
-      const defense = hordeTileDefense(tweaks, extractionTiles, pathTiles, towers, walls, barracksList, garrisons, nextCoord);
+      const defense = hordeTileDefense(
+        tweaks,
+        extractionTiles,
+        towers,
+        walls,
+        barracksList,
+        garrisons,
+        nextCoord,
+        scrapYards,
+      );
       if (!resolveHordeTileFight(size, defense)) {
         progress = 0;
         break;
@@ -533,6 +585,99 @@ export function advanceHordes(
   };
 }
 
+type CapturedStructureFields = {
+  coord: Axial;
+  damaged: boolean;
+  upgrade?: unknown | null;
+  buildStartedAt?: number | null;
+  damageRepair?: { startedAt: number } | null;
+  action?: unknown | null;
+  trainingQueue?: unknown | null;
+};
+
+/** Clears in-flight build/upgrade timers so horde-capture repair is never blocked by stale work. */
+function applyHordeCaptureDamage<T extends CapturedStructureFields>(structure: T): T {
+  return {
+    ...structure,
+    damaged: true,
+    upgrade: null,
+    buildStartedAt: null,
+    damageRepair: null,
+    action: null,
+    trainingQueue: null,
+  };
+}
+
+export type HordeStructureKind = "extraction tile" | "tower" | "wall" | "barracks" | "scrap yard";
+
+export type HordeStructureCaptureEvent = {
+  coord: Axial;
+  kind: HordeStructureKind;
+  cancelledWork: string[];
+};
+
+/** Plain-English labels for work cleared when a horde captures a structure's tile. */
+export function cancelledWorkLabelsForCapture(structure: CapturedStructureFields): string[] {
+  const labels: string[] = [];
+  if (structure.buildStartedAt != null) labels.push("Construction cancelled");
+  if (structure.upgrade != null) labels.push("Upgrade cancelled");
+  if (structure.damageRepair != null) labels.push("Repair cancelled");
+  if (structure.action != null) {
+    const kind = (structure.action as { kind?: string }).kind;
+    if (kind === "repair") labels.push("Wall repair cancelled");
+    else if (kind === "upgrade") labels.push("Wall upgrade cancelled");
+    else labels.push("Wall work cancelled");
+  }
+  if (structure.trainingQueue != null) labels.push("Training cancelled");
+  return labels;
+}
+
+/**
+ * One event per structure newly flagged damaged this capture tick — call
+ * BEFORE markCapturedStructuresDamaged so cancelled-work labels reflect
+ * the pre-capture timers.
+ */
+export function hordeStructureCaptureEvents(
+  capturedTiles: Axial[],
+  extractionTiles: CapturedStructureFields[],
+  towers: CapturedStructureFields[],
+  walls: CapturedStructureFields[],
+  barracksList: CapturedStructureFields[],
+  scrapYards: CapturedStructureFields[] = [],
+): HordeStructureCaptureEvent[] {
+  if (capturedTiles.length === 0) return [];
+
+  const events: HordeStructureCaptureEvent[] = [];
+  for (const coord of capturedTiles) {
+    const key = axialKey(coord);
+    const extraction = extractionTiles.find((s) => axialKey(s.coord) === key);
+    if (extraction && !extraction.damaged) {
+      events.push({ coord, kind: "extraction tile", cancelledWork: cancelledWorkLabelsForCapture(extraction) });
+      continue;
+    }
+    const tower = towers.find((s) => axialKey(s.coord) === key);
+    if (tower && !tower.damaged) {
+      events.push({ coord, kind: "tower", cancelledWork: cancelledWorkLabelsForCapture(tower) });
+      continue;
+    }
+    const wall = walls.find((s) => axialKey(s.coord) === key);
+    if (wall && !wall.damaged) {
+      events.push({ coord, kind: "wall", cancelledWork: cancelledWorkLabelsForCapture(wall) });
+      continue;
+    }
+    const barracks = barracksList.find((s) => axialKey(s.coord) === key);
+    if (barracks && !barracks.damaged) {
+      events.push({ coord, kind: "barracks", cancelledWork: cancelledWorkLabelsForCapture(barracks) });
+      continue;
+    }
+    const scrapYard = scrapYards.find((s) => axialKey(s.coord) === key);
+    if (scrapYard && !scrapYard.damaged) {
+      events.push({ coord, kind: "scrap yard", cancelledWork: cancelledWorkLabelsForCapture(scrapYard) });
+    }
+  }
+  return events;
+}
+
 /**
  * Flags any structure sitting on a tile a horde just captured as `damaged` —
  * DESIGN.md §12: buildings survive a lost tile but become non-functional
@@ -542,7 +687,7 @@ export function advanceHordes(
  * reference) when nothing was captured or nothing sits on the captured tiles,
  * so callers can call this unconditionally every tick without extra churn.
  */
-export function markCapturedStructuresDamaged<T extends { coord: Axial; damaged: boolean }>(
+export function markCapturedStructuresDamaged<T extends CapturedStructureFields>(
   structures: T[],
   capturedTiles: Axial[],
 ): T[] {
@@ -552,7 +697,25 @@ export function markCapturedStructuresDamaged<T extends { coord: Axial; damaged:
   const next = structures.map((structure) => {
     if (structure.damaged || !capturedKeys.has(axialKey(structure.coord))) return structure;
     changed = true;
-    return { ...structure, damaged: true };
+    return applyHordeCaptureDamage(structure);
   });
   return changed ? next : structures;
+}
+
+/**
+ * Losing ownership must not wipe fog knowledge. Owned tiles clear fog by
+ * themselves and are usually never mirrored into `scoutedTiles`, so stripping
+ * `territory.owned` on capture would otherwise hide the tile again — and with
+ * Wandering Scout / Scout Skiff as the only reveal paths, there is no manual
+ * rediscovery. Append each newly captured coord to scoutedTiles (deduped) so
+ * the tile stays visible and expeditionable; reclaim + repair are unchanged.
+ */
+export function preserveCapturedTilesAsScouted(
+  scoutedTiles: Axial[],
+  capturedTiles: Axial[],
+): Axial[] {
+  if (capturedTiles.length === 0) return scoutedTiles;
+  const keys = new Set(scoutedTiles.map(axialKey));
+  const newlyScouted = capturedTiles.filter((coord) => !keys.has(axialKey(coord)));
+  return newlyScouted.length > 0 ? [...scoutedTiles, ...newlyScouted] : scoutedTiles;
 }

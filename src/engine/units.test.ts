@@ -3,7 +3,9 @@ import { resolve } from "node:path";
 import stripJsonComments from "strip-json-comments";
 import { describe, expect, it } from "vitest";
 import { tweaksSchema } from "../data/tweaksSchema";
-import type { TrainingQueue, UnitsRecord } from "../data/units";
+import type { UnitsRecord } from "../data/units";
+import type { Expedition } from "../data/expeditions";
+import type { Garrison } from "../data/garrisons";
 import {
   applyUpkeepTick,
   crossBowSniperAttackPower,
@@ -16,11 +18,12 @@ import {
   militiaDefensePower,
   militiaTrainDurationMs,
   resolveTrainingQueue,
-  scoutTrainDurationMs,
+  totalUpkeepPerSecond,
+  type TrainingQueueProgress,
 } from "./units";
 
 function loadRealTweaks() {
-  const raw = readFileSync(resolve(__dirname, "../../public/tweaks.jsonc"), "utf-8");
+  const raw = readFileSync(resolve(__dirname, "../../public/profiles/default/tweaks.jsonc"), "utf-8");
   return tweaksSchema.parse(JSON.parse(stripJsonComments(raw)));
 }
 
@@ -70,16 +73,11 @@ describe("applyUpkeepTick", () => {
   it("deducts upkeep from food when there's enough to cover it", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
-      scoutStockpile: 2,
       militiaCount: 4,
       junkyardKnightCount: 0,
       crossBowSniperCount: 0,
-      scoutQueue: null,
-      militiaQueue: null,
-      junkyardKnightQueue: null,
-      crossBowSniperQueue: null,
     };
-    const upkeepPerMin = 2 * tweaks.units.scout.upkeep_food_per_min + 4 * tweaks.units.militia.upkeep_food_per_min;
+    const upkeepPerMin = 4 * tweaks.units.militia.upkeep_food_per_min;
 
     const result = applyUpkeepTick(tweaks, units, 1000, 60);
 
@@ -87,17 +85,59 @@ describe("applyUpkeepTick", () => {
     expect(result.units).toEqual(units);
   });
 
+  it("charges only barracks-idle troops — garrisoned and expedition units skip upkeep", () => {
+    const tweaks = loadRealTweaks();
+    const units: UnitsRecord = {
+      militiaCount: 10,
+      junkyardKnightCount: 0,
+      crossBowSniperCount: 0,
+    };
+    const garrisons: Garrison[] = [
+      { coord: { q: 0, r: 0 }, militiaCount: 4, junkyardKnightCount: 0, crossBowSniperCount: 0 },
+    ];
+    const expeditions: Expedition[] = [
+      {
+        id: "e1",
+        origin: { q: 0, r: 0 },
+        path: [
+          { q: 0, r: 0 },
+          { q: 1, r: 0 },
+        ],
+        target: { q: 1, r: 0 },
+        militiaCommitted: 3,
+        junkyardKnightCommitted: 0,
+        crossBowSniperCommitted: 0,
+        departedAt: 0,
+        arriveAt: 60_000,
+        resolvedIndex: 0,
+        phase: "marching",
+        provisionsPaid: 0,
+        outboundTileCount: 1,
+        decisionDeadlineAt: null,
+        joinExpeditionId: null,
+      },
+    ];
+    const commitments = {
+      garrisons,
+      expeditions,
+      denAssaults: [],
+      garrisonRecalls: [],
+      labAssaults: [],
+    };
+    // 10 total − 4 garrisoned − 3 marching = 3 idle
+    expect(totalUpkeepPerSecond(tweaks, units, commitments)).toBeCloseTo(
+      (3 * tweaks.units.militia.upkeep_food_per_min) / 60,
+    );
+    const result = applyUpkeepTick(tweaks, units, 1000, 60, commitments);
+    expect(result.food).toBeCloseTo(1000 - 3 * tweaks.units.militia.upkeep_food_per_min);
+  });
+
   it("clamps food at 0 and deserts one militia when upkeep can't be covered", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
-      scoutStockpile: 0,
       militiaCount: 3,
       junkyardKnightCount: 0,
       crossBowSniperCount: 0,
-      scoutQueue: null,
-      militiaQueue: null,
-      junkyardKnightQueue: null,
-      crossBowSniperQueue: null,
     };
 
     const result = applyUpkeepTick(tweaks, units, 0.001, 60);
@@ -106,75 +146,79 @@ describe("applyUpkeepTick", () => {
     expect(result.units.militiaCount).toBe(2);
   });
 
-  it("deserts a scout instead when there's no militia left", () => {
+  it("never deserts a unit that is fully committed (all on expedition)", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
-      scoutStockpile: 2,
-      militiaCount: 0,
+      militiaCount: 5,
       junkyardKnightCount: 0,
       crossBowSniperCount: 0,
-      scoutQueue: null,
-      militiaQueue: null,
-      junkyardKnightQueue: null,
-      crossBowSniperQueue: null,
     };
-
-    const result = applyUpkeepTick(tweaks, units, 0, 60);
-
-    expect(result.units.militiaCount).toBe(0);
-    expect(result.units.scoutStockpile).toBe(1);
+    const expeditions: Expedition[] = [
+      {
+        id: "e1",
+        origin: { q: 0, r: 0 },
+        path: [
+          { q: 0, r: 0 },
+          { q: 1, r: 0 },
+        ],
+        target: { q: 1, r: 0 },
+        militiaCommitted: 5,
+        junkyardKnightCommitted: 0,
+        crossBowSniperCommitted: 0,
+        departedAt: 0,
+        arriveAt: 60_000,
+        resolvedIndex: 0,
+        phase: "marching",
+        provisionsPaid: 0,
+        outboundTileCount: 1,
+        decisionDeadlineAt: null,
+        joinExpeditionId: null,
+      },
+    ];
+    const result = applyUpkeepTick(tweaks, units, 0, 60, {
+      garrisons: [],
+      expeditions,
+      denAssaults: [],
+      garrisonRecalls: [],
+      labAssaults: [],
+    });
+    expect(result.food).toBe(0);
+    expect(result.units.militiaCount).toBe(5);
   });
 
-  it("deserts a junkyard knight before a cross-bow sniper or scout, once militia is gone", () => {
+  it("deserts a junkyard knight before a cross-bow sniper, once militia is gone", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
-      scoutStockpile: 1,
       militiaCount: 0,
       junkyardKnightCount: 2,
       crossBowSniperCount: 1,
-      scoutQueue: null,
-      militiaQueue: null,
-      junkyardKnightQueue: null,
-      crossBowSniperQueue: null,
     };
 
     const result = applyUpkeepTick(tweaks, units, 0, 60);
 
     expect(result.units.junkyardKnightCount).toBe(1);
     expect(result.units.crossBowSniperCount).toBe(1);
-    expect(result.units.scoutStockpile).toBe(1);
   });
 
-  it("deserts a cross-bow sniper before a scout, once militia and junkyard knights are gone", () => {
+  it("deserts a cross-bow sniper once militia and junkyard knights are gone", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
-      scoutStockpile: 1,
       militiaCount: 0,
       junkyardKnightCount: 0,
       crossBowSniperCount: 1,
-      scoutQueue: null,
-      militiaQueue: null,
-      junkyardKnightQueue: null,
-      crossBowSniperQueue: null,
     };
 
     const result = applyUpkeepTick(tweaks, units, 0, 60);
 
     expect(result.units.crossBowSniperCount).toBe(0);
-    expect(result.units.scoutStockpile).toBe(1);
   });
 
   it("does nothing for zero or negative elapsed time", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
-      scoutStockpile: 2,
       militiaCount: 3,
       junkyardKnightCount: 0,
       crossBowSniperCount: 0,
-      scoutQueue: null,
-      militiaQueue: null,
-      junkyardKnightQueue: null,
-      crossBowSniperQueue: null,
     };
     const result = applyUpkeepTick(tweaks, units, 500, 0);
     expect(result).toEqual({ food: 500, units });
@@ -183,14 +227,9 @@ describe("applyUpkeepTick", () => {
   it("does nothing when there are no units at all", () => {
     const tweaks = loadRealTweaks();
     const units: UnitsRecord = {
-      scoutStockpile: 0,
       militiaCount: 0,
       junkyardKnightCount: 0,
       crossBowSniperCount: 0,
-      scoutQueue: null,
-      militiaQueue: null,
-      junkyardKnightQueue: null,
-      crossBowSniperQueue: null,
     };
     const result = applyUpkeepTick(tweaks, units, 500, 3600);
     expect(result).toEqual({ food: 500, units });
@@ -201,21 +240,21 @@ describe("resolveTrainingQueue", () => {
   const perUnitDurationMs = 20_000;
 
   it("delivers nothing before a single unit's duration has elapsed", () => {
-    const queue: TrainingQueue = { remaining: 3, currentUnitStartedAt: 1000 };
+    const queue: TrainingQueueProgress = { remaining: 3, currentUnitStartedAt: 1000 };
     const result = resolveTrainingQueue(queue, perUnitDurationMs, 1000 + perUnitDurationMs - 1);
     expect(result.delivered).toBe(0);
     expect(result.queue).toBe(queue);
   });
 
   it("delivers exactly one unit and rolls the clock forward by one duration", () => {
-    const queue: TrainingQueue = { remaining: 3, currentUnitStartedAt: 1000 };
+    const queue: TrainingQueueProgress = { remaining: 3, currentUnitStartedAt: 1000 };
     const result = resolveTrainingQueue(queue, perUnitDurationMs, 1000 + perUnitDurationMs);
     expect(result.delivered).toBe(1);
     expect(result.queue).toEqual({ remaining: 2, currentUnitStartedAt: 1000 + perUnitDurationMs });
   });
 
   it("preserves partial progress toward the next unit rather than resetting it", () => {
-    const queue: TrainingQueue = { remaining: 3, currentUnitStartedAt: 1000 };
+    const queue: TrainingQueueProgress = { remaining: 3, currentUnitStartedAt: 1000 };
     const now = 1000 + perUnitDurationMs + 7000; // one full unit plus 7s into the next
     const result = resolveTrainingQueue(queue, perUnitDurationMs, now);
     expect(result.delivered).toBe(1);
@@ -225,14 +264,14 @@ describe("resolveTrainingQueue", () => {
   });
 
   it("nulls the queue out exactly when the last unit is delivered", () => {
-    const queue: TrainingQueue = { remaining: 1, currentUnitStartedAt: 1000 };
+    const queue: TrainingQueueProgress = { remaining: 1, currentUnitStartedAt: 1000 };
     const result = resolveTrainingQueue(queue, perUnitDurationMs, 1000 + perUnitDurationMs);
     expect(result.delivered).toBe(1);
     expect(result.queue).toBeNull();
   });
 
   it("delivers multiple units at once after a long offline gap, clamped to `remaining`", () => {
-    const queue: TrainingQueue = { remaining: 3, currentUnitStartedAt: 1000 };
+    const queue: TrainingQueueProgress = { remaining: 3, currentUnitStartedAt: 1000 };
     const now = 1000 + perUnitDurationMs * 100; // way more than enough for all 3
     const result = resolveTrainingQueue(queue, perUnitDurationMs, now);
     expect(result.delivered).toBe(3);
@@ -244,22 +283,20 @@ describe("resolveTrainingQueue", () => {
   });
 });
 
-describe("scoutTrainDurationMs / militiaTrainDurationMs", () => {
+describe("militiaTrainDurationMs", () => {
   it("convert the configured per-unit seconds to milliseconds, for a single barracks", () => {
     const tweaks = loadRealTweaks();
-    expect(scoutTrainDurationMs(tweaks, 1)).toBe(tweaks.units.scout.train_time_seconds * 1000);
     expect(militiaTrainDurationMs(tweaks, 1)).toBe(tweaks.units.militia.train_time_seconds * 1000);
   });
 
-  it("scales inversely with the number of active barracks — 2 train twice as fast as 1", () => {
+  it("scales inversely with the barracks's own level — L2 trains twice as fast as L1", () => {
     const tweaks = loadRealTweaks();
-    expect(scoutTrainDurationMs(tweaks, 2)).toBeCloseTo((tweaks.units.scout.train_time_seconds * 1000) / 2);
     expect(militiaTrainDurationMs(tweaks, 4)).toBeCloseTo((tweaks.units.militia.train_time_seconds * 1000) / 4);
   });
 
-  it("floors at 1 barracks — never divides by zero or speeds up below the base rate", () => {
+  it("floors at level 1 — never divides by zero or speeds up below the base rate", () => {
     const tweaks = loadRealTweaks();
-    expect(scoutTrainDurationMs(tweaks, 0)).toBe(tweaks.units.scout.train_time_seconds * 1000);
+    expect(militiaTrainDurationMs(tweaks, 0)).toBe(tweaks.units.militia.train_time_seconds * 1000);
   });
 });
 
@@ -270,7 +307,7 @@ describe("junkyardKnightTrainDurationMs / crossBowSniperTrainDurationMs", () => 
     expect(crossBowSniperTrainDurationMs(tweaks, 1)).toBe(tweaks.units.cross_bow_sniper.train_time_seconds * 1000);
   });
 
-  it("scales inversely with training capacity", () => {
+  it("scales inversely with barracks level", () => {
     const tweaks = loadRealTweaks();
     expect(junkyardKnightTrainDurationMs(tweaks, 2)).toBeCloseTo((tweaks.units.junkyard_knight.train_time_seconds * 1000) / 2);
     expect(crossBowSniperTrainDurationMs(tweaks, 4)).toBeCloseTo((tweaks.units.cross_bow_sniper.train_time_seconds * 1000) / 4);
